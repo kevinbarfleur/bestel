@@ -11,6 +11,10 @@ description.workspace = true
 name = "smoke"
 path = "examples/smoke.rs"
 
+[[example]]
+name = "probe"
+path = "examples/probe.rs"
+
 [dev-dependencies]
 tokio = { workspace = true }
 

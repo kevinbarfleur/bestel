@@ -2,9 +2,9 @@ use anyhow::{anyhow, Result};
 use serde_json::Value;
 use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::Command;
 use tokio::sync::mpsc;
 
+use super::spawn::cli_command;
 use super::tools::BuildContext;
 use super::{ChatMessage, LlmDelta, Role};
 use crate::prompt::SYSTEM_PROMPT;
@@ -34,7 +34,7 @@ impl CodexCliClient {
     ) -> Result<String> {
         let prompt = build_full_prompt(&history, &ctx);
 
-        let mut cmd = Command::new("codex");
+        let mut cmd = cli_command("codex");
         cmd.arg("exec")
             .arg("--json")
             .arg("--skip-git-repo-check")

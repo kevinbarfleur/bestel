@@ -2,6 +2,7 @@ pub mod anthropic;
 pub mod claude_cli;
 pub mod codex_cli;
 pub mod detect;
+pub mod spawn;
 pub mod tools;
 
 use anyhow::Result;

@@ -1,9 +1,9 @@
 use std::process::Stdio;
-use tokio::process::Command;
 
 use super::anthropic::AnthropicClient;
 use super::claude_cli::ClaudeCliClient;
 use super::codex_cli::CodexCliClient;
+use super::spawn::cli_command;
 use super::Provider;
 
 #[derive(Debug, Clone)]
@@ -63,7 +63,7 @@ pub async fn detect_provider() -> Detection {
 }
 
 async fn probe_cli(bin: &str) -> Probe {
-    let child = Command::new(bin)
+    let child = cli_command(bin)
         .arg("--version")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
