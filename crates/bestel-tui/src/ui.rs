@@ -282,8 +282,8 @@ fn render_footer(f: &mut Frame, state: &AppState, area: Rect) {
         "PoB ⏳"
     };
     let left = format!(
-        " {} · model: {} · Ctrl+C pour quitter ",
-        pob_status, state.model_label
+        " {} · {} ({}) · Ctrl+C pour quitter ",
+        pob_status, state.model_label, state.auth_label
     );
     let right = if state.status.is_empty() {
         String::new()

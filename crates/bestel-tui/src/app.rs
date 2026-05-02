@@ -16,9 +16,9 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 use tokio::sync::{broadcast, mpsc};
 
-use bestel_core::llm::anthropic::AnthropicClient;
+use bestel_core::llm::detect::{detect_provider, render_probes, Probe};
 use bestel_core::llm::tools::BuildContext;
-use bestel_core::llm::{ChatMessage, LlmDelta, Role};
+use bestel_core::llm::{ChatMessage, LlmDelta, Provider, Role};
 use bestel_core::pob::watcher::PobWatcher;
 use bestel_core::pob::PobBuild;
 
@@ -42,13 +42,20 @@ pub struct AppState {
     pub input: String,
     pub streaming: bool,
     pub model_label: String,
+    pub auth_label: String,
+    pub probes: Vec<Probe>,
     pub watching_dirs: Vec<String>,
     pub status: String,
     pub scroll: u16,
 }
 
 impl AppState {
-    fn new(model_label: String, watching_dirs: Vec<String>) -> Self {
+    fn new(
+        model_label: String,
+        auth_label: String,
+        probes: Vec<Probe>,
+        watching_dirs: Vec<String>,
+    ) -> Self {
         let mut display = Vec::new();
         display.push(ChatLine {
             role: ChatRole::System,
@@ -61,6 +68,8 @@ impl AppState {
             input: String::new(),
             streaming: false,
             model_label,
+            auth_label,
+            probes,
             watching_dirs,
             status: String::new(),
             scroll: 0,
@@ -103,19 +112,36 @@ pub async fn run() -> Result<()> {
         ctx.set(b);
     }
 
-    let client_result = AnthropicClient::from_env();
-    let model_label = match &client_result {
-        Ok(c) => c.model().to_string(),
-        Err(_) => "no API key".into(),
+    let detection = detect_provider().await;
+    let (model_label, auth_label) = match &detection.provider {
+        Some(p) => (p.label(), p.auth_label().to_string()),
+        None => ("aucun provider".into(), "—".into()),
     };
-    let client = client_result.ok().map(Arc::new);
+    let probes = detection.probes.clone();
+    let provider = detection.provider.map(Arc::new);
 
-    let mut state = AppState::new(model_label, watching_dirs);
+    let mut state = AppState::new(model_label, auth_label, probes, watching_dirs);
     state.build = initial_build;
-    if client.is_none() {
-        state.status =
-            "ANTHROPIC_API_KEY manquante — Bestel ne peut parler. Définis-la et relance."
-                .into();
+    if provider.is_none() {
+        let probes_txt = render_probes(&state.probes);
+        let mut msg = String::from(
+            "Aucun moyen de parler avec Bestel.\n\nInstalle un des outils suivants \
+             ou définis ANTHROPIC_API_KEY :\n",
+        );
+        msg.push_str(&probes_txt);
+        state.display.push(ChatLine {
+            role: ChatRole::System,
+            text: msg,
+        });
+    } else {
+        let probes_txt = render_probes(&state.probes);
+        state.display.push(ChatLine {
+            role: ChatRole::System,
+            text: format!(
+                "Provider actif : {} ({}).\n\n{}",
+                state.model_label, state.auth_label, probes_txt
+            ),
+        });
     }
 
     let mut terminal = setup_terminal()?;
@@ -129,7 +155,7 @@ pub async fn run() -> Result<()> {
         &mut pob_rx,
         &mut llm_rx,
         &llm_tx,
-        client.clone(),
+        provider.clone(),
         ctx.clone(),
     )
     .await;
@@ -146,7 +172,7 @@ async fn run_loop(
     pob_rx: &mut broadcast::Receiver<PobBuild>,
     llm_rx: &mut mpsc::UnboundedReceiver<LlmDelta>,
     llm_tx: &mpsc::UnboundedSender<LlmDelta>,
-    client: Option<Arc<AnthropicClient>>,
+    provider: Option<Arc<Provider>>,
     ctx: BuildContext,
 ) -> Result<()> {
     terminal.draw(|f| ui::render(f, state))?;
@@ -195,7 +221,7 @@ async fn run_loop(
                                         role: Role::User,
                                         content: text,
                                     });
-                                    if let Some(client) = client.clone() {
+                                    if let Some(p) = provider.clone() {
                                         state.streaming = true;
                                         state.status = "Bestel consulte les vieux récits…".into();
                                         let history = state.history.clone();
@@ -203,14 +229,14 @@ async fn run_loop(
                                         let tx = llm_tx.clone();
                                         tokio::spawn(async move {
                                             if let Err(e) =
-                                                client.run(history, ctx, tx.clone()).await
+                                                p.run(history, ctx, tx.clone()).await
                                             {
                                                 let _ = tx.send(LlmDelta::Error(e.to_string()));
                                             }
                                         });
                                     } else {
                                         state.status =
-                                            "Pas de clé API : impossible de répondre.".into();
+                                            "Aucun provider disponible.".into();
                                     }
                                 }
                             }
