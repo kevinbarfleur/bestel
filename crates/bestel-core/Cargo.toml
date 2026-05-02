@@ -1,0 +1,29 @@
+[package]
+name = "bestel-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description.workspace = true
+
+[[example]]
+name = "smoke"
+path = "examples/smoke.rs"
+
+[dev-dependencies]
+tokio = { workspace = true }
+
+[dependencies]
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+quick-xml = { workspace = true }
+notify = { workspace = true }
+reqwest = { workspace = true }
+futures-util = { workspace = true }
+bytes = { workspace = true }
+dirs = { workspace = true }

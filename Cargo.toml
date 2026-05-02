@@ -1,0 +1,28 @@
+[workspace]
+members = ["crates/bestel-core", "crates/bestel-tui"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["Kévin Barfleur"]
+repository = "https://github.com/kevinbarfleur/bestel"
+description = "Bestel — chronicler of Wraeclast. AI assistant for Path of Exile 1 & 2."
+
+[workspace.dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "fs", "process", "io-util", "time"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+thiserror = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+quick-xml = { version = "0.36", features = ["serialize"] }
+notify = "6"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
+futures-util = "0.3"
+bytes = "1"
+dirs = "5"
+ratatui = "0.28"
+crossterm = { version = "0.28", features = ["event-stream"] }
