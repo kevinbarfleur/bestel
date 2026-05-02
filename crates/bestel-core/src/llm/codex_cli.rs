@@ -9,6 +9,7 @@ use tokio::sync::mpsc;
 use super::spawn::cli_command;
 use super::tools::BuildContext;
 use super::{ChatMessage, LlmDelta, Role, ToolStatus};
+use crate::devlog;
 use crate::prompt::SYSTEM_PROMPT;
 
 pub struct CodexCliClient {
@@ -102,6 +103,7 @@ impl CodexCliClient {
             if trimmed.is_empty() {
                 continue;
             }
+            devlog::log_provider_raw("codex", trimmed);
             let v: Value = match serde_json::from_str(trimmed) {
                 Ok(v) => v,
                 Err(_) => continue,

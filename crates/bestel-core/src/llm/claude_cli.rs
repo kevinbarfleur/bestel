@@ -8,6 +8,7 @@ use tokio::sync::mpsc;
 use super::spawn::cli_command;
 use super::tools::BuildContext;
 use super::{ChatMessage, LlmDelta, Role, ToolStatus};
+use crate::devlog;
 use crate::prompt::SYSTEM_PROMPT;
 
 pub struct ClaudeCliClient {
@@ -99,6 +100,7 @@ impl ClaudeCliClient {
             if trimmed.is_empty() {
                 continue;
             }
+            devlog::log_provider_raw("claude", trimmed);
             let v: Value = match serde_json::from_str(trimmed) {
                 Ok(v) => v,
                 Err(_) => continue,

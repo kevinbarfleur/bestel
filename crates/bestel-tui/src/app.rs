@@ -14,11 +14,13 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 use tokio::sync::{broadcast, mpsc, oneshot};
 
+use bestel_core::devlog;
 use bestel_core::llm::detect::{detect_provider, render_probes, Probe};
 use bestel_core::llm::tools::BuildContext;
 use bestel_core::llm::{ChatMessage, LlmDelta, Provider, Role, ToolStatus};
 use bestel_core::pob::watcher::PobWatcher;
 use bestel_core::pob::PobBuild;
+use serde_json::json;
 
 use crate::items::ChatItem;
 use crate::ui;
@@ -81,6 +83,7 @@ impl AppState {
     }
 
     fn handle_delta(&mut self, d: LlmDelta) {
+        log_delta(&d);
         match d {
             LlmDelta::TextDelta(text) => {
                 let idx = match self.current_assistant_idx {
@@ -205,6 +208,10 @@ impl AppState {
                         *complete = true;
                         let final_text = text.clone();
                         if !final_text.is_empty() {
+                            devlog::log_value(
+                                "assistant_final",
+                                json!({ "text": final_text, "len": final_text.chars().count() }),
+                            );
                             self.history.push(ChatMessage {
                                 role: Role::Assistant,
                                 content: final_text,
@@ -350,6 +357,23 @@ pub async fn run() -> Result<()> {
         )));
     }
 
+    if devlog::is_enabled() {
+        if let Some(p) = devlog::log_path() {
+            state.push_item(ChatItem::System(format!(
+                "🪵 Dev log actif → {}",
+                p.display()
+            )));
+        }
+        devlog::log_value(
+            "session_start",
+            json!({
+                "provider": state.model_label,
+                "auth": state.auth_label,
+                "build": state.build.as_ref().map(|b| b.summary_line()),
+            }),
+        );
+    }
+
     let mut terminal = setup_terminal()?;
     let mut events = EventStream::new();
     let (llm_tx, mut llm_rx) = mpsc::unbounded_channel::<LlmDelta>();
@@ -462,6 +486,10 @@ async fn run_loop(
                             let text = state.input.trim().to_string();
                             if !text.is_empty() {
                                 state.input.clear();
+                                devlog::log_value(
+                                    "user_input",
+                                    json!({ "text": text }),
+                                );
                                 state.push_item(ChatItem::User(text.clone()));
                                 state.history.push(ChatMessage {
                                     role: Role::User,
@@ -594,6 +622,47 @@ async fn run_loop(
             draw(terminal, state)?;
         }
     }
+}
+
+fn log_delta(d: &LlmDelta) {
+    if !devlog::is_enabled() {
+        return;
+    }
+    let (kind, payload) = match d {
+        LlmDelta::TextDelta(t) => (
+            "text_delta",
+            json!({ "len": t.chars().count(), "text": t }),
+        ),
+        LlmDelta::ReasoningBegin => ("reasoning_begin", json!({})),
+        LlmDelta::ReasoningDelta(t) => (
+            "reasoning_delta",
+            json!({ "len": t.chars().count(), "text": t }),
+        ),
+        LlmDelta::ReasoningEnd => ("reasoning_end", json!({})),
+        LlmDelta::ToolBegin { id, name, detail } => (
+            "tool_begin",
+            json!({ "id": id, "name": name, "detail": detail }),
+        ),
+        LlmDelta::ToolOutput { id, chunk } => (
+            "tool_output",
+            json!({ "id": id, "chunk": chunk }),
+        ),
+        LlmDelta::ToolEnd {
+            id,
+            status,
+            summary,
+        } => (
+            "tool_end",
+            json!({
+                "id": id,
+                "status": format!("{:?}", status),
+                "summary": summary,
+            }),
+        ),
+        LlmDelta::MessageEnd => ("message_end", json!({})),
+        LlmDelta::Error(msg) => ("error", json!({ "message": msg })),
+    };
+    devlog::log_delta("tui", kind, payload);
 }
 
 fn has_running_item(state: &AppState) -> bool {

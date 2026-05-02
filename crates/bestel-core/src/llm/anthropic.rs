@@ -5,6 +5,7 @@ use tokio::sync::mpsc;
 
 use super::tools::{tool_schema, BuildContext, GET_ACTIVE_BUILD};
 use super::{ChatMessage, LlmDelta, Role, ToolStatus};
+use crate::devlog;
 use crate::prompt::SYSTEM_PROMPT;
 
 const API_URL: &str = "https://api.anthropic.com/v1/messages";
@@ -129,6 +130,8 @@ impl AnthropicClient {
                     if data == "[DONE]" {
                         continue;
                     }
+
+                    devlog::log_provider_raw("anthropic", &data);
 
                     let v: Value = match serde_json::from_str(&data) {
                         Ok(v) => v,
