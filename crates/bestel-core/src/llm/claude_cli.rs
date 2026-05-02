@@ -1,12 +1,13 @@
 use anyhow::{anyhow, Result};
 use serde_json::Value;
+use std::collections::HashMap;
 use std::process::Stdio;
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::mpsc;
 
 use super::spawn::cli_command;
 use super::tools::BuildContext;
-use super::{ChatMessage, LlmDelta, Role};
+use super::{ChatMessage, LlmDelta, Role, ToolStatus};
 use crate::prompt::SYSTEM_PROMPT;
 
 pub struct ClaudeCliClient {
@@ -32,10 +33,12 @@ impl ClaudeCliClient {
         ctx: BuildContext,
         deltas: mpsc::UnboundedSender<LlmDelta>,
     ) -> Result<String> {
-        let user_prompt = build_user_prompt(&history, &ctx);
+        let user_prompt = build_user_prompt(&history);
         let system_addon = format!(
             "{}\n\n[CURRENT PATH OF BUILDING DATA]\n{}\n\n[INSTRUCTIONS]\n\
-             Stay in character. Do not modify files. Do not run shell commands. Answer in the user's language.",
+             Stay in character as Bestel. Do not modify files. Do not run shell commands. \
+             Answer in the user's language (French by default). \
+             Quote concrete numbers from the build above when relevant.",
             SYSTEM_PROMPT,
             ctx.render_tool_result()
         );
@@ -44,7 +47,9 @@ impl ClaudeCliClient {
         cmd.arg("-p")
             .arg("--bare")
             .arg("--output-format")
-            .arg("text")
+            .arg("stream-json")
+            .arg("--include-partial-messages")
+            .arg("--verbose")
             .arg("--append-system-prompt")
             .arg(&system_addon)
             .arg("-")
@@ -63,7 +68,7 @@ impl ClaudeCliClient {
             drop(stdin);
         }
 
-        let mut stdout = child
+        let stdout = child
             .stdout
             .take()
             .ok_or_else(|| anyhow!("claude stdout missing"))?;
@@ -72,7 +77,9 @@ impl ClaudeCliClient {
             .take()
             .ok_or_else(|| anyhow!("claude stderr missing"))?;
 
+        let mut reader = BufReader::new(stdout).lines();
         let mut err_reader = BufReader::new(stderr).lines();
+
         let err_task = tokio::spawn(async move {
             let mut acc = String::new();
             while let Ok(Some(line)) = err_reader.next_line().await {
@@ -85,25 +92,39 @@ impl ClaudeCliClient {
             acc
         });
 
-        let mut full = String::new();
-        let mut buf = [0u8; 1024];
-        loop {
-            let n = stdout.read(&mut buf).await?;
-            if n == 0 {
-                break;
+        let mut state = ClaudeState::default();
+
+        while let Some(line) = reader.next_line().await? {
+            let trimmed = line.trim();
+            if trimmed.is_empty() {
+                continue;
             }
-            let chunk = String::from_utf8_lossy(&buf[..n]).to_string();
-            full.push_str(&chunk);
-            let _ = deltas.send(LlmDelta::Text(chunk));
+            let v: Value = match serde_json::from_str(trimmed) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+            handle_claude_event(&v, &deltas, &mut state);
         }
+
+        if state.reasoning_open {
+            let _ = deltas.send(LlmDelta::ReasoningEnd);
+            state.reasoning_open = false;
+        }
+        for id in state.running_tools.keys().cloned().collect::<Vec<_>>() {
+            let _ = deltas.send(LlmDelta::ToolEnd {
+                id,
+                status: ToolStatus::Done,
+                summary: None,
+            });
+        }
+        state.running_tools.clear();
 
         let err_buf = err_task.await.unwrap_or_default();
         let status = child.wait().await?;
 
-        if !status.success() && full.trim().is_empty() {
-            let hint = if err_buf.to_lowercase().contains("auth")
-                || err_buf.to_lowercase().contains("login")
-            {
+        if state.full_text.is_empty() && !status.success() {
+            let lower = err_buf.to_lowercase();
+            let hint = if lower.contains("auth") || lower.contains("login") {
                 " — connecte-toi avec `claude auth login` puis relance Bestel."
             } else {
                 ""
@@ -118,12 +139,235 @@ impl ClaudeCliClient {
             return Err(anyhow!(msg));
         }
 
-        let _ = deltas.send(LlmDelta::End);
-        Ok(full)
+        let _ = deltas.send(LlmDelta::MessageEnd);
+        Ok(state.full_text)
     }
 }
 
-fn build_user_prompt(history: &[ChatMessage], _ctx: &BuildContext) -> String {
+#[derive(Default)]
+struct ClaudeState {
+    reasoning_open: bool,
+    running_tools: HashMap<String, String>,
+    full_text: String,
+}
+
+fn handle_claude_event(
+    v: &Value,
+    deltas: &mpsc::UnboundedSender<LlmDelta>,
+    state: &mut ClaudeState,
+) {
+    let outer = v.get("type").and_then(|t| t.as_str()).unwrap_or("");
+
+    match outer {
+        "stream_event" => {
+            // Inner SSE events from streaming partial messages
+            if let Some(ev) = v.get("event") {
+                let etype = ev.get("type").and_then(|t| t.as_str()).unwrap_or("");
+                handle_inner_stream_event(etype, ev, deltas, state);
+            }
+        }
+        "assistant" => {
+            // Final assembled assistant message — we may already have streamed all of it.
+            // Used to detect tool_use blocks and guarantee text is captured if streaming was missed.
+            if let Some(msg) = v.get("message") {
+                if let Some(content) = msg.get("content").and_then(|c| c.as_array()) {
+                    for block in content {
+                        let btype = block.get("type").and_then(|t| t.as_str()).unwrap_or("");
+                        match btype {
+                            "tool_use" => {
+                                let id = block
+                                    .get("id")
+                                    .and_then(|s| s.as_str())
+                                    .unwrap_or("")
+                                    .to_string();
+                                let name = block
+                                    .get("name")
+                                    .and_then(|s| s.as_str())
+                                    .unwrap_or("tool")
+                                    .to_string();
+                                if !state.running_tools.contains_key(&id) {
+                                    state.running_tools.insert(id.clone(), name.clone());
+                                    let _ = deltas.send(LlmDelta::ToolBegin {
+                                        id,
+                                        name,
+                                        detail: None,
+                                    });
+                                }
+                            }
+                            "text" => {
+                                if let Some(text) =
+                                    block.get("text").and_then(|t| t.as_str())
+                                {
+                                    if state.full_text.is_empty() && !text.is_empty() {
+                                        state.full_text.push_str(text);
+                                        let _ = deltas
+                                            .send(LlmDelta::TextDelta(text.to_string()));
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        }
+        "user" => {
+            // tool_result back to model — surface as tool end if matching id
+            if let Some(msg) = v.get("message") {
+                if let Some(content) = msg.get("content").and_then(|c| c.as_array()) {
+                    for block in content {
+                        if block.get("type").and_then(|t| t.as_str()) == Some("tool_result") {
+                            let id = block
+                                .get("tool_use_id")
+                                .and_then(|s| s.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            let is_error = block
+                                .get("is_error")
+                                .and_then(|b| b.as_bool())
+                                .unwrap_or(false);
+                            let summary = extract_tool_result_summary(block);
+                            state.running_tools.remove(&id);
+                            let _ = deltas.send(LlmDelta::ToolEnd {
+                                id,
+                                status: if is_error {
+                                    ToolStatus::Failed
+                                } else {
+                                    ToolStatus::Done
+                                },
+                                summary,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        "result" => {
+            // Final result event — full result text (if not streamed already).
+            if let Some(r) = v.get("result").and_then(|r| r.as_str()) {
+                if state.full_text.is_empty() && !r.is_empty() {
+                    state.full_text.push_str(r);
+                    let _ = deltas.send(LlmDelta::TextDelta(r.to_string()));
+                }
+            }
+        }
+        "error" | "system" => {
+            // Surface system errors only.
+            if outer == "error" {
+                let msg = v
+                    .get("message")
+                    .and_then(|m| m.as_str())
+                    .unwrap_or("claude error")
+                    .to_string();
+                let _ = deltas.send(LlmDelta::Error(msg));
+            }
+        }
+        _ => {}
+    }
+}
+
+fn handle_inner_stream_event(
+    etype: &str,
+    ev: &Value,
+    deltas: &mpsc::UnboundedSender<LlmDelta>,
+    state: &mut ClaudeState,
+) {
+    match etype {
+        "content_block_start" => {
+            if let Some(block) = ev.get("content_block") {
+                let btype = block.get("type").and_then(|t| t.as_str()).unwrap_or("");
+                if btype == "thinking" || btype == "redacted_thinking" {
+                    if !state.reasoning_open {
+                        let _ = deltas.send(LlmDelta::ReasoningBegin);
+                        state.reasoning_open = true;
+                    }
+                } else if btype == "tool_use" {
+                    let id = block
+                        .get("id")
+                        .and_then(|s| s.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let name = block
+                        .get("name")
+                        .and_then(|s| s.as_str())
+                        .unwrap_or("tool")
+                        .to_string();
+                    if !state.running_tools.contains_key(&id) {
+                        state.running_tools.insert(id.clone(), name.clone());
+                        let _ = deltas.send(LlmDelta::ToolBegin {
+                            id,
+                            name,
+                            detail: None,
+                        });
+                    }
+                }
+            }
+        }
+        "content_block_delta" => {
+            if let Some(d) = ev.get("delta") {
+                let dtype = d.get("type").and_then(|t| t.as_str()).unwrap_or("");
+                match dtype {
+                    "text_delta" => {
+                        if let Some(text) = d.get("text").and_then(|t| t.as_str()) {
+                            if !text.is_empty() {
+                                state.full_text.push_str(text);
+                                let _ =
+                                    deltas.send(LlmDelta::TextDelta(text.to_string()));
+                            }
+                        }
+                    }
+                    "thinking_delta" => {
+                        if let Some(text) = d.get("thinking").and_then(|t| t.as_str()) {
+                            if !text.is_empty() {
+                                if !state.reasoning_open {
+                                    let _ = deltas.send(LlmDelta::ReasoningBegin);
+                                    state.reasoning_open = true;
+                                }
+                                let _ = deltas
+                                    .send(LlmDelta::ReasoningDelta(text.to_string()));
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        "content_block_stop" => {
+            if state.reasoning_open {
+                let _ = deltas.send(LlmDelta::ReasoningEnd);
+                state.reasoning_open = false;
+            }
+        }
+        _ => {}
+    }
+}
+
+fn extract_tool_result_summary(block: &Value) -> Option<String> {
+    if let Some(s) = block.get("content").and_then(|c| c.as_str()) {
+        return Some(first_line_summary(s, 100));
+    }
+    if let Some(arr) = block.get("content").and_then(|c| c.as_array()) {
+        for entry in arr {
+            if let Some(s) = entry.get("text").and_then(|t| t.as_str()) {
+                return Some(first_line_summary(s, 100));
+            }
+        }
+    }
+    None
+}
+
+fn first_line_summary(s: &str, max: usize) -> String {
+    let line = s.lines().next().unwrap_or(s).trim();
+    if line.chars().count() <= max {
+        line.to_string()
+    } else {
+        let mut out: String = line.chars().take(max).collect();
+        out.push('…');
+        out
+    }
+}
+
+fn build_user_prompt(history: &[ChatMessage]) -> String {
     let mut s = String::new();
     let take = history.len().saturating_sub(8);
     for m in &history[take..] {
@@ -133,34 +377,8 @@ fn build_user_prompt(history: &[ChatMessage], _ctx: &BuildContext) -> String {
         };
         s.push_str(&format!("{}: {}\n", speaker, m.content));
     }
-    if !s.contains("Bestel:") || !s.trim_end().ends_with(':') {
+    if !s.trim_end().ends_with(':') {
         s.push_str("Bestel:");
     }
     s
-}
-
-#[allow(dead_code)]
-fn parse_claude_json_event(line: &str) -> Option<String> {
-    let v: Value = serde_json::from_str(line).ok()?;
-    let t = v.get("type").and_then(|t| t.as_str()).unwrap_or("");
-    if t == "assistant" {
-        let content = v.get("message")?.get("content")?.as_array()?;
-        let mut out = String::new();
-        for block in content {
-            if block.get("type").and_then(|t| t.as_str()) == Some("text") {
-                if let Some(s) = block.get("text").and_then(|t| t.as_str()) {
-                    out.push_str(s);
-                }
-            }
-        }
-        if !out.is_empty() {
-            return Some(out);
-        }
-    }
-    if t == "result" {
-        if let Some(r) = v.get("result").and_then(|r| r.as_str()) {
-            return Some(r.to_string());
-        }
-    }
-    None
 }

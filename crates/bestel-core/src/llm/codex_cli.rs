@@ -1,12 +1,14 @@
 use anyhow::{anyhow, Result};
 use serde_json::Value;
+use std::collections::HashMap;
 use std::process::Stdio;
+use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::mpsc;
 
 use super::spawn::cli_command;
 use super::tools::BuildContext;
-use super::{ChatMessage, LlmDelta, Role};
+use super::{ChatMessage, LlmDelta, Role, ToolStatus};
 use crate::prompt::SYSTEM_PROMPT;
 
 pub struct CodexCliClient {
@@ -33,7 +35,6 @@ impl CodexCliClient {
         deltas: mpsc::UnboundedSender<LlmDelta>,
     ) -> Result<String> {
         let prompt = build_full_prompt(&history, &ctx);
-
         let reasoning =
             std::env::var("BESTEL_REASONING").unwrap_or_else(|_| "low".to_string());
 
@@ -60,8 +61,6 @@ impl CodexCliClient {
             .stderr(Stdio::piped())
             .kill_on_drop(true);
 
-        let _ = deltas.send(LlmDelta::Activity("démarre la session…".into()));
-
         let mut child = cmd
             .spawn()
             .map_err(|e| anyhow!("failed to spawn codex CLI: {}", e))?;
@@ -84,8 +83,7 @@ impl CodexCliClient {
         let mut reader = BufReader::new(stdout).lines();
         let mut err_reader = BufReader::new(stderr).lines();
 
-        let mut full = String::new();
-        let mut pushed_any = false;
+        let mut state = CodexState::default();
 
         let err_task = tokio::spawn(async move {
             let mut acc = String::new();
@@ -108,14 +106,28 @@ impl CodexCliClient {
                 Ok(v) => v,
                 Err(_) => continue,
             };
-
-            handle_codex_event(&v, &deltas, &mut full, &mut pushed_any);
+            handle_codex_event(&v, &deltas, &mut state).await;
         }
+
+        // close any reasoning still open
+        if state.reasoning_open {
+            let _ = deltas.send(LlmDelta::ReasoningEnd);
+            state.reasoning_open = false;
+        }
+        // close any tool still running
+        for id in state.running_tools.keys().cloned().collect::<Vec<_>>() {
+            let _ = deltas.send(LlmDelta::ToolEnd {
+                id,
+                status: ToolStatus::Failed,
+                summary: None,
+            });
+        }
+        state.running_tools.clear();
 
         let err_buf = err_task.await.unwrap_or_default();
         let status = child.wait().await?;
 
-        if !pushed_any && !status.success() {
+        if state.full_text.is_empty() && !status.success() {
             let lower = err_buf.to_lowercase();
             let hint = if lower.contains("not authenticated")
                 || lower.contains("login")
@@ -135,109 +147,120 @@ impl CodexCliClient {
             return Err(anyhow!(msg));
         }
 
-        let _ = deltas.send(LlmDelta::End);
-        Ok(full)
+        let _ = deltas.send(LlmDelta::MessageEnd);
+        Ok(state.full_text)
     }
 }
 
-fn handle_codex_event(
+#[derive(Default)]
+struct CodexState {
+    reasoning_open: bool,
+    running_tools: HashMap<String, String>, // id → name
+    last_reasoning_text: HashMap<String, String>, // item_id → text already sent
+    full_text: String,
+}
+
+async fn handle_codex_event(
     v: &Value,
     deltas: &mpsc::UnboundedSender<LlmDelta>,
-    full: &mut String,
-    pushed_any: &mut bool,
+    state: &mut CodexState,
 ) {
     let outer = v.get("type").and_then(|t| t.as_str()).unwrap_or("");
 
     match outer {
-        "thread.started" => {
-            let _ = deltas.send(LlmDelta::Activity("session ouverte".into()));
-            return;
-        }
-        "turn.started" => {
-            let _ = deltas.send(LlmDelta::Activity("Bestel délie ses pensées".into()));
-            return;
-        }
-        "turn.completed" => {
-            return;
-        }
+        "thread.started" | "turn.started" | "turn.completed" => return,
         _ => {}
     }
 
-    if matches!(outer, "item.started" | "item.updated" | "item.completed") {
-        if let Some(item) = v.get("item") {
-            handle_codex_item(outer, item, deltas, full, pushed_any);
-        }
+    if !matches!(outer, "item.started" | "item.updated" | "item.completed") {
         return;
     }
-}
 
-fn handle_codex_item(
-    event: &str,
-    item: &Value,
-    deltas: &mpsc::UnboundedSender<LlmDelta>,
-    full: &mut String,
-    pushed_any: &mut bool,
-) {
+    let item = match v.get("item") {
+        Some(i) => i,
+        None => return,
+    };
     let item_type = item.get("type").and_then(|t| t.as_str()).unwrap_or("");
+    let item_id = item
+        .get("id")
+        .and_then(|t| t.as_str())
+        .unwrap_or("")
+        .to_string();
 
     match item_type {
         "agent_message" => {
-            if event == "item.completed" {
+            if outer == "item.completed" {
                 if let Some(text) = item.get("text").and_then(|t| t.as_str()) {
                     if !text.is_empty() {
-                        *pushed_any = true;
-                        full.push_str(text);
-                        let _ = deltas.send(LlmDelta::Text(text.to_string()));
+                        state.full_text.push_str(text);
+                        pseudo_stream(deltas, text).await;
                     }
                 }
-            } else if event == "item.updated" {
-                if let Some(delta) = item
-                    .get("delta")
-                    .and_then(|d| d.as_str())
-                    .or_else(|| item.get("text").and_then(|d| d.as_str()))
-                {
+            } else if outer == "item.updated" {
+                if let Some(delta) = item.get("delta").and_then(|d| d.as_str()) {
                     if !delta.is_empty() {
-                        *pushed_any = true;
-                        full.push_str(delta);
-                        let _ = deltas.send(LlmDelta::Text(delta.to_string()));
+                        state.full_text.push_str(delta);
+                        let _ = deltas.send(LlmDelta::TextDelta(delta.to_string()));
                     }
                 }
             }
         }
         "reasoning" => {
-            if event == "item.completed" || event == "item.updated" {
-                if let Some(text) = item
+            if outer == "item.started" {
+                if !state.reasoning_open {
+                    let _ = deltas.send(LlmDelta::ReasoningBegin);
+                    state.reasoning_open = true;
+                }
+            }
+            if outer == "item.updated" || outer == "item.completed" {
+                let text = item
                     .get("text")
                     .and_then(|t| t.as_str())
                     .or_else(|| item.get("summary").and_then(|t| t.as_str()))
-                {
-                    let trimmed = text.trim();
-                    if !trimmed.is_empty() {
-                        let snippet = first_line_summary(trimmed, 80);
-                        let _ = deltas.send(LlmDelta::Reasoning(snippet));
+                    .unwrap_or("");
+                if !text.is_empty() {
+                    if !state.reasoning_open {
+                        let _ = deltas.send(LlmDelta::ReasoningBegin);
+                        state.reasoning_open = true;
+                    }
+                    let already = state
+                        .last_reasoning_text
+                        .entry(item_id.clone())
+                        .or_default();
+                    if text.starts_with(already.as_str()) {
+                        let new_part: String = text[already.len()..].to_string();
+                        if !new_part.is_empty() {
+                            let _ = deltas.send(LlmDelta::ReasoningDelta(new_part));
+                            *already = text.to_string();
+                        }
+                    } else {
+                        // text was rewritten — emit full as new chunk
+                        let _ = deltas.send(LlmDelta::ReasoningDelta(text.to_string()));
+                        *already = text.to_string();
                     }
                 }
-            } else if event == "item.started" {
-                let _ = deltas.send(LlmDelta::Activity("Bestel médite".into()));
+            }
+            if outer == "item.completed" && state.reasoning_open {
+                let _ = deltas.send(LlmDelta::ReasoningEnd);
+                state.reasoning_open = false;
+                state.last_reasoning_text.remove(&item_id);
             }
         }
         "command_execution" | "command_executed" | "shell_command" => {
-            let cmd = item
+            let cmd_str = item
                 .get("command")
                 .and_then(|c| c.as_str())
                 .or_else(|| item.get("name").and_then(|c| c.as_str()))
                 .unwrap_or("commande");
-            if event == "item.started" {
-                let _ = deltas.send(LlmDelta::ToolCall {
-                    name: "shell".into(),
-                    detail: Some(first_line_summary(cmd, 80)),
-                });
-            } else if event == "item.completed" {
-                let _ = deltas.send(LlmDelta::ToolResult {
-                    name: "shell".into(),
-                    detail: Some(first_line_summary(cmd, 80)),
-                });
-            }
+            handle_tool_lifecycle(
+                outer,
+                &item_id,
+                "shell",
+                Some(first_line_summary(cmd_str, 80)),
+                item,
+                deltas,
+                state,
+            );
         }
         "function_call" | "tool_call" => {
             let name = item
@@ -245,36 +268,93 @@ fn handle_codex_item(
                 .and_then(|c| c.as_str())
                 .unwrap_or("tool")
                 .to_string();
-            if event == "item.started" {
-                let _ = deltas.send(LlmDelta::ToolCall {
-                    name,
-                    detail: None,
-                });
-            } else if event == "item.completed" {
-                let _ = deltas.send(LlmDelta::ToolResult {
-                    name,
-                    detail: None,
-                });
-            }
+            handle_tool_lifecycle(outer, &item_id, &name, None, item, deltas, state);
         }
         "web_search" | "web_fetch" => {
-            let query = item
+            let detail = item
                 .get("query")
                 .and_then(|c| c.as_str())
                 .or_else(|| item.get("url").and_then(|c| c.as_str()))
-                .unwrap_or("");
-            if event == "item.started" {
-                let _ = deltas.send(LlmDelta::ToolCall {
-                    name: "web".into(),
-                    detail: if query.is_empty() {
-                        None
-                    } else {
-                        Some(first_line_summary(query, 80))
-                    },
-                });
-            }
+                .map(|s| first_line_summary(s, 80));
+            handle_tool_lifecycle(outer, &item_id, "web", detail, item, deltas, state);
         }
         _ => {}
+    }
+}
+
+fn handle_tool_lifecycle(
+    outer: &str,
+    id: &str,
+    name: &str,
+    detail: Option<String>,
+    item: &Value,
+    deltas: &mpsc::UnboundedSender<LlmDelta>,
+    state: &mut CodexState,
+) {
+    match outer {
+        "item.started" => {
+            state
+                .running_tools
+                .insert(id.to_string(), name.to_string());
+            let _ = deltas.send(LlmDelta::ToolBegin {
+                id: id.to_string(),
+                name: name.to_string(),
+                detail,
+            });
+        }
+        "item.updated" => {
+            if let Some(out) = item.get("output").and_then(|o| o.as_str()) {
+                let snippet = first_line_summary(out, 200);
+                if !snippet.is_empty() {
+                    let _ = deltas.send(LlmDelta::ToolOutput {
+                        id: id.to_string(),
+                        chunk: snippet,
+                    });
+                }
+            }
+        }
+        "item.completed" => {
+            let status = item
+                .get("status")
+                .and_then(|s| s.as_str())
+                .map(|s| {
+                    if s.eq_ignore_ascii_case("failed") || s.eq_ignore_ascii_case("error") {
+                        ToolStatus::Failed
+                    } else {
+                        ToolStatus::Done
+                    }
+                })
+                .unwrap_or(ToolStatus::Done);
+            let summary = item
+                .get("summary")
+                .and_then(|s| s.as_str())
+                .or_else(|| item.get("output").and_then(|s| s.as_str()))
+                .map(|s| first_line_summary(s, 100));
+            state.running_tools.remove(id);
+            let _ = deltas.send(LlmDelta::ToolEnd {
+                id: id.to_string(),
+                status,
+                summary,
+            });
+        }
+        _ => {}
+    }
+}
+
+async fn pseudo_stream(deltas: &mpsc::UnboundedSender<LlmDelta>, text: &str) {
+    // Simulate token streaming when codex hands us the full message at once.
+    // ~80 chars / sec → chunk of 4 chars every 50ms.
+    let chunk_size = 4usize;
+    let chars: Vec<char> = text.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        let end = (i + chunk_size).min(chars.len());
+        let chunk: String = chars[i..end].iter().collect();
+        if deltas.send(LlmDelta::TextDelta(chunk)).is_err() {
+            return;
+        }
+        i = end;
+        tokio::time::sleep(Duration::from_millis(50)).await;
     }
 }
 

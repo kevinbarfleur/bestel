@@ -27,14 +27,34 @@ pub struct ChatMessage {
     pub content: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolStatus {
+    Running,
+    Done,
+    Failed,
+}
+
 #[derive(Debug, Clone)]
 pub enum LlmDelta {
-    Text(String),
-    Activity(String),
-    ToolCall { name: String, detail: Option<String> },
-    ToolResult { name: String, detail: Option<String> },
-    Reasoning(String),
-    End,
+    TextDelta(String),
+    ReasoningBegin,
+    ReasoningDelta(String),
+    ReasoningEnd,
+    ToolBegin {
+        id: String,
+        name: String,
+        detail: Option<String>,
+    },
+    ToolOutput {
+        id: String,
+        chunk: String,
+    },
+    ToolEnd {
+        id: String,
+        status: ToolStatus,
+        summary: Option<String>,
+    },
+    MessageEnd,
     Error(String),
 }
 

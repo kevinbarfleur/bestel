@@ -4,7 +4,7 @@ use serde_json::{json, Value};
 use tokio::sync::mpsc;
 
 use super::tools::{tool_schema, BuildContext, GET_ACTIVE_BUILD};
-use super::{ChatMessage, LlmDelta, Role};
+use super::{ChatMessage, LlmDelta, Role, ToolStatus};
 use crate::prompt::SYSTEM_PROMPT;
 
 const API_URL: &str = "https://api.anthropic.com/v1/messages";
@@ -99,6 +99,7 @@ impl AnthropicClient {
             let mut current_text_index_text = std::collections::BTreeMap::<usize, String>::new();
             let mut current_tool_index: std::collections::BTreeMap<usize, ToolUse> =
                 std::collections::BTreeMap::new();
+            let mut thinking_open: bool = false;
             let mut stop_reason: Option<String> = None;
 
             while let Some(chunk) = stream.next().await {
@@ -160,14 +161,23 @@ impl AnthropicClient {
                                 current_tool_index.insert(
                                     idx,
                                     ToolUse {
-                                        id,
+                                        id: id.clone(),
                                         name: name.clone(),
                                         input_json: String::new(),
                                     },
                                 );
-                                let _ = deltas.send(LlmDelta::ToolCall { name, detail: None });
+                                let _ = deltas.send(LlmDelta::ToolBegin {
+                                    id,
+                                    name,
+                                    detail: None,
+                                });
                             } else if btype == "text" {
                                 current_text_index_text.entry(idx).or_default();
+                            } else if btype == "thinking" || btype == "redacted_thinking" {
+                                if !thinking_open {
+                                    let _ = deltas.send(LlmDelta::ReasoningBegin);
+                                    thinking_open = true;
+                                }
                             }
                         }
                         "content_block_delta" => {
@@ -188,7 +198,19 @@ impl AnthropicClient {
                                                 .or_default()
                                                 .push_str(text);
                                             let _ = deltas
-                                                .send(LlmDelta::Text(text.to_string()));
+                                                .send(LlmDelta::TextDelta(text.to_string()));
+                                        }
+                                    }
+                                    "thinking_delta" => {
+                                        if let Some(text) =
+                                            d.get("thinking").and_then(|t| t.as_str())
+                                        {
+                                            if !thinking_open {
+                                                let _ = deltas.send(LlmDelta::ReasoningBegin);
+                                                thinking_open = true;
+                                            }
+                                            let _ = deltas
+                                                .send(LlmDelta::ReasoningDelta(text.to_string()));
                                         }
                                     }
                                     "input_json_delta" => {
@@ -214,6 +236,10 @@ impl AnthropicClient {
                                 .unwrap_or(0) as usize;
                             if let Some(t) = current_tool_index.remove(&idx) {
                                 tool_uses.push(t);
+                            }
+                            if thinking_open {
+                                let _ = deltas.send(LlmDelta::ReasoningEnd);
+                                thinking_open = false;
                             }
                         }
                         "message_delta" => {
@@ -283,9 +309,10 @@ impl AnthropicClient {
                         GET_ACTIVE_BUILD => ctx.render_tool_result(),
                         other => json!({"error": format!("unknown tool {}", other)}).to_string(),
                     };
-                    let _ = deltas.send(LlmDelta::ToolResult {
-                        name: tu.name.clone(),
-                        detail: None,
+                    let _ = deltas.send(LlmDelta::ToolEnd {
+                        id: tu.id.clone(),
+                        status: ToolStatus::Done,
+                        summary: None,
                     });
                     user_content.push(json!({
                         "type": "tool_result",
@@ -303,7 +330,7 @@ impl AnthropicClient {
             break;
         }
 
-        let _ = deltas.send(LlmDelta::End);
+        let _ = deltas.send(LlmDelta::MessageEnd);
         Ok(full_assistant)
     }
 }
