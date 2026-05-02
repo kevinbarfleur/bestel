@@ -1,6 +1,7 @@
+use std::collections::VecDeque;
 use std::io::{stdout, Stdout};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use crossterm::event::{Event, EventStream, KeyCode, KeyEventKind, KeyModifiers};
@@ -25,11 +26,32 @@ pub enum ChatRole {
     User,
     Assistant,
     System,
+    Tool,
 }
 
 pub struct ChatLine {
     pub role: ChatRole,
     pub text: String,
+}
+
+#[derive(Clone)]
+pub struct ActivityState {
+    pub started_at: Instant,
+    pub label: String,
+    pub trail: VecDeque<String>,
+}
+
+impl ActivityState {
+    pub fn elapsed(&self) -> Duration {
+        self.started_at.elapsed()
+    }
+
+    pub fn push_trail(&mut self, line: String) {
+        if self.trail.len() >= 5 {
+            self.trail.pop_front();
+        }
+        self.trail.push_back(line);
+    }
 }
 
 pub struct AppState {
@@ -38,6 +60,8 @@ pub struct AppState {
     pub display: Vec<ChatLine>,
     pub input: String,
     pub streaming: bool,
+    pub activity: Option<ActivityState>,
+    pub spinner_frame: usize,
     pub model_label: String,
     pub auth_label: String,
     pub probes: Vec<Probe>,
@@ -64,6 +88,8 @@ impl AppState {
             display,
             input: String::new(),
             streaming: false,
+            activity: None,
+            spinner_frame: 0,
             model_label,
             auth_label,
             probes,
@@ -85,12 +111,40 @@ impl AppState {
             text: chunk.to_string(),
         });
     }
+
+    pub fn start_activity(&mut self, label: String) {
+        self.activity = Some(ActivityState {
+            started_at: Instant::now(),
+            label,
+            trail: VecDeque::new(),
+        });
+        self.spinner_frame = 0;
+    }
+
+    pub fn set_activity_label(&mut self, label: String) {
+        if let Some(a) = self.activity.as_mut() {
+            a.label = label;
+        } else {
+            self.start_activity(label);
+        }
+    }
+
+    pub fn push_activity_trail(&mut self, line: String) {
+        if let Some(a) = self.activity.as_mut() {
+            a.push_trail(line);
+        }
+    }
+
+    pub fn end_activity(&mut self) {
+        self.activity = None;
+    }
 }
 
 enum AppEvent {
     Crossterm(crossterm::event::Event),
     Pob(PobBuild),
     Llm(LlmDelta),
+    Tick,
 }
 
 pub async fn run() -> Result<()> {
@@ -119,10 +173,11 @@ pub async fn run() -> Result<()> {
 
     let mut state = AppState::new(model_label, auth_label, probes, watching_dirs);
     state.build = initial_build;
+
     if provider.is_none() {
         let probes_txt = render_probes(&state.probes);
         let mut msg = String::from(
-            "Aucun moyen de parler avec Bestel.\n\nInstalle un des outils suivants \
+            "Aucun moyen de parler avec Bestel. Installe l'un de ces outils \
              ou définis ANTHROPIC_API_KEY :\n",
         );
         msg.push_str(&probes_txt);
@@ -174,127 +229,151 @@ async fn run_loop(
 ) -> Result<()> {
     terminal.draw(|f| ui::render(f, state))?;
 
-    let mut tick = tokio::time::interval(Duration::from_millis(100));
+    let mut tick = tokio::time::interval(Duration::from_millis(120));
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     loop {
-        let app_event: Option<AppEvent> = tokio::select! {
+        let app_event: AppEvent = tokio::select! {
             maybe = events.next() => {
                 match maybe {
-                    Some(Ok(ev)) => Some(AppEvent::Crossterm(ev)),
+                    Some(Ok(ev)) => AppEvent::Crossterm(ev),
                     Some(Err(_)) | None => return Ok(()),
                 }
             }
             res = pob_rx.recv() => {
                 match res {
-                    Ok(b) => Some(AppEvent::Pob(b)),
-                    Err(_) => None,
+                    Ok(b) => AppEvent::Pob(b),
+                    Err(_) => continue,
                 }
             }
-            Some(d) = llm_rx.recv() => {
-                Some(AppEvent::Llm(d))
-            }
-            _ = tick.tick() => None,
+            Some(d) = llm_rx.recv() => AppEvent::Llm(d),
+            _ = tick.tick() => AppEvent::Tick,
         };
 
-        if let Some(ev) = app_event {
-            match ev {
-                AppEvent::Crossterm(Event::Key(k)) if k.kind == KeyEventKind::Press => {
-                    if k.modifiers.contains(KeyModifiers::CONTROL) && k.code == KeyCode::Char('c') {
-                        return Ok(());
-                    }
-                    match k.code {
-                        KeyCode::Esc => return Ok(()),
-                        KeyCode::Enter => {
-                            if !state.streaming {
-                                let text = state.input.trim().to_string();
-                                if !text.is_empty() {
-                                    state.input.clear();
-                                    state.display.push(ChatLine {
-                                        role: ChatRole::User,
-                                        text: text.clone(),
+        let mut needs_redraw = true;
+
+        match app_event {
+            AppEvent::Crossterm(Event::Key(k)) if k.kind == KeyEventKind::Press => {
+                if k.modifiers.contains(KeyModifiers::CONTROL) && k.code == KeyCode::Char('c') {
+                    return Ok(());
+                }
+                match k.code {
+                    KeyCode::Esc => return Ok(()),
+                    KeyCode::Enter => {
+                        if !state.streaming {
+                            let text = state.input.trim().to_string();
+                            if !text.is_empty() {
+                                state.input.clear();
+                                state.display.push(ChatLine {
+                                    role: ChatRole::User,
+                                    text: text.clone(),
+                                });
+                                state.history.push(ChatMessage {
+                                    role: Role::User,
+                                    content: text,
+                                });
+                                if let Some(p) = provider.clone() {
+                                    state.streaming = true;
+                                    state.start_activity("Bestel consulte les vieux récits".into());
+                                    let history = state.history.clone();
+                                    let ctx = ctx.clone();
+                                    let tx = llm_tx.clone();
+                                    tokio::spawn(async move {
+                                        if let Err(e) = p.run(history, ctx, tx.clone()).await {
+                                            let _ = tx.send(LlmDelta::Error(e.to_string()));
+                                        }
                                     });
-                                    state.history.push(ChatMessage {
-                                        role: Role::User,
-                                        content: text,
-                                    });
-                                    if let Some(p) = provider.clone() {
-                                        state.streaming = true;
-                                        state.status = "Bestel consulte les vieux récits…".into();
-                                        let history = state.history.clone();
-                                        let ctx = ctx.clone();
-                                        let tx = llm_tx.clone();
-                                        tokio::spawn(async move {
-                                            if let Err(e) =
-                                                p.run(history, ctx, tx.clone()).await
-                                            {
-                                                let _ = tx.send(LlmDelta::Error(e.to_string()));
-                                            }
-                                        });
-                                    } else {
-                                        state.status =
-                                            "Aucun provider disponible.".into();
-                                    }
+                                } else {
+                                    state.status = "Aucun provider disponible.".into();
                                 }
                             }
                         }
-                        KeyCode::Backspace => {
-                            state.input.pop();
+                    }
+                    KeyCode::Backspace => {
+                        state.input.pop();
+                    }
+                    KeyCode::Char(c) => {
+                        state.input.push(c);
+                    }
+                    KeyCode::PageUp => {
+                        state.scroll = state.scroll.saturating_add(5);
+                    }
+                    KeyCode::PageDown => {
+                        state.scroll = state.scroll.saturating_sub(5);
+                    }
+                    _ => {}
+                }
+            }
+            AppEvent::Crossterm(_) => {
+                needs_redraw = false;
+            }
+            AppEvent::Pob(b) => {
+                ctx.set(b.clone());
+                state.status = format!("PoB mis à jour : {}", b.summary_line());
+                state.build = Some(b);
+            }
+            AppEvent::Llm(d) => match d {
+                LlmDelta::Text(t) => {
+                    state.push_assistant_chunk(&t);
+                    state.set_activity_label("Bestel parle".into());
+                }
+                LlmDelta::Activity(a) => {
+                    state.set_activity_label(a);
+                }
+                LlmDelta::Reasoning(s) => {
+                    state.push_activity_trail(format!("💭 {}", s));
+                    state.set_activity_label("Bestel médite".into());
+                }
+                LlmDelta::ToolCall { name, detail } => {
+                    let line = match detail {
+                        Some(d) => format!("⚙ {} · {}", name, d),
+                        None => format!("⚙ {}", name),
+                    };
+                    state.push_activity_trail(line.clone());
+                    state.set_activity_label(format!("invoque {}", name));
+                }
+                LlmDelta::ToolResult { name, detail } => {
+                    let line = match detail {
+                        Some(d) => format!("✓ {} · {}", name, d),
+                        None => format!("✓ {}", name),
+                    };
+                    state.push_activity_trail(line);
+                }
+                LlmDelta::End => {
+                    state.streaming = false;
+                    state.end_activity();
+                    state.status.clear();
+                    if let Some(last) = state.display.last() {
+                        if matches!(last.role, ChatRole::Assistant) {
+                            state.history.push(ChatMessage {
+                                role: Role::Assistant,
+                                content: last.text.clone(),
+                            });
                         }
-                        KeyCode::Char(c) => {
-                            state.input.push(c);
-                        }
-                        KeyCode::PageUp => {
-                            state.scroll = state.scroll.saturating_add(5);
-                        }
-                        KeyCode::PageDown => {
-                            state.scroll = state.scroll.saturating_sub(5);
-                        }
-                        _ => {}
                     }
                 }
-                AppEvent::Crossterm(Event::Resize(_, _)) => {}
-                AppEvent::Crossterm(_) => {}
-                AppEvent::Pob(b) => {
-                    ctx.set(b.clone());
-                    state.status = format!("PoB mis à jour : {}", b.summary_line());
-                    state.build = Some(b);
+                LlmDelta::Error(msg) => {
+                    state.streaming = false;
+                    state.end_activity();
+                    state.status = format!("Erreur : {}", msg);
+                    state.display.push(ChatLine {
+                        role: ChatRole::System,
+                        text: format!("⚠ {}", msg),
+                    });
                 }
-                AppEvent::Llm(d) => match d {
-                    LlmDelta::Text(t) => {
-                        state.push_assistant_chunk(&t);
-                    }
-                    LlmDelta::ToolCall { name } => {
-                        state.status = format!("Bestel invoque : {}", name);
-                    }
-                    LlmDelta::ToolResult { name } => {
-                        state.status = format!("Réponse du parchemin : {}", name);
-                    }
-                    LlmDelta::End => {
-                        state.streaming = false;
-                        state.status.clear();
-                        if let Some(last) = state.display.last() {
-                            if matches!(last.role, ChatRole::Assistant) {
-                                state.history.push(ChatMessage {
-                                    role: Role::Assistant,
-                                    content: last.text.clone(),
-                                });
-                            }
-                        }
-                    }
-                    LlmDelta::Error(msg) => {
-                        state.streaming = false;
-                        state.status = format!("Erreur : {}", msg);
-                        state.display.push(ChatLine {
-                            role: ChatRole::System,
-                            text: format!("⚠ {}", msg),
-                        });
-                    }
-                },
+            },
+            AppEvent::Tick => {
+                if state.streaming {
+                    state.spinner_frame = state.spinner_frame.wrapping_add(1);
+                } else {
+                    needs_redraw = false;
+                }
             }
         }
 
-        terminal.draw(|f| ui::render(f, state))?;
+        if needs_redraw {
+            terminal.draw(|f| ui::render(f, state))?;
+        }
     }
 }
 

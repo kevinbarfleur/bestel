@@ -30,8 +30,10 @@ pub struct ChatMessage {
 #[derive(Debug, Clone)]
 pub enum LlmDelta {
     Text(String),
-    ToolCall { name: String },
-    ToolResult { name: String },
+    Activity(String),
+    ToolCall { name: String, detail: Option<String> },
+    ToolResult { name: String, detail: Option<String> },
+    Reasoning(String),
     End,
     Error(String),
 }

@@ -165,7 +165,7 @@ impl AnthropicClient {
                                         input_json: String::new(),
                                     },
                                 );
-                                let _ = deltas.send(LlmDelta::ToolCall { name });
+                                let _ = deltas.send(LlmDelta::ToolCall { name, detail: None });
                             } else if btype == "text" {
                                 current_text_index_text.entry(idx).or_default();
                             }
@@ -285,6 +285,7 @@ impl AnthropicClient {
                     };
                     let _ = deltas.send(LlmDelta::ToolResult {
                         name: tu.name.clone(),
+                        detail: None,
                     });
                     user_content.push(json!({
                         "type": "tool_result",

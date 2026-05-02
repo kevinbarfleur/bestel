@@ -4,8 +4,12 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Paragraph, Wrap};
 use ratatui::Frame;
 
-use crate::app::{AppState, ChatLine, ChatRole};
+use crate::app::{ActivityState, AppState, ChatLine, ChatRole};
 use bestel_core::pob::PobBuild;
+
+const SPINNER: &[&str] = &[
+    "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏",
+];
 
 pub fn render(f: &mut Frame, state: &AppState) {
     let area = f.area();
@@ -188,9 +192,25 @@ fn fmt_dps(v: Option<f64>) -> String {
 }
 
 fn render_chat_panel(f: &mut Frame, state: &AppState, area: Rect) {
+    let activity_height = state
+        .activity
+        .as_ref()
+        .map(|a| 2 + a.trail.len() as u16)
+        .unwrap_or(0);
+
+    let constraints: Vec<Constraint> = if activity_height > 0 {
+        vec![
+            Constraint::Min(1),
+            Constraint::Length(activity_height + 2),
+            Constraint::Length(3),
+        ]
+    } else {
+        vec![Constraint::Min(1), Constraint::Length(3)]
+    };
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(1), Constraint::Length(3)])
+        .constraints(constraints)
         .split(area);
 
     let chat_block = Block::default()
@@ -207,12 +227,6 @@ fn render_chat_panel(f: &mut Frame, state: &AppState, area: Rect) {
         push_chat(&mut lines, line);
         lines.push(Line::from(""));
     }
-    if state.streaming {
-        lines.push(Line::from(Span::styled(
-            "▌",
-            Style::default().fg(Color::DarkGray),
-        )));
-    }
 
     let total = lines.len() as u16;
     let visible = chunks[0].height.saturating_sub(2);
@@ -225,6 +239,55 @@ fn render_chat_panel(f: &mut Frame, state: &AppState, area: Rect) {
         .scroll((scroll, 0));
     f.render_widget(p, chunks[0]);
 
+    if let Some(activity) = state.activity.as_ref() {
+        render_activity_panel(f, state, activity, chunks[1]);
+        render_input(f, state, chunks[2]);
+    } else {
+        render_input(f, state, chunks[1]);
+    }
+}
+
+fn render_activity_panel(f: &mut Frame, state: &AppState, activity: &ActivityState, area: Rect) {
+    let frame = SPINNER[state.spinner_frame % SPINNER.len()];
+    let elapsed = activity.elapsed();
+    let elapsed_label = if elapsed.as_secs() < 60 {
+        format!("{:.1}s", elapsed.as_secs_f32())
+    } else {
+        format!("{}m{:02}s", elapsed.as_secs() / 60, elapsed.as_secs() % 60)
+    };
+
+    let title = format!(" {} {} · {} ", frame, activity.label, elapsed_label);
+
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Yellow))
+        .title(Span::styled(
+            title,
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+        ));
+
+    let mut lines: Vec<Line> = Vec::new();
+    if activity.trail.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "  (Bestel s'apprête à parler…)",
+            Style::default().fg(Color::DarkGray),
+        )));
+    } else {
+        for t in &activity.trail {
+            lines.push(Line::from(Span::styled(
+                format!("  {}", t),
+                Style::default().fg(Color::Gray),
+            )));
+        }
+    }
+
+    let p = Paragraph::new(lines).block(block).wrap(Wrap { trim: false });
+    f.render_widget(p, area);
+}
+
+fn render_input(f: &mut Frame, state: &AppState, area: Rect) {
     let input_block = Block::default()
         .borders(Borders::ALL)
         .title(Span::styled(
@@ -240,7 +303,7 @@ fn render_chat_panel(f: &mut Frame, state: &AppState, area: Rect) {
         Line::from(Span::raw(state.input.clone()))
     };
     let input = Paragraph::new(input_text).block(input_block);
-    f.render_widget(input, chunks[1]);
+    f.render_widget(input, area);
 }
 
 fn push_chat(lines: &mut Vec<Line<'static>>, msg: &ChatLine) {
@@ -258,19 +321,68 @@ fn push_chat(lines: &mut Vec<Line<'static>>, msg: &ChatLine) {
                 .add_modifier(Modifier::BOLD),
         ),
         ChatRole::System => ("· ", Style::default().fg(Color::DarkGray)),
+        ChatRole::Tool => ("⚙ ", Style::default().fg(Color::Magenta)),
     };
     let mut first = true;
     for line in msg.text.split('\n') {
         if first {
-            lines.push(Line::from(vec![
-                Span::styled(prefix, style),
-                Span::raw(line.to_string()),
-            ]));
+            let mut spans: Vec<Span<'static>> = vec![Span::styled(prefix, style)];
+            spans.extend(linkify(line));
+            lines.push(Line::from(spans));
             first = false;
         } else {
-            lines.push(Line::from(Span::raw(line.to_string())));
+            lines.push(Line::from(linkify(line)));
         }
     }
+}
+
+fn linkify(line: &str) -> Vec<Span<'static>> {
+    let mut out: Vec<Span<'static>> = Vec::new();
+    let mut rest = line.to_string();
+
+    while let Some(open) = rest.find("[") {
+        let pre = rest[..open].to_string();
+        if !pre.is_empty() {
+            out.push(Span::raw(pre));
+        }
+        let after = &rest[open + 1..];
+        let close = match after.find("](") {
+            Some(c) => c,
+            None => {
+                out.push(Span::raw(rest));
+                return out;
+            }
+        };
+        let label = after[..close].to_string();
+        let url_start = close + 2;
+        let url_end = match after[url_start..].find(')') {
+            Some(c) => c,
+            None => {
+                out.push(Span::raw(rest));
+                return out;
+            }
+        };
+        let url = after[url_start..url_start + url_end].to_string();
+        let after_link = &after[url_start + url_end + 1..];
+
+        out.push(make_hyperlink(&label, &url));
+        rest = after_link.to_string();
+    }
+
+    if !rest.is_empty() {
+        out.push(Span::raw(rest));
+    }
+    out
+}
+
+fn make_hyperlink(label: &str, url: &str) -> Span<'static> {
+    let osc = format!("\x1b]8;;{}\x1b\\{}\x1b]8;;\x1b\\", url, label);
+    Span::styled(
+        osc,
+        Style::default()
+            .fg(Color::LightBlue)
+            .add_modifier(Modifier::UNDERLINED),
+    )
 }
 
 fn render_footer(f: &mut Frame, state: &AppState, area: Rect) {
