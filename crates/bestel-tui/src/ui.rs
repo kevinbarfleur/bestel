@@ -472,7 +472,8 @@ fn render_input(f: &mut Frame, state: &AppState, area: Rect) {
             Style::default()
                 .fg(Color::Yellow)
                 .add_modifier(Modifier::BOLD),
-            " > parle, exilé  ·  Enter envoyer  ·  Shift+Enter ↵  ·  Ctrl+C quitter ".to_string(),
+            " > parle, exilé  ·  Enter envoyer  ·  Ctrl+J nouvelle ligne  ·  Ctrl+C quitter "
+                .to_string(),
         )
     };
 

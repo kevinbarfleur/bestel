@@ -365,9 +365,23 @@ fn spawn_input_task(tx: mpsc::UnboundedSender<AppEvent>) {
             let Ok(ev) = maybe else { continue };
             let app_ev = match ev {
                 Event::Key(k) => {
-                    // Accept Press AND Repeat. On Windows, holding a key fires
-                    // Repeat events; without this branch they are silently
-                    // dropped and typing feels lossy.
+                    // Log EVERY raw key the terminal sends us (even Release).
+                    // Critical for diagnosing 'modifier swallowed by terminal'
+                    // issues — the user can press a combo and see exactly
+                    // what crossterm received. Disabled at runtime unless
+                    // BESTEL_DEV_LOG=1.
+                    devlog::log_value(
+                        "raw_key",
+                        json!({
+                            "code": format!("{:?}", k.code),
+                            "modifiers": format!("{:?}", k.modifiers),
+                            "kind": format!("{:?}", k.kind),
+                            "state": format!("{:?}", k.state),
+                        }),
+                    );
+                    // Accept Press AND Repeat. On Windows, holding a key
+                    // fires Repeat events; without this branch they are
+                    // silently dropped and typing feels lossy.
                     if matches!(k.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
                         AppEvent::Key(k)
                     } else {
@@ -507,12 +521,26 @@ fn handle_key(
                 return true;
             }
         }
-        KeyCode::Enter if shift || alt => {
+        // Newline triggers — listed broadly so at least one works on every
+        // terminal/host combo. The original Enter without any modifier
+        // submits the message.
+        KeyCode::Enter if shift || alt || ctrl => {
             if !state.streaming {
                 state.input.push('\n');
             }
         }
         KeyCode::Char('j') if ctrl => {
+            if !state.streaming {
+                state.input.push('\n');
+            }
+        }
+        KeyCode::Char('m') if ctrl && shift => {
+            if !state.streaming {
+                state.input.push('\n');
+            }
+        }
+        KeyCode::Char('\n') => {
+            // Some terminals decode Ctrl+J as a literal LF char.
             if !state.streaming {
                 state.input.push('\n');
             }
