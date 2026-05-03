@@ -4,7 +4,10 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
-use crossterm::event::{Event, EventStream, KeyCode, KeyEventKind, KeyModifiers};
+use crossterm::event::{
+    DisableMouseCapture, EnableMouseCapture, Event, EventStream, KeyCode, KeyEventKind,
+    KeyModifiers, MouseEventKind,
+};
 use crossterm::execute;
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
@@ -33,7 +36,6 @@ pub struct AppState {
     pub spinner_frame: usize,
     pub follow_tail: bool,
     pub scroll: u16,
-    pub focus: Option<usize>,
     pub current_assistant_idx: Option<usize>,
     pub current_reasoning_idx: Option<usize>,
     pub current_tool_idx: HashMap<String, usize>,
@@ -64,7 +66,6 @@ impl AppState {
             spinner_frame: 0,
             follow_tail: true,
             scroll: 0,
-            focus: None,
             current_assistant_idx: None,
             current_reasoning_idx: None,
             current_tool_idx: HashMap::new(),
@@ -138,14 +139,10 @@ impl AppState {
             LlmDelta::ReasoningEnd => {
                 if let Some(idx) = self.current_reasoning_idx.take() {
                     if let Some(ChatItem::Reasoning {
-                        complete,
-                        expanded,
-                        ended,
-                        ..
+                        complete, ended, ..
                     }) = self.items.get_mut(idx)
                     {
                         *complete = true;
-                        *expanded = false;
                         *ended = Some(Instant::now());
                     }
                 }
@@ -242,76 +239,6 @@ impl AppState {
         }
     }
 
-    fn cycle_focus(&mut self, forward: bool) {
-        let expandable: Vec<usize> = self
-            .items
-            .iter()
-            .enumerate()
-            .filter(|(_, it)| it.is_expandable())
-            .map(|(i, _)| i)
-            .collect();
-        if expandable.is_empty() {
-            self.focus = None;
-            return;
-        }
-        let pos = match self.focus {
-            None => {
-                if forward {
-                    Some(0)
-                } else {
-                    Some(expandable.len() - 1)
-                }
-            }
-            Some(curr) => expandable.iter().position(|&i| i == curr).map(|p| {
-                if forward {
-                    (p + 1) % expandable.len()
-                } else {
-                    if p == 0 {
-                        expandable.len() - 1
-                    } else {
-                        p - 1
-                    }
-                }
-            }),
-        };
-        self.focus = pos.map(|p| expandable[p]);
-    }
-
-    fn toggle_focus(&mut self) {
-        if let Some(idx) = self.focus {
-            if let Some(item) = self.items.get_mut(idx) {
-                item.toggle_expanded();
-            }
-        }
-    }
-
-    fn toggle_last_reasoning(&mut self) {
-        for item in self.items.iter_mut().rev() {
-            if matches!(item, ChatItem::Reasoning { .. }) {
-                item.toggle_expanded();
-                return;
-            }
-        }
-    }
-
-    fn toggle_focus_or<F: Fn(&ChatItem) -> bool>(&mut self, predicate: F) {
-        if let Some(idx) = self.focus {
-            if let Some(it) = self.items.get(idx) {
-                if predicate(it) {
-                    if let Some(it) = self.items.get_mut(idx) {
-                        it.toggle_expanded();
-                        return;
-                    }
-                }
-            }
-        }
-        for item in self.items.iter_mut().rev() {
-            if predicate(item) {
-                item.toggle_expanded();
-                return;
-            }
-        }
-    }
 }
 
 enum AppEvent {
@@ -442,6 +369,7 @@ async fn run_loop(
                 if k.modifiers.contains(KeyModifiers::CONTROL) && k.code == KeyCode::Char('c') {
                     return Ok(());
                 }
+                let shift = k.modifiers.contains(KeyModifiers::SHIFT);
                 match k.code {
                     KeyCode::Esc => {
                         if state.streaming {
@@ -473,7 +401,7 @@ async fn run_loop(
                                     *ended = Some(Instant::now());
                                 }
                             }
-                            for (id, idx) in std::mem::take(&mut state.current_tool_idx) {
+                            for (_id, idx) in std::mem::take(&mut state.current_tool_idx) {
                                 if let Some(ChatItem::Tool {
                                     status, ended, ..
                                 }) = state.items.get_mut(idx)
@@ -481,16 +409,18 @@ async fn run_loop(
                                     *status = ToolStatus::Failed;
                                     *ended = Some(Instant::now());
                                 }
-                                let _ = id;
                             }
                         } else {
                             return Ok(());
                         }
                     }
+                    KeyCode::Enter if shift => {
+                        if !state.streaming {
+                            state.input.push('\n');
+                        }
+                    }
                     KeyCode::Enter => {
-                        if state.focus.is_some() {
-                            state.toggle_focus();
-                        } else if !state.streaming {
+                        if !state.streaming {
                             let text = state.input.trim().to_string();
                             if !text.is_empty() {
                                 state.input.clear();
@@ -520,7 +450,7 @@ async fn run_loop(
                                                 }
                                             }
                                             _ = cancel_rx => {
-                                                // Provider task dropped, kill_on_drop on subprocess takes care of cleanup.
+                                                // kill_on_drop on subprocess takes care of cleanup.
                                             }
                                         }
                                     });
@@ -531,47 +461,13 @@ async fn run_loop(
                         }
                     }
                     KeyCode::Backspace => {
-                        if !state.streaming && state.focus.is_none() {
+                        if !state.streaming {
                             state.input.pop();
                         }
                     }
-                    KeyCode::Tab => {
-                        state.cycle_focus(true);
-                    }
-                    KeyCode::BackTab => {
-                        state.cycle_focus(false);
-                    }
-                    KeyCode::Char('t') if state.streaming || state.focus.is_some() => {
-                        state.toggle_focus_or(|it| matches!(it, ChatItem::Reasoning { .. }));
-                    }
-                    KeyCode::Char('o') if state.streaming || state.focus.is_some() => {
-                        state.toggle_focus_or(|it| matches!(it, ChatItem::Tool { .. }));
-                    }
                     KeyCode::Char(c) => {
-                        if state.focus.is_none() && !state.streaming {
+                        if !state.streaming {
                             state.input.push(c);
-                        } else if state.focus.is_some() {
-                            // Letters while focused: t = thinking, o = tool, leave others as no-op
-                            match c {
-                                't' => state
-                                    .toggle_focus_or(|it| matches!(it, ChatItem::Reasoning { .. })),
-                                'o' => state
-                                    .toggle_focus_or(|it| matches!(it, ChatItem::Tool { .. })),
-                                'g' => {
-                                    state.scroll = u16::MAX;
-                                    state.follow_tail = false;
-                                }
-                                'G' => {
-                                    state.scroll = 0;
-                                    state.follow_tail = true;
-                                }
-                                'j' => state.scroll = state.scroll.saturating_sub(2),
-                                'k' => {
-                                    state.scroll = state.scroll.saturating_add(2);
-                                    state.follow_tail = false;
-                                }
-                                _ => {}
-                            }
                         }
                     }
                     KeyCode::PageUp => {
@@ -603,6 +499,23 @@ async fn run_loop(
                         state.follow_tail = true;
                     }
                     _ => {}
+                }
+            }
+            AppEvent::Crossterm(Event::Mouse(m)) => {
+                match m.kind {
+                    MouseEventKind::ScrollUp => {
+                        state.scroll = state.scroll.saturating_add(3);
+                        state.follow_tail = false;
+                    }
+                    MouseEventKind::ScrollDown => {
+                        state.scroll = state.scroll.saturating_sub(3);
+                        if state.scroll == 0 {
+                            state.follow_tail = true;
+                        }
+                    }
+                    _ => {
+                        needs_redraw = false;
+                    }
                 }
             }
             AppEvent::Crossterm(Event::Resize(_, _)) => {}
@@ -720,7 +633,7 @@ fn draw(
 fn setup_terminal() -> Result<Terminal<CrosstermBackend<Stdout>>> {
     enable_raw_mode()?;
     let mut out = stdout();
-    execute!(out, EnterAlternateScreen)?;
+    execute!(out, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(out);
     let terminal = Terminal::new(backend)?;
     Ok(terminal)
@@ -728,7 +641,11 @@ fn setup_terminal() -> Result<Terminal<CrosstermBackend<Stdout>>> {
 
 fn teardown_terminal(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()> {
     disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+    execute!(
+        terminal.backend_mut(),
+        DisableMouseCapture,
+        LeaveAlternateScreen
+    )?;
     terminal.show_cursor()?;
     Ok(())
 }

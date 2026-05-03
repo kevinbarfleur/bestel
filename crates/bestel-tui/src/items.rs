@@ -31,26 +31,6 @@ pub enum ChatItem {
 }
 
 impl ChatItem {
-    pub fn is_expandable(&self) -> bool {
-        matches!(self, ChatItem::Reasoning { .. } | ChatItem::Tool { .. })
-    }
-
-    pub fn is_expanded(&self) -> bool {
-        match self {
-            ChatItem::Reasoning { expanded, .. } => *expanded,
-            ChatItem::Tool { expanded, .. } => *expanded,
-            _ => false,
-        }
-    }
-
-    pub fn toggle_expanded(&mut self) {
-        match self {
-            ChatItem::Reasoning { expanded, .. } => *expanded = !*expanded,
-            ChatItem::Tool { expanded, .. } => *expanded = !*expanded,
-            _ => {}
-        }
-    }
-
     pub fn elapsed(&self) -> Option<Duration> {
         match self {
             ChatItem::Reasoning {

@@ -195,9 +195,18 @@ fn fmt_dps(v: Option<f64>) -> String {
 }
 
 fn render_chat_panel(f: &mut Frame, state: &AppState, area: Rect) {
+    // Dynamic input height based on number of newlines in the input,
+    // bounded between 3 and 12 lines (so multi-line typing works).
+    let input_lines = if state.streaming {
+        1u16
+    } else {
+        state.input.split('\n').count() as u16
+    };
+    let input_height = (input_lines + 2).clamp(3, 12);
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(1), Constraint::Length(3)])
+        .constraints([Constraint::Min(1), Constraint::Length(input_height)])
         .split(area);
 
     let chat_block = Block::default()
@@ -210,9 +219,8 @@ fn render_chat_panel(f: &mut Frame, state: &AppState, area: Rect) {
         ));
 
     let mut lines: Vec<Line> = Vec::new();
-    for (i, item) in state.items.iter().enumerate() {
-        let focused = state.focus == Some(i);
-        let item_lines = render_item(item, focused, state.spinner_frame, state.streaming);
+    for item in state.items.iter() {
+        let item_lines = render_item(item, state.spinner_frame, state.streaming);
         lines.extend(item_lines);
         lines.push(Line::from(""));
     }
@@ -235,27 +243,18 @@ fn render_chat_panel(f: &mut Frame, state: &AppState, area: Rect) {
     render_input(f, state, chunks[1]);
 }
 
-fn render_item(
-    item: &ChatItem,
-    focused: bool,
-    spinner_frame: usize,
-    streaming: bool,
-) -> Vec<Line<'static>> {
+fn render_item(item: &ChatItem, spinner_frame: usize, streaming: bool) -> Vec<Line<'static>> {
     match item {
         ChatItem::User(text) => render_user(text),
         ChatItem::System(text) => render_system(text),
         ChatItem::Reasoning {
-            summary,
-            complete,
-            expanded,
-            ..
-        } => render_reasoning(item, summary, *complete, *expanded, focused, spinner_frame),
+            summary, complete, ..
+        } => render_reasoning(item, summary, *complete, spinner_frame),
         ChatItem::Tool {
             name,
             detail,
             output,
             status,
-            expanded,
             ..
         } => render_tool(
             item,
@@ -263,14 +262,10 @@ fn render_item(
             detail.as_deref(),
             output,
             *status,
-            *expanded,
-            focused,
             spinner_frame,
         ),
         ChatItem::Assistant {
-            text,
-            complete,
-            ..
+            text, complete, ..
         } => render_assistant(text, *complete, streaming, spinner_frame),
     }
 }
@@ -315,54 +310,30 @@ fn render_reasoning(
     item: &ChatItem,
     summary: &str,
     complete: bool,
-    expanded: bool,
-    focused: bool,
     spinner_frame: usize,
 ) -> Vec<Line<'static>> {
     let elapsed = item.elapsed().map(fmt_elapsed).unwrap_or_default();
-    let arrow = if expanded { "▾" } else { "▸" };
     let badge = if complete {
         format!("✓ médité · {}", elapsed)
     } else {
         let frame = SPINNER[spinner_frame % SPINNER.len()];
         format!("{} médite · {}", frame, elapsed)
     };
-    let header_style = Style::default().fg(if focused {
-        Color::Yellow
-    } else {
-        Color::DarkGray
-    }).add_modifier(if focused { Modifier::BOLD } else { Modifier::empty() });
 
     let mut out = Vec::new();
     out.push(Line::from(vec![
-        Span::styled(arrow, header_style),
-        Span::raw(" "),
-        Span::styled("Bestel ", header_style),
-        Span::styled(badge, Style::default().fg(Color::DarkGray)),
         Span::styled(
-            if focused { "  [Enter fold]" } else { "" },
-            Style::default().fg(Color::DarkGray),
+            "Bestel ",
+            Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD),
         ),
+        Span::styled(badge, Style::default().fg(Color::DarkGray)),
     ]));
 
-    if expanded {
-        for line in summary.split('\n') {
-            out.push(Line::from(vec![
-                Span::styled("  ", Style::default()),
-                Span::styled(
-                    line.to_string(),
-                    Style::default()
-                        .fg(Color::DarkGray)
-                        .add_modifier(Modifier::ITALIC),
-                ),
-            ]));
-        }
-    } else if !summary.is_empty() {
-        let preview = first_line(summary, 80);
+    for line in summary.split('\n') {
         out.push(Line::from(vec![
-            Span::styled("  ", Style::default()),
+            Span::raw("  "),
             Span::styled(
-                preview,
+                line.to_string(),
                 Style::default()
                     .fg(Color::DarkGray)
                     .add_modifier(Modifier::ITALIC),
@@ -378,8 +349,6 @@ fn render_tool(
     detail: Option<&str>,
     output: &str,
     status: ToolStatus,
-    expanded: bool,
-    focused: bool,
     spinner_frame: usize,
 ) -> Vec<Line<'static>> {
     let elapsed = item.elapsed().map(fmt_elapsed).unwrap_or_default();
@@ -392,20 +361,14 @@ fn render_tool(
         ToolStatus::Failed => (format!("✗ {}", elapsed), Color::Red),
     };
 
-    let arrow = if expanded { "▾" } else { "▸" };
-    let header_color = if focused { Color::Yellow } else { Color::Magenta };
-    let header_modifier = if focused { Modifier::BOLD } else { Modifier::empty() };
-
     let mut header: Vec<Span<'static>> = vec![
-        Span::styled(arrow, Style::default().fg(header_color).add_modifier(header_modifier)),
-        Span::raw(" "),
         Span::styled(
             "⚙ ",
-            Style::default().fg(header_color).add_modifier(header_modifier),
+            Style::default().fg(Color::Magenta),
         ),
         Span::styled(
             name.to_string(),
-            Style::default().fg(header_color).add_modifier(header_modifier),
+            Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD),
         ),
     ];
     if let Some(d) = detail {
@@ -420,29 +383,17 @@ fn render_tool(
         status_label,
         Style::default().fg(status_color),
     ));
-    if focused {
-        header.push(Span::styled(
-            "  [Enter fold]",
-            Style::default().fg(Color::DarkGray),
-        ));
-    }
 
     let mut out = Vec::new();
     out.push(Line::from(header));
 
-    if expanded && !output.is_empty() {
+    if !output.is_empty() {
         for line in output.split('\n') {
             out.push(Line::from(vec![
                 Span::styled("  ↳ ", Style::default().fg(Color::DarkGray)),
                 Span::styled(line.to_string(), Style::default().fg(Color::Gray)),
             ]));
         }
-    } else if !expanded && !output.is_empty() {
-        let preview = first_line(output, 80);
-        out.push(Line::from(vec![
-            Span::styled("  ↳ ", Style::default().fg(Color::DarkGray)),
-            Span::styled(preview, Style::default().fg(Color::Gray)),
-        ]));
     }
     out
 }
@@ -510,46 +461,59 @@ fn render_assistant(
     out
 }
 
-fn first_line(s: &str, max: usize) -> String {
-    let line = s.lines().next().unwrap_or(s).trim();
-    if line.chars().count() <= max {
-        line.to_string()
-    } else {
-        let mut out: String = line.chars().take(max).collect();
-        out.push('…');
-        out
-    }
-}
-
 fn render_input(f: &mut Frame, state: &AppState, area: Rect) {
-    let title = if state.focus.is_some() {
-        " > Tab cycle · t fold thinking · o fold tool · Enter toggle "
-    } else if state.streaming {
-        " > Esc pour annuler "
+    let (border_style, title) = if state.streaming {
+        (
+            Style::default().fg(Color::DarkGray),
+            " ⠋ Bestel répond  ·  Esc annuler ".to_string(),
+        )
     } else {
-        " > parle, exilé "
+        (
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
+            " > parle, exilé  ·  Enter envoyer  ·  Shift+Enter ↵  ·  Ctrl+C quitter ".to_string(),
+        )
     };
-    let input_block = Block::default()
+
+    let block = Block::default()
         .borders(Borders::ALL)
+        .border_style(border_style)
         .title(Span::styled(
             title,
             Style::default().fg(Color::DarkGray),
         ));
-    let input_text = if state.streaming {
-        Line::from(Span::styled(
+
+    let content: Vec<Line<'static>> = if state.streaming {
+        vec![Line::from(Span::styled(
             "(Bestel répond — Esc pour annuler)",
             Style::default().fg(Color::DarkGray),
-        ))
-    } else if state.focus.is_some() {
-        Line::from(Span::styled(
-            "(focus actif sur un bloc — Tab pour cycler, Enter pour plier/déplier)",
-            Style::default().fg(Color::DarkGray),
-        ))
+        ))]
     } else {
-        Line::from(Span::raw(state.input.clone()))
+        let cursor_visible = (state.spinner_frame / 5) % 2 == 0;
+        let mut lines: Vec<Line<'static>> = state
+            .input
+            .split('\n')
+            .map(|l| Line::from(Span::raw(l.to_string())))
+            .collect();
+        if let Some(last) = lines.last_mut() {
+            if cursor_visible {
+                last.spans.push(Span::styled(
+                    "▌",
+                    Style::default().fg(Color::Yellow),
+                ));
+            }
+        } else {
+            lines.push(Line::from(Span::styled(
+                "▌",
+                Style::default().fg(Color::Yellow),
+            )));
+        }
+        lines
     };
-    let input = Paragraph::new(input_text).block(input_block);
-    f.render_widget(input, area);
+
+    let p = Paragraph::new(content).block(block).wrap(Wrap { trim: false });
+    f.render_widget(p, area);
 }
 
 fn render_footer(f: &mut Frame, state: &AppState, area: Rect) {
@@ -561,11 +525,11 @@ fn render_footer(f: &mut Frame, state: &AppState, area: Rect) {
         "PoB ⏳"
     };
     let left = format!(
-        " {} · {} ({}) · Ctrl+C quitter ",
+        " {} · {} ({}) ",
         pob_status, state.model_label, state.auth_label
     );
     let right = if state.status.is_empty() {
-        String::new()
+        " molette pour scroller · Shift+drag pour sélectionner ".to_string()
     } else {
         format!(" {} ", state.status)
     };
