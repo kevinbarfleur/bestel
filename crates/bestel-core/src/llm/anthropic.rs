@@ -225,6 +225,19 @@ impl AnthropicClient {
                                                 current_tool_index.get_mut(&idx)
                                             {
                                                 t.input_json.push_str(part);
+                                                // TODO (live tool input streaming):
+                                                // every few chunks, attempt a
+                                                // best-effort partial JSON parse on
+                                                // `t.input_json` and emit a
+                                                // `ToolDetailUpdate` (new variant)
+                                                // so the user sees the URL/query
+                                                // grow inside the tool card *while
+                                                // it is being constructed*. This
+                                                // matches ChatGPT/Claude.ai's UX
+                                                // where the URL appears at the
+                                                // start of a search rather than at
+                                                // the end. Codex CLI cannot do
+                                                // this — see PROVIDER_NOTES.md.
                                             }
                                         }
                                     }

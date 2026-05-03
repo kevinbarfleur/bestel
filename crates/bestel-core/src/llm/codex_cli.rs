@@ -294,20 +294,55 @@ async fn handle_codex_event(
             handle_tool_lifecycle(outer, &item_id, &name, detail, item, deltas, state);
         }
         "web_search" | "web_fetch" => {
+            let label = if item_type == "web_fetch" {
+                "fetch"
+            } else {
+                "web"
+            };
+
+            if outer == "item.completed" {
+                // Split a batched search ({queries: [q1, q2, q3]}) into one
+                // card per query so the activity stream matches what the
+                // model actually queried, instead of showing '+N' on a
+                // single card. The first query reuses the original tool id
+                // (which was opened on item.started); subsequent queries
+                // get synthetic ids derived from it.
+                let queries = extract_all_queries(item);
+                if !queries.is_empty() {
+                    state.running_tools.remove(&item_id);
+                    let _ = deltas.send(LlmDelta::ToolEnd {
+                        id: item_id.clone(),
+                        status: ToolStatus::Done,
+                        summary: Some(queries[0].clone()),
+                    });
+                    for (i, q) in queries.iter().skip(1).enumerate() {
+                        let synth_id = format!("{}#q{}", item_id, i + 2);
+                        let _ = deltas.send(LlmDelta::ToolBegin {
+                            id: synth_id.clone(),
+                            name: label.to_string(),
+                            detail: Some(q.clone()),
+                        });
+                        // Stagger so the cards appear one after another in
+                        // the chat instead of as an instantaneous burst.
+                        tokio::time::sleep(Duration::from_millis(120)).await;
+                        let _ = deltas.send(LlmDelta::ToolEnd {
+                            id: synth_id,
+                            status: ToolStatus::Done,
+                            summary: None,
+                        });
+                    }
+                    return;
+                }
+                // No queries[] array — fall through to standard flow.
+            }
+
             let detail = extract_web_search_detail(item).or_else(|| {
-                // While item is still "starting" Codex may not have the query
-                // yet — show a placeholder rather than an empty {"query":""}.
                 if outer == "item.started" {
                     Some("(searching…)".into())
                 } else {
                     None
                 }
             });
-            let label = if item_type == "web_fetch" {
-                "fetch"
-            } else {
-                "web"
-            };
             handle_tool_lifecycle(outer, &item_id, label, detail, item, deltas, state);
         }
         _ if looks_like_tool => {
@@ -539,6 +574,31 @@ fn extract_url_from_results(item: &Value) -> Option<String> {
         return Some(url.to_string());
     }
     None
+}
+
+/// Pull every query out of a Codex web_search item — the `queries[]`
+/// array if available (each entry is shown as its own card), else fall
+/// back to the singular `action.query` / `query` / `url` fields.
+fn extract_all_queries(item: &Value) -> Vec<String> {
+    if let Some(arr) = item
+        .get("action")
+        .and_then(|a| a.get("queries"))
+        .and_then(|q| q.as_array())
+    {
+        let cleaned: Vec<String> = arr
+            .iter()
+            .filter_map(|v| v.as_str())
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+        if !cleaned.is_empty() {
+            return cleaned;
+        }
+    }
+    if let Some(s) = extract_web_search_detail(item) {
+        return vec![s];
+    }
+    Vec::new()
 }
 
 /// Codex 0.128 web_search payload shape:

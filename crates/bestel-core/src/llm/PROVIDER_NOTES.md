@@ -98,9 +98,18 @@ future-us) doesn't re-discover it.
   `BESTEL_DEV_LOG` is the fastest way to confirm a schema drift.
 
 - **Tool transparency upgrades** (cross-provider, deferred):
-  - Surface the full `queries[]` array as expandable lines in the tool
-    card body, not just `· +N` in the header.
+  - ~~Surface the full `queries[]` array~~ — DONE for Codex (each query
+    becomes its own card via the synthetic-id split, see `codex_cli.rs`
+    `extract_all_queries`).
   - Detect `web_fetch` results that include URL+title+excerpt and render
     them as inline citation cards.
   - When a provider exposes search result URLs in the response payload,
     attach them as clickable items below the search card.
+  - **Live tool input streaming for Anthropic/Claude CLI** —
+    `input_json_delta` arrives chunk-by-chunk. On each chunk, do a
+    tolerant partial-JSON parse and emit a new `LlmDelta` variant
+    (e.g. `ToolDetailUpdate { id, detail }`) so the URL/query appears
+    inside the tool card *while it is being built*. Mirrors the
+    ChatGPT/Claude.ai UX where the search URL is visible at start, not
+    only at the end. Codex CLI cannot do this — query is empty until
+    `item.completed`. See the TODO marker in `anthropic.rs::run`.
