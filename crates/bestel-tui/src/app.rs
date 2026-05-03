@@ -1,12 +1,36 @@
+//! Event loop architecture
+//!
+//! ```text
+//!     crossterm EventStream  ──────────► [input_task]  ──────────►┐
+//!     PoB watcher                                                  │
+//!         broadcast::Receiver<PobBuild>  ──────────────────────────┤
+//!                                                                  ├──► run_loop ──► AppState ──► ui::render
+//!     LLM provider task (Anthropic/Codex/Claude)                   │
+//!         mpsc::UnboundedSender<LlmDelta>  ────────────────────────┤
+//!     tick interval (every 120ms while animating)                  ┘
+//! ```
+//!
+//! Each input source feeds the same `AppEvent` enum via dedicated channels.
+//! The crossterm reader runs in its OWN task so the OS-level pipe is always
+//! drained promptly — even when render or LLM work is busy. Without this we
+//! observed lost keystrokes on Windows when streaming filled the LLM channel.
+//!
+//! Redraw policy:
+//! - Always redraw on key, mouse, PoB and LLM events (immediate user feedback).
+//! - Tick events redraw only if at least 33 ms passed since the last render
+//!   (drives the spinner without burning CPU).
+//! - Idle ticks emit no redraw (preserves terminal text selection).
+
 use std::collections::HashMap;
-use std::io::{stdout, Stdout, Write};
+use std::io::{stdout, Stdout};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use crossterm::event::{
-    DisableMouseCapture, EnableMouseCapture, Event, EventStream, KeyCode, KeyEventKind,
-    KeyModifiers, MouseEventKind,
+    DisableMouseCapture, EnableMouseCapture, Event, EventStream, KeyCode, KeyEvent,
+    KeyEventKind, KeyModifiers, KeyboardEnhancementFlags, MouseEventKind,
+    PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
 };
 use crossterm::execute;
 use crossterm::terminal::{
@@ -129,9 +153,7 @@ impl AppState {
                     self.current_reasoning_idx = Some(idx);
                 }
                 if let Some(idx) = self.current_reasoning_idx {
-                    if let Some(ChatItem::Reasoning { summary, .. }) =
-                        self.items.get_mut(idx)
-                    {
+                    if let Some(ChatItem::Reasoning { summary, .. }) = self.items.get_mut(idx) {
                         summary.push_str(&s);
                     }
                 }
@@ -189,7 +211,11 @@ impl AppState {
                         if let Some(sum) = summary {
                             let is_placeholder = detail
                                 .as_deref()
-                                .map(|d| d.is_empty() || d.starts_with('(') || d.contains("\"query\":\"\""))
+                                .map(|d| {
+                                    d.is_empty()
+                                        || d.starts_with('(')
+                                        || d.contains("\"query\":\"\"")
+                                })
                                 .unwrap_or(true);
                             if is_placeholder && !sum.is_empty() {
                                 *detail = Some(sum.clone());
@@ -238,11 +264,12 @@ impl AppState {
             }
         }
     }
-
 }
 
 enum AppEvent {
-    Crossterm(Event),
+    Key(KeyEvent),
+    Mouse(MouseEventKind),
+    Resize,
     Pob(PobBuild),
     Llm(LlmDelta),
     Tick,
@@ -308,14 +335,17 @@ pub async fn run() -> Result<()> {
         );
     }
 
-    let mut terminal = setup_terminal()?;
-    let mut events = EventStream::new();
+    let kitty_supported = setup_terminal_pre()?;
+    let mut terminal = build_terminal();
+    let (input_tx, mut input_rx) = mpsc::unbounded_channel::<AppEvent>();
+    spawn_input_task(input_tx);
+
     let (llm_tx, mut llm_rx) = mpsc::unbounded_channel::<LlmDelta>();
 
     let result = run_loop(
         &mut terminal,
         &mut state,
-        &mut events,
+        &mut input_rx,
         &mut pob_rx,
         &mut llm_rx,
         &llm_tx,
@@ -324,14 +354,41 @@ pub async fn run() -> Result<()> {
     )
     .await;
 
-    teardown_terminal(&mut terminal)?;
+    teardown_terminal(&mut terminal, kitty_supported)?;
     result
+}
+
+fn spawn_input_task(tx: mpsc::UnboundedSender<AppEvent>) {
+    tokio::spawn(async move {
+        let mut events = EventStream::new();
+        while let Some(maybe) = events.next().await {
+            let Ok(ev) = maybe else { continue };
+            let app_ev = match ev {
+                Event::Key(k) => {
+                    // Accept Press AND Repeat. On Windows, holding a key fires
+                    // Repeat events; without this branch they are silently
+                    // dropped and typing feels lossy.
+                    if matches!(k.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
+                        AppEvent::Key(k)
+                    } else {
+                        continue;
+                    }
+                }
+                Event::Mouse(m) => AppEvent::Mouse(m.kind),
+                Event::Resize(_, _) => AppEvent::Resize,
+                _ => continue,
+            };
+            if tx.send(app_ev).is_err() {
+                break;
+            }
+        }
+    });
 }
 
 async fn run_loop(
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
     state: &mut AppState,
-    events: &mut EventStream,
+    input_rx: &mut mpsc::UnboundedReceiver<AppEvent>,
     pob_rx: &mut broadcast::Receiver<PobBuild>,
     llm_rx: &mut mpsc::UnboundedReceiver<LlmDelta>,
     llm_tx: &mpsc::UnboundedSender<LlmDelta>,
@@ -345,18 +402,14 @@ async fn run_loop(
 
     loop {
         let app_event: AppEvent = tokio::select! {
-            maybe = events.next() => {
-                match maybe {
-                    Some(Ok(ev)) => AppEvent::Crossterm(ev),
-                    Some(Err(_)) | None => return Ok(()),
-                }
-            }
-            res = pob_rx.recv() => {
-                match res {
-                    Ok(b) => AppEvent::Pob(b),
-                    Err(_) => continue,
-                }
-            }
+            biased;
+            // bias: prioritise user input over LLM/tick so typing always
+            // feels responsive even during heavy streaming.
+            Some(ev) = input_rx.recv() => ev,
+            res = pob_rx.recv() => match res {
+                Ok(b) => AppEvent::Pob(b),
+                Err(_) => continue,
+            },
             Some(d) = llm_rx.recv() => AppEvent::Llm(d),
             _ = tick.tick() => AppEvent::Tick,
         };
@@ -365,171 +418,31 @@ async fn run_loop(
         let is_tick = matches!(app_event, AppEvent::Tick);
 
         match app_event {
-            AppEvent::Crossterm(Event::Key(k)) if k.kind == KeyEventKind::Press => {
-                if k.modifiers.contains(KeyModifiers::CONTROL) && k.code == KeyCode::Char('c') {
+            AppEvent::Key(k) => {
+                if handle_key(state, k, &provider, &ctx, llm_tx) {
                     return Ok(());
                 }
-                let shift = k.modifiers.contains(KeyModifiers::SHIFT);
-                match k.code {
-                    KeyCode::Esc => {
-                        if state.streaming {
-                            if let Some(tx) = state.cancel_tx.take() {
-                                let _ = tx.send(());
-                            }
-                            state.streaming = false;
-                            state.status = "Annulé.".into();
-                            if let Some(idx) = state.current_assistant_idx.take() {
-                                if let Some(ChatItem::Assistant {
-                                    complete, text, ..
-                                }) = state.items.get_mut(idx)
-                                {
-                                    *complete = true;
-                                    if !text.is_empty() {
-                                        state.history.push(ChatMessage {
-                                            role: Role::Assistant,
-                                            content: text.clone(),
-                                        });
-                                    }
-                                }
-                            }
-                            if let Some(idx) = state.current_reasoning_idx.take() {
-                                if let Some(ChatItem::Reasoning {
-                                    complete, ended, ..
-                                }) = state.items.get_mut(idx)
-                                {
-                                    *complete = true;
-                                    *ended = Some(Instant::now());
-                                }
-                            }
-                            for (_id, idx) in std::mem::take(&mut state.current_tool_idx) {
-                                if let Some(ChatItem::Tool {
-                                    status, ended, ..
-                                }) = state.items.get_mut(idx)
-                                {
-                                    *status = ToolStatus::Failed;
-                                    *ended = Some(Instant::now());
-                                }
-                            }
-                        } else {
-                            return Ok(());
-                        }
-                    }
-                    KeyCode::Enter if shift => {
-                        if !state.streaming {
-                            state.input.push('\n');
-                        }
-                    }
-                    KeyCode::Enter => {
-                        if !state.streaming {
-                            let text = state.input.trim().to_string();
-                            if !text.is_empty() {
-                                state.input.clear();
-                                devlog::log_value(
-                                    "user_input",
-                                    json!({ "text": text }),
-                                );
-                                state.push_item(ChatItem::User(text.clone()));
-                                state.history.push(ChatMessage {
-                                    role: Role::User,
-                                    content: text,
-                                });
-                                state.follow_tail = true;
-                                if let Some(p) = provider.clone() {
-                                    state.streaming = true;
-                                    state.status = "Bestel consulte les vieux récits…".into();
-                                    let history = state.history.clone();
-                                    let ctx = ctx.clone();
-                                    let tx = llm_tx.clone();
-                                    let (cancel_tx, cancel_rx) = oneshot::channel();
-                                    state.cancel_tx = Some(cancel_tx);
-                                    tokio::spawn(async move {
-                                        tokio::select! {
-                                            res = p.run(history, ctx, tx.clone()) => {
-                                                if let Err(e) = res {
-                                                    let _ = tx.send(LlmDelta::Error(e.to_string()));
-                                                }
-                                            }
-                                            _ = cancel_rx => {
-                                                // kill_on_drop on subprocess takes care of cleanup.
-                                            }
-                                        }
-                                    });
-                                } else {
-                                    state.status = "Aucun provider disponible.".into();
-                                }
-                            }
-                        }
-                    }
-                    KeyCode::Backspace => {
-                        if !state.streaming {
-                            state.input.pop();
-                        }
-                    }
-                    KeyCode::Char(c) => {
-                        if !state.streaming {
-                            state.input.push(c);
-                        }
-                    }
-                    KeyCode::PageUp => {
-                        state.scroll = state.scroll.saturating_add(10);
-                        state.follow_tail = false;
-                    }
-                    KeyCode::PageDown => {
-                        state.scroll = state.scroll.saturating_sub(10);
-                        if state.scroll == 0 {
-                            state.follow_tail = true;
-                        }
-                    }
-                    KeyCode::Up => {
-                        state.scroll = state.scroll.saturating_add(1);
-                        state.follow_tail = false;
-                    }
-                    KeyCode::Down => {
-                        state.scroll = state.scroll.saturating_sub(1);
-                        if state.scroll == 0 {
-                            state.follow_tail = true;
-                        }
-                    }
-                    KeyCode::Home => {
-                        state.scroll = u16::MAX;
-                        state.follow_tail = false;
-                    }
-                    KeyCode::End => {
-                        state.scroll = 0;
-                        state.follow_tail = true;
-                    }
-                    _ => {}
+            }
+            AppEvent::Mouse(MouseEventKind::ScrollUp) => {
+                state.scroll = state.scroll.saturating_add(3);
+                state.follow_tail = false;
+            }
+            AppEvent::Mouse(MouseEventKind::ScrollDown) => {
+                state.scroll = state.scroll.saturating_sub(3);
+                if state.scroll == 0 {
+                    state.follow_tail = true;
                 }
             }
-            AppEvent::Crossterm(Event::Mouse(m)) => {
-                match m.kind {
-                    MouseEventKind::ScrollUp => {
-                        state.scroll = state.scroll.saturating_add(3);
-                        state.follow_tail = false;
-                    }
-                    MouseEventKind::ScrollDown => {
-                        state.scroll = state.scroll.saturating_sub(3);
-                        if state.scroll == 0 {
-                            state.follow_tail = true;
-                        }
-                    }
-                    _ => {
-                        needs_redraw = false;
-                    }
-                }
-            }
-            AppEvent::Crossterm(Event::Resize(_, _)) => {}
-            AppEvent::Crossterm(_) => {
+            AppEvent::Mouse(_) => {
                 needs_redraw = false;
             }
+            AppEvent::Resize => {}
             AppEvent::Pob(b) => {
                 ctx.set(b.clone());
                 state.status = format!("PoB mis à jour : {}", b.summary_line());
                 state.build = Some(b);
             }
-            AppEvent::Llm(d) => {
-                state.handle_delta(d);
-            }
+            AppEvent::Llm(d) => state.handle_delta(d),
             AppEvent::Tick => {
                 if state.streaming || has_running_item(state) {
                     state.spinner_frame = state.spinner_frame.wrapping_add(1);
@@ -539,14 +452,20 @@ async fn run_loop(
             }
         }
 
+        if state.input.is_empty()
+            && state.cancel_tx.is_none()
+            && !state.streaming
+            && state.status == "Annulé."
+        {
+            // Nothing to do — placeholder for future cleanup hooks.
+        }
+
         if needs_redraw {
-            // Throttle ticks to ~30 fps so the terminal has idle gaps for
-            // mouse selection. Non-tick events always render so the user
-            // sees a response to their actions and to LLM deltas.
             let throttle_ok = state
                 .last_render_at
                 .map(|t| t.elapsed() >= Duration::from_millis(33))
                 .unwrap_or(true);
+            // Force redraw on real events; ticks respect throttling.
             let must = !is_tick || throttle_ok;
             if must {
                 draw(terminal, state)?;
@@ -556,15 +475,186 @@ async fn run_loop(
     }
 }
 
+/// Handle a single key press / repeat event.
+///
+/// Newline insertion in the input field is supported via three keys, so it
+/// works regardless of which keyboard protocol is active:
+///   - Shift+Enter (kitty keyboard protocol; only on supporting terminals)
+///   - Alt+Enter   (works almost universally — escape sequence with no ambiguity)
+///   - Ctrl+J      (literal LF; works on every POSIX-style terminal)
+///
+/// Returns `true` when the app should quit.
+fn handle_key(
+    state: &mut AppState,
+    k: KeyEvent,
+    provider: &Option<Arc<Provider>>,
+    ctx: &BuildContext,
+    llm_tx: &mpsc::UnboundedSender<LlmDelta>,
+) -> bool {
+    let ctrl = k.modifiers.contains(KeyModifiers::CONTROL);
+    let shift = k.modifiers.contains(KeyModifiers::SHIFT);
+    let alt = k.modifiers.contains(KeyModifiers::ALT);
+
+    if ctrl && k.code == KeyCode::Char('c') {
+        return true;
+    }
+
+    match k.code {
+        KeyCode::Esc => {
+            if state.streaming {
+                cancel_streaming(state);
+            } else {
+                return true;
+            }
+        }
+        KeyCode::Enter if shift || alt => {
+            if !state.streaming {
+                state.input.push('\n');
+            }
+        }
+        KeyCode::Char('j') if ctrl => {
+            if !state.streaming {
+                state.input.push('\n');
+            }
+        }
+        KeyCode::Enter => {
+            if !state.streaming {
+                submit(state, provider.clone(), ctx.clone(), llm_tx.clone());
+            }
+        }
+        KeyCode::Backspace => {
+            if !state.streaming {
+                state.input.pop();
+            }
+        }
+        KeyCode::Char(c) => {
+            // Ignore Ctrl+<letter> combos other than the ones we handle —
+            // they should not insert text.
+            if ctrl {
+                return false;
+            }
+            if !state.streaming {
+                state.input.push(c);
+            }
+        }
+        KeyCode::PageUp => {
+            state.scroll = state.scroll.saturating_add(10);
+            state.follow_tail = false;
+        }
+        KeyCode::PageDown => {
+            state.scroll = state.scroll.saturating_sub(10);
+            if state.scroll == 0 {
+                state.follow_tail = true;
+            }
+        }
+        KeyCode::Up => {
+            state.scroll = state.scroll.saturating_add(1);
+            state.follow_tail = false;
+        }
+        KeyCode::Down => {
+            state.scroll = state.scroll.saturating_sub(1);
+            if state.scroll == 0 {
+                state.follow_tail = true;
+            }
+        }
+        KeyCode::Home => {
+            state.scroll = u16::MAX;
+            state.follow_tail = false;
+        }
+        KeyCode::End => {
+            state.scroll = 0;
+            state.follow_tail = true;
+        }
+        _ => {}
+    }
+    false
+}
+
+fn submit(
+    state: &mut AppState,
+    provider: Option<Arc<Provider>>,
+    ctx: BuildContext,
+    tx: mpsc::UnboundedSender<LlmDelta>,
+) {
+    let text = state.input.trim().to_string();
+    if text.is_empty() {
+        return;
+    }
+    state.input.clear();
+    devlog::log_value("user_input", json!({ "text": text }));
+    state.push_item(ChatItem::User(text.clone()));
+    state.history.push(ChatMessage {
+        role: Role::User,
+        content: text,
+    });
+    state.follow_tail = true;
+    let Some(p) = provider else {
+        state.status = "Aucun provider disponible.".into();
+        return;
+    };
+    state.streaming = true;
+    state.status = "Bestel consulte les vieux récits…".into();
+    let history = state.history.clone();
+    let (cancel_tx, cancel_rx) = oneshot::channel();
+    state.cancel_tx = Some(cancel_tx);
+    tokio::spawn(async move {
+        tokio::select! {
+            res = p.run(history, ctx, tx.clone()) => {
+                if let Err(e) = res {
+                    let _ = tx.send(LlmDelta::Error(e.to_string()));
+                }
+            }
+            _ = cancel_rx => {
+                // Provider future is dropped here; subprocess kill_on_drop
+                // handles the OS-level cleanup.
+            }
+        }
+    });
+}
+
+fn cancel_streaming(state: &mut AppState) {
+    if let Some(tx) = state.cancel_tx.take() {
+        let _ = tx.send(());
+    }
+    state.streaming = false;
+    state.status = "Annulé.".into();
+    if let Some(idx) = state.current_assistant_idx.take() {
+        if let Some(ChatItem::Assistant {
+            complete, text, ..
+        }) = state.items.get_mut(idx)
+        {
+            *complete = true;
+            if !text.is_empty() {
+                state.history.push(ChatMessage {
+                    role: Role::Assistant,
+                    content: text.clone(),
+                });
+            }
+        }
+    }
+    if let Some(idx) = state.current_reasoning_idx.take() {
+        if let Some(ChatItem::Reasoning {
+            complete, ended, ..
+        }) = state.items.get_mut(idx)
+        {
+            *complete = true;
+            *ended = Some(Instant::now());
+        }
+    }
+    for (_id, idx) in std::mem::take(&mut state.current_tool_idx) {
+        if let Some(ChatItem::Tool { status, ended, .. }) = state.items.get_mut(idx) {
+            *status = ToolStatus::Failed;
+            *ended = Some(Instant::now());
+        }
+    }
+}
+
 fn log_delta(d: &LlmDelta) {
     if !devlog::is_enabled() {
         return;
     }
     let (kind, payload) = match d {
-        LlmDelta::TextDelta(t) => (
-            "text_delta",
-            json!({ "len": t.chars().count(), "text": t }),
-        ),
+        LlmDelta::TextDelta(t) => ("text_delta", json!({ "len": t.chars().count(), "text": t })),
         LlmDelta::ReasoningBegin => ("reasoning_begin", json!({})),
         LlmDelta::ReasoningDelta(t) => (
             "reasoning_delta",
@@ -575,10 +665,9 @@ fn log_delta(d: &LlmDelta) {
             "tool_begin",
             json!({ "id": id, "name": name, "detail": detail }),
         ),
-        LlmDelta::ToolOutput { id, chunk } => (
-            "tool_output",
-            json!({ "id": id, "chunk": chunk }),
-        ),
+        LlmDelta::ToolOutput { id, chunk } => {
+            ("tool_output", json!({ "id": id, "chunk": chunk }))
+        }
         LlmDelta::ToolEnd {
             id,
             status,
@@ -606,46 +695,49 @@ fn has_running_item(state: &AppState) -> bool {
     })
 }
 
-fn draw(
-    terminal: &mut Terminal<CrosstermBackend<Stdout>>,
-    state: &AppState,
-) -> Result<()> {
-    // Synchronized output (BSU/ESU mode 2026) eliminates flicker on
-    // supported terminals but can confuse mouse handling on some others
-    // when emitted at high frequency. Opt-in via BESTEL_SYNC_OUTPUT=1.
-    let sync = std::env::var("BESTEL_SYNC_OUTPUT")
-        .map(|v| !v.is_empty() && v != "0")
-        .unwrap_or(false);
-    if sync {
-        let mut out = stdout();
-        let _ = out.write_all(b"\x1b[?2026h");
-        let _ = out.flush();
-    }
+fn draw(terminal: &mut Terminal<CrosstermBackend<Stdout>>, state: &AppState) -> Result<()> {
     terminal.draw(|f| ui::render(f, state))?;
-    if sync {
-        let mut out = stdout();
-        let _ = out.write_all(b"\x1b[?2026l");
-        let _ = out.flush();
-    }
     Ok(())
 }
 
-fn setup_terminal() -> Result<Terminal<CrosstermBackend<Stdout>>> {
+/// Returns true if the kitty keyboard protocol was successfully pushed.
+fn setup_terminal_pre() -> Result<bool> {
     enable_raw_mode()?;
     let mut out = stdout();
     execute!(out, EnterAlternateScreen, EnableMouseCapture)?;
-    let backend = CrosstermBackend::new(out);
-    let terminal = Terminal::new(backend)?;
-    Ok(terminal)
+    // Try to enable kitty keyboard protocol so Shift+Enter, Ctrl+Enter,
+    // Alt+letters etc. arrive as distinct events with proper modifiers.
+    // Silently fall back on terminals that don't support it (we still have
+    // Alt+Enter and Ctrl+J as universal newline keys).
+    let kitty_ok = execute!(
+        out,
+        PushKeyboardEnhancementFlags(
+            KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES
+                | KeyboardEnhancementFlags::REPORT_ALTERNATE_KEYS,
+        )
+    )
+    .is_ok();
+    Ok(kitty_ok)
 }
 
-fn teardown_terminal(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()> {
-    disable_raw_mode()?;
-    execute!(
+fn build_terminal() -> Terminal<CrosstermBackend<Stdout>> {
+    let backend = CrosstermBackend::new(stdout());
+    Terminal::new(backend).expect("terminal init")
+}
+
+fn teardown_terminal(
+    terminal: &mut Terminal<CrosstermBackend<Stdout>>,
+    kitty: bool,
+) -> Result<()> {
+    if kitty {
+        let _ = execute!(terminal.backend_mut(), PopKeyboardEnhancementFlags);
+    }
+    let _ = execute!(
         terminal.backend_mut(),
         DisableMouseCapture,
         LeaveAlternateScreen
-    )?;
+    );
+    disable_raw_mode()?;
     terminal.show_cursor()?;
     Ok(())
 }
