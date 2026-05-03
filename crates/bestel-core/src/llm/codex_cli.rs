@@ -50,7 +50,11 @@ impl CodexCliClient {
             .arg("-c")
             .arg(format!("model_reasoning_effort={}", reasoning))
             .arg("-c")
-            .arg("model_reasoning_summary=auto");
+            .arg(format!(
+                "model_reasoning_summary={}",
+                std::env::var("BESTEL_REASONING_SUMMARY")
+                    .unwrap_or_else(|_| "detailed".to_string())
+            ));
 
         if let Ok(model) = std::env::var("BESTEL_MODEL") {
             cmd.arg("-m").arg(model);
@@ -249,16 +253,16 @@ async fn handle_codex_event(
             }
         }
         "command_execution" | "command_executed" | "shell_command" => {
-            let cmd_str = item
-                .get("command")
-                .and_then(|c| c.as_str())
-                .or_else(|| item.get("name").and_then(|c| c.as_str()))
-                .unwrap_or("commande");
+            let cmd_str = extract_first_str(
+                item,
+                &["command", "cmd", "script", "name", "args"],
+            )
+            .unwrap_or_else(|| "commande".into());
             handle_tool_lifecycle(
                 outer,
                 &item_id,
                 "shell",
-                Some(first_line_summary(cmd_str, 80)),
+                Some(first_line_summary(&cmd_str, 80)),
                 item,
                 deltas,
                 state,
@@ -270,15 +274,32 @@ async fn handle_codex_event(
                 .and_then(|c| c.as_str())
                 .unwrap_or("tool")
                 .to_string();
-            handle_tool_lifecycle(outer, &item_id, &name, None, item, deltas, state);
+            let detail = extract_first_str(
+                item,
+                &["arguments", "args", "input", "params", "query", "url"],
+            );
+            handle_tool_lifecycle(outer, &item_id, &name, detail, item, deltas, state);
         }
         "web_search" | "web_fetch" => {
-            let detail = item
-                .get("query")
-                .and_then(|c| c.as_str())
-                .or_else(|| item.get("url").and_then(|c| c.as_str()))
-                .map(|s| first_line_summary(s, 80));
-            handle_tool_lifecycle(outer, &item_id, "web", detail, item, deltas, state);
+            let detail = extract_first_str(
+                item,
+                &[
+                    "query",
+                    "url",
+                    "target_url",
+                    "input",
+                    "text",
+                    "search_query",
+                    "args",
+                ],
+            )
+            .or_else(|| extract_url_from_results(item));
+            let label = if item_type == "web_fetch" {
+                "fetch"
+            } else {
+                "web"
+            };
+            handle_tool_lifecycle(outer, &item_id, label, detail, item, deltas, state);
         }
         _ => {}
     }
@@ -345,19 +366,50 @@ fn handle_tool_lifecycle(
 
 async fn pseudo_stream(deltas: &mpsc::UnboundedSender<LlmDelta>, text: &str) {
     // Simulate token streaming when codex hands us the full message at once.
-    // ~80 chars / sec → chunk of 4 chars every 50ms.
-    let chunk_size = 4usize;
+    // ~120 chars/sec, chunked at word boundaries when possible.
+    let chunk_size = 12usize;
     let chars: Vec<char> = text.chars().collect();
     let mut i = 0;
     while i < chars.len() {
-        let end = (i + chunk_size).min(chars.len());
+        let mut end = (i + chunk_size).min(chars.len());
+        // Try to extend to next whitespace to avoid splitting words.
+        while end < chars.len() && !chars[end].is_whitespace() && end - i < chunk_size + 8 {
+            end += 1;
+        }
         let chunk: String = chars[i..end].iter().collect();
         if deltas.send(LlmDelta::TextDelta(chunk)).is_err() {
             return;
         }
         i = end;
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        tokio::time::sleep(Duration::from_millis(80)).await;
     }
+}
+
+fn extract_first_str(item: &Value, keys: &[&str]) -> Option<String> {
+    for k in keys {
+        if let Some(v) = item.get(*k) {
+            if let Some(s) = v.as_str() {
+                if !s.trim().is_empty() {
+                    return Some(s.to_string());
+                }
+            } else if !v.is_null() {
+                let s = v.to_string();
+                if !s.is_empty() && s != "null" {
+                    return Some(s);
+                }
+            }
+        }
+    }
+    None
+}
+
+fn extract_url_from_results(item: &Value) -> Option<String> {
+    let results = item.get("results").and_then(|v| v.as_array())?;
+    let first = results.first()?;
+    if let Some(url) = first.get("url").and_then(|u| u.as_str()) {
+        return Some(url.to_string());
+    }
+    None
 }
 
 fn first_line_summary(s: &str, max: usize) -> String {

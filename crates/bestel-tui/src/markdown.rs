@@ -2,12 +2,13 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 
 pub fn render(text: &str) -> Vec<Line<'static>> {
+    let normalized = normalize_indent(text);
     let mut lines: Vec<Line<'static>> = Vec::new();
     let mut in_code_block = false;
     let mut code_block_lang: Option<String> = None;
     let mut current_code: Vec<String> = Vec::new();
 
-    for raw in text.split('\n') {
+    for raw in normalized.split('\n') {
         let line = raw;
         let trimmed = line.trim_start();
 
@@ -168,7 +169,7 @@ pub fn inline_spans(text: &str) -> Vec<Span<'static>> {
                 if !tmp.is_empty() {
                     out.push(Span::raw(tmp));
                 }
-                out.push(make_hyperlink(&label, &url));
+                out.extend(make_hyperlink(&label, &url));
                 i = end;
                 continue;
             }
@@ -282,12 +283,69 @@ fn parse_double_marker(chars: &[char], start: usize, marker: char) -> Option<(St
     None
 }
 
-fn make_hyperlink(label: &str, url: &str) -> Span<'static> {
-    let osc = format!("\x1b]8;;{}\x1b\\{}\x1b]8;;\x1b\\", url, label);
-    Span::styled(
-        osc,
-        Style::default()
-            .fg(Color::LightBlue)
-            .add_modifier(Modifier::UNDERLINED),
-    )
+fn make_hyperlink(label: &str, url: &str) -> Vec<Span<'static>> {
+    // Plain text URLs work better than OSC 8 inside ratatui Paragraph:
+    // OSC 8 escape bytes confuse the wrap algorithm and corrupt nearby text.
+    // Most modern terminals (Windows Terminal, iTerm2, Ghostty, WezTerm)
+    // auto-detect plain URLs and make them clickable (Ctrl+Click on Windows).
+    vec![
+        Span::styled(
+            label.to_string(),
+            Style::default()
+                .fg(Color::LightBlue)
+                .add_modifier(Modifier::UNDERLINED),
+        ),
+        Span::styled(" ", Style::default()),
+        Span::styled(
+            url.to_string(),
+            Style::default().fg(Color::Blue),
+        ),
+    ]
+}
+
+/// Strip the common minimum indent from every non-empty line.
+/// Many models (Codex/GPT-5 in particular) over-indent their output;
+/// this aligns paragraphs back to the left without hurting code blocks
+/// (which keep their internal relative indentation).
+fn normalize_indent(text: &str) -> String {
+    let mut min_indent: Option<usize> = None;
+    let mut in_code_block = false;
+    for raw in text.split('\n') {
+        if raw.trim_start().starts_with("```") {
+            in_code_block = !in_code_block;
+            continue;
+        }
+        if in_code_block {
+            continue;
+        }
+        if raw.trim().is_empty() {
+            continue;
+        }
+        let indent = raw.chars().take_while(|c| *c == ' ').count();
+        min_indent = Some(min_indent.map_or(indent, |m| m.min(indent)));
+    }
+    let strip = min_indent.unwrap_or(0).min(8);
+    if strip == 0 {
+        return text.to_string();
+    }
+    let mut out = String::with_capacity(text.len());
+    let mut in_code_block = false;
+    for raw in text.split('\n') {
+        if raw.trim_start().starts_with("```") {
+            in_code_block = !in_code_block;
+        }
+        if in_code_block {
+            out.push_str(raw);
+            out.push('\n');
+            continue;
+        }
+        let leading: usize = raw.chars().take_while(|c| *c == ' ').count();
+        let take = strip.min(leading);
+        out.push_str(&raw[take..]);
+        out.push('\n');
+    }
+    if !text.ends_with('\n') {
+        out.pop();
+    }
+    out
 }

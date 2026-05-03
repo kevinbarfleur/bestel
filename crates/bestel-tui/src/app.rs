@@ -44,6 +44,7 @@ pub struct AppState {
     pub probes: Vec<Probe>,
     pub watching_dirs: Vec<String>,
     pub status: String,
+    pub last_render_at: Option<Instant>,
 }
 
 impl AppState {
@@ -74,6 +75,7 @@ impl AppState {
             probes,
             watching_dirs,
             status: String::new(),
+            last_render_at: None,
         }
     }
 
@@ -406,7 +408,7 @@ async fn run_loop(
 ) -> Result<()> {
     draw(terminal, state)?;
 
-    let mut tick = tokio::time::interval(Duration::from_millis(60));
+    let mut tick = tokio::time::interval(Duration::from_millis(120));
     tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     loop {
@@ -428,6 +430,7 @@ async fn run_loop(
         };
 
         let mut needs_redraw = true;
+        let is_tick = matches!(app_event, AppEvent::Tick);
 
         match app_event {
             AppEvent::Crossterm(Event::Key(k)) if k.kind == KeyEventKind::Press => {
@@ -619,7 +622,18 @@ async fn run_loop(
         }
 
         if needs_redraw {
-            draw(terminal, state)?;
+            // Throttle ticks to ~30 fps so the terminal has idle gaps for
+            // mouse selection. Non-tick events always render so the user
+            // sees a response to their actions and to LLM deltas.
+            let throttle_ok = state
+                .last_render_at
+                .map(|t| t.elapsed() >= Duration::from_millis(33))
+                .unwrap_or(true);
+            let must = !is_tick || throttle_ok;
+            if must {
+                draw(terminal, state)?;
+                state.last_render_at = Some(Instant::now());
+            }
         }
     }
 }
@@ -678,14 +692,23 @@ fn draw(
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
     state: &AppState,
 ) -> Result<()> {
-    // Synchronized output: BSU before draw, ESU after — eliminates flicker.
-    let mut out = stdout();
-    let _ = out.write_all(b"\x1b[?2026h");
-    let _ = out.flush();
+    // Synchronized output (BSU/ESU mode 2026) eliminates flicker on
+    // supported terminals but can confuse mouse handling on some others
+    // when emitted at high frequency. Opt-in via BESTEL_SYNC_OUTPUT=1.
+    let sync = std::env::var("BESTEL_SYNC_OUTPUT")
+        .map(|v| !v.is_empty() && v != "0")
+        .unwrap_or(false);
+    if sync {
+        let mut out = stdout();
+        let _ = out.write_all(b"\x1b[?2026h");
+        let _ = out.flush();
+    }
     terminal.draw(|f| ui::render(f, state))?;
-    let mut out = stdout();
-    let _ = out.write_all(b"\x1b[?2026l");
-    let _ = out.flush();
+    if sync {
+        let mut out = stdout();
+        let _ = out.write_all(b"\x1b[?2026l");
+        let _ = out.flush();
+    }
     Ok(())
 }
 
