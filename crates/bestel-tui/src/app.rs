@@ -22,7 +22,7 @@
 //! - Idle ticks emit no redraw (preserves terminal text selection).
 
 use std::collections::HashMap;
-use std::io::{stdout, Stdout};
+use std::io::{stdout, Stdout, Write};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -729,14 +729,19 @@ fn draw(terminal: &mut Terminal<CrosstermBackend<Stdout>>, state: &AppState) -> 
 }
 
 /// Returns true if the kitty keyboard protocol was successfully pushed.
+///
+/// We enable THREE separate keyboard-extension protocols, in order of preference,
+/// so that Shift+Enter / Ctrl+Enter / Alt+letter combos are properly reported as
+/// distinct events on every host. This mirrors what Claude Code, OpenCode, and
+/// other modern TUIs do — relying on a single protocol is fragile.
 fn setup_terminal_pre() -> Result<bool> {
     enable_raw_mode()?;
     let mut out = stdout();
     execute!(out, EnterAlternateScreen, EnableMouseCapture)?;
-    // Try to enable kitty keyboard protocol so Shift+Enter, Ctrl+Enter,
-    // Alt+letters etc. arrive as distinct events with proper modifiers.
-    // Silently fall back on terminals that don't support it (we still have
-    // Alt+Enter and Ctrl+J as universal newline keys).
+
+    // 1. Kitty keyboard protocol — used by kitty, foot, alacritty 0.13+,
+    //    Ghostty, WezTerm, Windows Terminal 1.21+. The terminal reports
+    //    every key as an escape code with full modifier info.
     let kitty_ok = execute!(
         out,
         PushKeyboardEnhancementFlags(
@@ -745,6 +750,23 @@ fn setup_terminal_pre() -> Result<bool> {
         )
     )
     .is_ok();
+
+    // 2. xterm modifyOtherKeys level 2 — supported by xterm, urxvt,
+    //    Windows Terminal (all recent versions), alacritty, kitty as a
+    //    fallback. Reports Shift+Enter, Ctrl+Enter etc. as
+    //    `CSI 27;<mod>;<keycode>~` sequences which crossterm decodes.
+    //    This is what makes Shift+Enter work on Windows Terminal even
+    //    without kitty protocol support.
+    let _ = out.write_all(b"\x1b[>4;2m");
+
+    // 3. Win32 input mode — Windows Terminal 1.4+ specific. Forces the
+    //    terminal to emit detailed virtual-key sequences instead of the
+    //    legacy ANSI codes, so modifiers on every key (including Enter)
+    //    are preserved. Harmless no-op on non-Windows hosts.
+    #[cfg(windows)]
+    let _ = out.write_all(b"\x1b[?9001h");
+
+    let _ = out.flush();
     Ok(kitty_ok)
 }
 
@@ -757,14 +779,16 @@ fn teardown_terminal(
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
     kitty: bool,
 ) -> Result<()> {
+    let backend = terminal.backend_mut();
+    // Reverse order of setup_terminal_pre.
+    #[cfg(windows)]
+    let _ = backend.write_all(b"\x1b[?9001l");
+    let _ = backend.write_all(b"\x1b[>4m");
+    let _ = backend.flush();
     if kitty {
-        let _ = execute!(terminal.backend_mut(), PopKeyboardEnhancementFlags);
+        let _ = execute!(backend, PopKeyboardEnhancementFlags);
     }
-    let _ = execute!(
-        terminal.backend_mut(),
-        DisableMouseCapture,
-        LeaveAlternateScreen
-    );
+    let _ = execute!(backend, DisableMouseCapture, LeaveAlternateScreen);
     disable_raw_mode()?;
     terminal.show_cursor()?;
     Ok(())
