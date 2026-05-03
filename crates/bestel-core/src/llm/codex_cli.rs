@@ -548,6 +548,20 @@ fn extract_url_from_results(item: &Value) -> Option<String> {
 /// they are populated on item.completed. We surface the most useful
 /// representation: the joined queries (with a "+N" suffix when there
 /// are several) so the user always sees what Bestel actually searched.
+///
+/// IMPORTANT — batched semantics.
+/// One `web_search` item = one BATCH of N parallel queries. So a single
+/// visible tool card may correspond to several search-engine round-trips.
+/// And `web_search` only returns SNIPPETS — the model does not navigate
+/// each result URL, it cites them from snippet metadata. URLs that appear
+/// in the assistant's `Sources:` list will not necessarily each have a
+/// matching tool card; only the queries do.
+///
+/// TODO: render the queries[] array as expandable body lines so users
+///       see all N queries inside a batch, not just the first + count.
+/// TODO: when the response payload eventually exposes result URLs (some
+///       provider versions include `results[]`), attach them as inline
+///       citation children of the search card.
 fn extract_web_search_detail(item: &Value) -> Option<String> {
     let action = item.get("action");
 

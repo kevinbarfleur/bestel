@@ -1,3 +1,15 @@
+// Each provider has its own native event schema; see `PROVIDER_NOTES.md`
+// in this directory for the quirks we've documented (Codex's batched
+// web_search, Anthropic's structured thinking blocks, etc.). The parsers
+// translate native events into the shared `LlmDelta` enum below — every
+// downstream consumer (TUI rendering, devlog, focus, scroll) is provider-
+// agnostic and only deals with `LlmDelta`.
+//
+// TODO: when we wire a 4th provider (Gemini CLI is the obvious next),
+// extract the duplicated helpers (`first_line_summary`, `extract_first_str`,
+// `dump_item_for_detail`, JSON-encoded-args probing) into a shared
+// `extractors` module.
+
 pub mod anthropic;
 pub mod claude_cli;
 pub mod codex_cli;
