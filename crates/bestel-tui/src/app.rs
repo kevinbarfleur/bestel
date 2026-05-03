@@ -181,14 +181,12 @@ impl AppState {
                 if let Some(idx) = self.current_tool_idx.remove(&id) {
                     if let Some(ChatItem::Tool {
                         status: s,
-                        expanded,
                         ended,
                         output,
                         ..
                     }) = self.items.get_mut(idx)
                     {
                         *s = status;
-                        *expanded = false;
                         *ended = Some(Instant::now());
                         if let Some(sum) = summary {
                             if !sum.is_empty() && !output.contains(&sum) {

@@ -193,6 +193,19 @@ async fn handle_codex_event(
         .unwrap_or("")
         .to_string();
 
+    // Catch-all: anything that looks like a tool/function/search/exec call
+    // gets surfaced even if we don't recognize the exact item type, so the
+    // user always sees what Bestel is doing.
+    let looks_like_tool = item_type.contains("call")
+        || item_type.contains("execution")
+        || item_type.contains("command")
+        || item_type.contains("search")
+        || item_type.contains("fetch")
+        || item_type.contains("browse")
+        || item_type.contains("navigate")
+        || item_type.contains("tool")
+        || item_type.contains("function");
+
     match item_type {
         "agent_message" => {
             if outer == "item.completed" {
@@ -293,7 +306,8 @@ async fn handle_codex_event(
                     "args",
                 ],
             )
-            .or_else(|| extract_url_from_results(item));
+            .or_else(|| extract_url_from_results(item))
+            .or_else(|| dump_item_for_detail(item));
             let label = if item_type == "web_fetch" {
                 "fetch"
             } else {
@@ -301,8 +315,77 @@ async fn handle_codex_event(
             };
             handle_tool_lifecycle(outer, &item_id, label, detail, item, deltas, state);
         }
+        _ if looks_like_tool => {
+            let label_owned = derive_tool_label(item_type, item);
+            let detail = extract_first_str(
+                item,
+                &[
+                    "query",
+                    "url",
+                    "target_url",
+                    "search_query",
+                    "command",
+                    "cmd",
+                    "script",
+                    "input",
+                    "args",
+                    "arguments",
+                    "params",
+                    "text",
+                    "name",
+                ],
+            )
+            .or_else(|| extract_url_from_results(item))
+            .or_else(|| dump_item_for_detail(item));
+            handle_tool_lifecycle(outer, &item_id, &label_owned, detail, item, deltas, state);
+        }
         _ => {}
     }
+}
+
+fn derive_tool_label(item_type: &str, item: &Value) -> String {
+    if let Some(name) = item.get("name").and_then(|n| n.as_str()) {
+        if !name.is_empty() {
+            return name.to_string();
+        }
+    }
+    let lower = item_type.to_lowercase();
+    if lower.contains("web") || lower.contains("search") {
+        return "web".into();
+    }
+    if lower.contains("fetch") || lower.contains("browse") || lower.contains("navigate") {
+        return "fetch".into();
+    }
+    if lower.contains("shell") || lower.contains("command") || lower.contains("execution") {
+        return "shell".into();
+    }
+    if lower.contains("function") || lower.contains("tool") {
+        return "tool".into();
+    }
+    item_type.to_string()
+}
+
+fn dump_item_for_detail(item: &Value) -> Option<String> {
+    let obj = item.as_object()?;
+    let mut compact = serde_json::Map::new();
+    for (k, v) in obj {
+        // Skip noisy / boilerplate keys.
+        if matches!(
+            k.as_str(),
+            "id" | "type" | "status" | "created" | "ended_at" | "started_at"
+        ) {
+            continue;
+        }
+        if v.is_null() {
+            continue;
+        }
+        compact.insert(k.clone(), v.clone());
+    }
+    if compact.is_empty() {
+        return None;
+    }
+    let s = serde_json::Value::Object(compact).to_string();
+    Some(first_line_summary(&s, 120))
 }
 
 fn handle_tool_lifecycle(
@@ -386,17 +469,59 @@ async fn pseudo_stream(deltas: &mpsc::UnboundedSender<LlmDelta>, text: &str) {
 }
 
 fn extract_first_str(item: &Value, keys: &[&str]) -> Option<String> {
+    // First pass: try to find a primitive string in top-level fields.
     for k in keys {
         if let Some(v) = item.get(*k) {
             if let Some(s) = v.as_str() {
-                if !s.trim().is_empty() {
-                    return Some(s.to_string());
+                let trimmed = s.trim();
+                if !trimmed.is_empty() {
+                    // If it's a JSON string carrying structured args (common for
+                    // OpenAI function calls — arguments = "{\"query\":\"...\"}"),
+                    // try to dig into known fields.
+                    if let Ok(parsed) = serde_json::from_str::<Value>(trimmed) {
+                        if let Some(inner) = first_meaningful_field(&parsed) {
+                            return Some(inner);
+                        }
+                    }
+                    return Some(trimmed.to_string());
+                }
+            } else if v.is_object() {
+                if let Some(inner) = first_meaningful_field(v) {
+                    return Some(inner);
+                }
+                let s = v.to_string();
+                if !s.is_empty() && s != "null" {
+                    return Some(s);
                 }
             } else if !v.is_null() {
                 let s = v.to_string();
                 if !s.is_empty() && s != "null" {
                     return Some(s);
                 }
+            }
+        }
+    }
+    None
+}
+
+fn first_meaningful_field(v: &Value) -> Option<String> {
+    let candidates = [
+        "url",
+        "target_url",
+        "query",
+        "search_query",
+        "q",
+        "input",
+        "text",
+        "command",
+        "cmd",
+        "script",
+    ];
+    for k in candidates {
+        if let Some(s) = v.get(k).and_then(|x| x.as_str()) {
+            let t = s.trim();
+            if !t.is_empty() {
+                return Some(t.to_string());
             }
         }
     }
