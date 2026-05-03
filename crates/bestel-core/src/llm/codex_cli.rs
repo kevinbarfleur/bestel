@@ -294,20 +294,15 @@ async fn handle_codex_event(
             handle_tool_lifecycle(outer, &item_id, &name, detail, item, deltas, state);
         }
         "web_search" | "web_fetch" => {
-            let detail = extract_first_str(
-                item,
-                &[
-                    "query",
-                    "url",
-                    "target_url",
-                    "input",
-                    "text",
-                    "search_query",
-                    "args",
-                ],
-            )
-            .or_else(|| extract_url_from_results(item))
-            .or_else(|| dump_item_for_detail(item));
+            let detail = extract_web_search_detail(item).or_else(|| {
+                // While item is still "starting" Codex may not have the query
+                // yet — show a placeholder rather than an empty {"query":""}.
+                if outer == "item.started" {
+                    Some("(searching…)".into())
+                } else {
+                    None
+                }
+            });
             let label = if item_type == "web_fetch" {
                 "fetch"
             } else {
@@ -431,11 +426,20 @@ fn handle_tool_lifecycle(
                     }
                 })
                 .unwrap_or(ToolStatus::Done);
+            // Build a summary that's worth showing in the tool header. Order:
+            //   item.summary → item.output → web-search query → JSON dump
             let summary = item
                 .get("summary")
                 .and_then(|s| s.as_str())
-                .or_else(|| item.get("output").and_then(|s| s.as_str()))
-                .map(|s| first_line_summary(s, 100));
+                .map(|s| s.to_string())
+                .or_else(|| {
+                    item.get("output")
+                        .and_then(|s| s.as_str())
+                        .map(|s| s.to_string())
+                })
+                .or_else(|| extract_web_search_detail(item))
+                .or_else(|| dump_item_for_detail(item))
+                .map(|s| first_line_summary(&s, 140));
             state.running_tools.remove(id);
             let _ = deltas.send(LlmDelta::ToolEnd {
                 id: id.to_string(),
@@ -534,6 +538,58 @@ fn extract_url_from_results(item: &Value) -> Option<String> {
     if let Some(url) = first.get("url").and_then(|u| u.as_str()) {
         return Some(url.to_string());
     }
+    None
+}
+
+/// Codex 0.128 web_search payload shape:
+///   item.query                                  → primary search string
+///   item.action = { type, query, queries: [...] }
+/// On item.started both query and action.query are typically empty;
+/// they are populated on item.completed. We surface the most useful
+/// representation: the joined queries (with a "+N" suffix when there
+/// are several) so the user always sees what Bestel actually searched.
+fn extract_web_search_detail(item: &Value) -> Option<String> {
+    let action = item.get("action");
+
+    // Prefer the queries array (often holds multiple parallel searches).
+    if let Some(arr) = action
+        .and_then(|a| a.get("queries"))
+        .and_then(|q| q.as_array())
+    {
+        let cleaned: Vec<String> = arr
+            .iter()
+            .filter_map(|v| v.as_str())
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+        if let Some(first) = cleaned.first() {
+            let detail = if cleaned.len() > 1 {
+                format!("{} · +{}", first, cleaned.len() - 1)
+            } else {
+                first.clone()
+            };
+            return Some(first_line_summary(&detail, 140));
+        }
+    }
+
+    // Single query field on action or item.
+    let getters: [fn(&Value) -> Option<&Value>; 4] = [
+        |i| i.get("action").and_then(|a| a.get("query")),
+        |i| i.get("query"),
+        |i| i.get("url"),
+        |i| i.get("action").and_then(|a| a.get("url")),
+    ];
+    for getter in getters {
+        if let Some(v) = getter(item) {
+            if let Some(s) = v.as_str() {
+                let trimmed = s.trim();
+                if !trimmed.is_empty() {
+                    return Some(first_line_summary(trimmed, 140));
+                }
+            }
+        }
+    }
+
     None
 }
 

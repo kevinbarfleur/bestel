@@ -182,6 +182,7 @@ impl AppState {
                     if let Some(ChatItem::Tool {
                         status: s,
                         ended,
+                        detail,
                         output,
                         ..
                     }) = self.items.get_mut(idx)
@@ -189,7 +190,13 @@ impl AppState {
                         *s = status;
                         *ended = Some(Instant::now());
                         if let Some(sum) = summary {
-                            if !sum.is_empty() && !output.contains(&sum) {
+                            let is_placeholder = detail
+                                .as_deref()
+                                .map(|d| d.is_empty() || d.starts_with('(') || d.contains("\"query\":\"\""))
+                                .unwrap_or(true);
+                            if is_placeholder && !sum.is_empty() {
+                                *detail = Some(sum.clone());
+                            } else if !sum.is_empty() && !output.contains(&sum) {
                                 if !output.is_empty() {
                                     output.push('\n');
                                 }
