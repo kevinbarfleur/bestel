@@ -1,0 +1,9 @@
+name = "zero_result_fallback"
+provider = "any"
+prompt = "Imagine I search PoE1 trade for a rare helmet with: 100+ life, 50+ all four elemental resistances, 30+ chaos resistance, AND open prefix, under 10 chaos. The search returns zero. Don't say the item doesn't exist — explain what relaxations I should try first."
+timeout_secs = 120
+cost = "low"
+
+[[expectations]]
+must_match = ["(?i)(relax|loosen|drop|reduce|raise|widen|broader)", "(?i)(budget|chaos|resistance|life)"]
+must_not_match = ["(?i)(item|helmet|gear) (doesn'?t|does not|cannot) exist", "fandom\\.com"]

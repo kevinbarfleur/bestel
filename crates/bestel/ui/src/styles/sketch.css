@@ -1,0 +1,342 @@
+/* Bestel — primitives sketch (port 1:1 de Bestel Wireframes / sketch.css). */
+
+/* Page paper backdrop with subtle grain */
+.sketch-bg {
+  background:
+    radial-gradient(circle at 20% 15%, rgba(175, 96, 37, 0.04), transparent 50%),
+    radial-gradient(circle at 80% 85%, rgba(120, 90, 60, 0.04), transparent 50%),
+    repeating-linear-gradient(0deg, transparent 0 31px, rgba(180, 170, 140, 0.10) 31px 32px),
+    var(--paper);
+}
+
+/* Hand-drawn box */
+.sk {
+  border: var(--stroke) solid var(--ink);
+  border-radius: 4px 7px 5px 6px / 6px 4px 7px 5px;
+  background: var(--paper);
+  position: relative;
+}
+.sk--soft   { border-color: var(--ink-soft); }
+.sk--faint  { border-color: var(--ink-faint); border-style: dashed; }
+.sk--ghost  { border-color: var(--ink-ghost); border-style: dashed; }
+.sk--amber  { border-color: var(--amber); }
+.sk--shade  { background: var(--paper-shade); }
+.sk--ink    { background: var(--ink); color: var(--paper); }
+
+.sk--double::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border: 1px solid var(--ink-faint);
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+/* hatched fill */
+.sk-hatch {
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent 0 6px,
+    rgba(60, 55, 50, 0.18) 6px 7px
+  );
+  background-color: var(--paper-shade);
+}
+.sk-hatch--dense {
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent 0 4px,
+    rgba(60, 55, 50, 0.22) 4px 5px
+  );
+}
+.sk-hatch--cross {
+  background-image:
+    repeating-linear-gradient(45deg, transparent 0 6px, rgba(60, 55, 50, 0.15) 6px 7px),
+    repeating-linear-gradient(-45deg, transparent 0 6px, rgba(60, 55, 50, 0.15) 6px 7px);
+  background-color: var(--paper-shade);
+}
+.sk-hatch--amber {
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent 0 6px,
+    rgba(175, 96, 37, 0.20) 6px 7px
+  );
+  background-color: rgba(175, 96, 37, 0.06);
+}
+.sk-dot {
+  background-image: radial-gradient(
+    circle at 50% 50%,
+    rgba(60, 55, 50, 0.32) 1px,
+    transparent 1.4px
+  );
+  background-size: 7px 7px;
+  background-color: var(--paper);
+}
+
+/* Squiggle line */
+.sk-squiggle {
+  height: 8px;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 8' preserveAspectRatio='none'><path d='M0 4 Q 5 0, 10 4 T 20 4 T 30 4 T 40 4 T 50 4 T 60 4' fill='none' stroke='%232a2826' stroke-width='1.4' stroke-linecap='round'/></svg>");
+  background-repeat: repeat-x;
+  background-size: 60px 8px;
+}
+
+/* Horizontal rule */
+.sk-hr {
+  border: 0;
+  border-top: 1.4px dashed var(--ink-faint);
+  margin: 0;
+}
+.sk-hr--solid { border-top-style: solid; border-top-color: var(--ink-soft); }
+.sk-hr--amber { border-top: 1.4px solid var(--amber); opacity: 0.7; }
+
+/* Faux text lines */
+.sk-line {
+  height: 7px;
+  background: var(--ink-faint);
+  border-radius: 2px;
+  opacity: 0.55;
+}
+.sk-line--ink   { background: var(--ink-soft); opacity: 0.7; }
+.sk-line--amber { background: var(--amber); opacity: 0.55; }
+.sk-line--short { width: 40%; }
+.sk-line--mid   { width: 65%; }
+.sk-line--long  { width: 90%; }
+.sk-line--full  { width: 100%; }
+
+/* Tiny dot bullet */
+.sk-bullet {
+  width: 4px;
+  height: 4px;
+  background: var(--ink-soft);
+  border-radius: 50%;
+  flex: none;
+}
+
+/* Runic punctuation */
+.rune {
+  color: var(--amber);
+  opacity: 0.55;
+  font-family: var(--hand);
+  font-size: 0.85em;
+  letter-spacing: 0.2em;
+}
+
+/* Section header */
+.h-section {
+  font-family: var(--label);
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: var(--section-title-mb);
+}
+.h-section .rune { font-size: 11px; }
+.h-section .grow {
+  flex: 1;
+  height: 1px;
+  background: var(--ink-ghost);
+  opacity: 0.5;
+  min-width: 8px;
+}
+
+.label {
+  font-family: var(--label);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.value {
+  font-family: var(--hand);
+  font-size: 14px;
+  color: var(--ink);
+  font-weight: 400;
+  white-space: nowrap;
+}
+.value--big {
+  font-family: var(--hand-display);
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1;
+}
+.value--amber { color: var(--amber); }
+.value--good  { color: var(--good); }
+.value--bad   { color: var(--bad); }
+
+/* Placeholder text */
+.ph {
+  font-family: var(--hand);
+  color: var(--ink-faint);
+  font-style: italic;
+  font-size: 14px;
+}
+
+/* Faux icons */
+.ico {
+  width: 14px;
+  height: 14px;
+  border: 1.2px solid var(--ink-soft);
+  border-radius: 3px;
+  display: inline-block;
+  flex: none;
+  position: relative;
+}
+.ico--circle { border-radius: 50%; }
+.ico--star::before {
+  content: '✦';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--amber);
+  font-size: 12px;
+}
+.ico--diamond::before {
+  content: '◆';
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--amber);
+  font-size: 10px;
+}
+.ico-x {
+  width: 14px;
+  height: 14px;
+  position: relative;
+  flex: none;
+}
+.ico-x::before,
+.ico-x::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 14px;
+  height: 1.5px;
+  background: var(--ink-soft);
+  transform-origin: center;
+}
+.ico-x::before { transform: translate(-50%, -50%) rotate(45deg); }
+.ico-x::after  { transform: translate(-50%, -50%) rotate(-45deg); }
+
+/* Resist pip */
+.pip {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 1.2px solid var(--ink-soft);
+  background: var(--paper);
+  flex: none;
+}
+.pip--good { background: var(--good); border-color: var(--good); }
+.pip--ok   { background: var(--note); border-color: var(--note); }
+.pip--bad  { background: var(--bad);  border-color: var(--bad); }
+
+/* Scroll fade hint */
+.scroll-fade::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 32px;
+  background: linear-gradient(to top, var(--paper), transparent);
+  pointer-events: none;
+}
+
+/* Selectable chip */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px;
+  border: 1.2px solid var(--ink-soft);
+  border-radius: 12px;
+  font-family: var(--hand);
+  font-size: 12px;
+  color: var(--ink-soft);
+  background: var(--paper);
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.chip:hover {
+  border-color: var(--amber);
+  color: var(--ink);
+}
+.chip--active {
+  border-color: var(--amber);
+  background: var(--amber-glow);
+  color: var(--ink);
+}
+.chip--ghost { border-style: dashed; color: var(--ink-faint); }
+
+/* Top-bar pill */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px;
+  border: 1.4px solid var(--ink-soft);
+  border-radius: 16px;
+  font-family: var(--hand);
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--paper);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.pill:hover { border-color: var(--amber); }
+.pill--amber {
+  border-color: var(--amber);
+  background: rgba(175, 96, 37, 0.06);
+}
+.pill .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--good);
+}
+.pill .dot--stale { background: var(--note); }
+.pill .dot--off   { background: var(--ink-faint); }
+
+/* Tiny key cap */
+.kbd {
+  font-family: var(--label);
+  font-size: 10px;
+  padding: 1px 5px;
+  border: 1px solid var(--ink-soft);
+  border-radius: 3px;
+  background: var(--paper-shade);
+  color: var(--ink-soft);
+  line-height: 1.2;
+}
+
+/* Buttons (drag region exempt) */
+.sketch-bg button,
+.pill,
+.chip,
+.kbd,
+.sk { -webkit-app-region: no-drag; app-region: no-drag; }
+
+/* Custom scrollbar that fits parchment */
+.runic-scrollbar {
+  scrollbar-color: rgba(175, 96, 37, 0.55) transparent;
+  scrollbar-width: thin;
+}
+.runic-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.runic-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(175, 96, 37, 0.55);
+  border-radius: 4px;
+}
+.runic-scrollbar::-webkit-scrollbar-track { background: transparent; }

@@ -1,0 +1,20 @@
+[package]
+name = "bestel-test"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Bestel — scenario-based regression harness for agent flows"
+
+[[bin]]
+name = "bestel-test"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+toml = "0.8"
+regex = "1"

@@ -1,0 +1,13 @@
+name = "max_resistance_poe2"
+provider = "any"
+prompt = "Explain how maximum resistance works in PoE2. What raises it above 75%, and what is the absolute ceiling? Search the official wiki and cite the URL you used."
+timeout_secs = 300
+cost = "low"
+
+[[expectations]]
+must_match = ["75", "90"]
+must_not_match = ["fandom\\.com", "fextralife"]
+must_cite_domain = ["poe2wiki.net", "poewiki.net"]
+must_call_tool = "web"
+min_final_text_len = 350
+min_tool_calls = 1

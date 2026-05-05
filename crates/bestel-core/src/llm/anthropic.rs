@@ -1,12 +1,19 @@
 use anyhow::{anyhow, Context, Result};
+use base64::engine::general_purpose::STANDARD as B64;
+use base64::Engine;
 use futures_util::StreamExt;
 use serde_json::{json, Value};
 use tokio::sync::mpsc;
 
-use super::tools::{tool_schema, BuildContext, GET_ACTIVE_BUILD};
+use super::tools::{dispatch, tool_schemas, BuildContext, ToolCtx};
 use super::{ChatMessage, LlmDelta, Role, ToolStatus};
 use crate::devlog;
-use crate::prompt::SYSTEM_PROMPT;
+use crate::prompt::SYSTEM_PROMPT_COMPOSED;
+
+fn base64_decode_to_text(s: &str) -> Option<String> {
+    let bytes = B64.decode(s).ok()?;
+    String::from_utf8(bytes).ok()
+}
 
 const API_URL: &str = "https://api.anthropic.com/v1/messages";
 const API_VERSION: &str = "2023-06-01";
@@ -21,8 +28,8 @@ impl AnthropicClient {
     pub fn from_env() -> Result<Self> {
         let api_key = std::env::var("ANTHROPIC_API_KEY")
             .context("ANTHROPIC_API_KEY environment variable not set")?;
-        let model = std::env::var("BESTEL_MODEL")
-            .unwrap_or_else(|_| "claude-sonnet-4-5-20250929".to_string());
+        let model = super::models::resolved_model_for(super::models::ProviderKind::Anthropic)
+            .unwrap_or_else(|| "claude-sonnet-4-5-20250929".to_string());
         Ok(Self {
             api_key,
             model,
@@ -49,19 +56,49 @@ impl AnthropicClient {
                     Role::User => "user",
                     Role::Assistant => "assistant",
                 };
-                json!({
-                    "role": role,
-                    "content": [{"type": "text", "text": m.content}]
-                })
+                let mut blocks: Vec<Value> = Vec::new();
+                for att in &m.attachments {
+                    if att.is_image() {
+                        blocks.push(json!({
+                            "type": "image",
+                            "source": {
+                                "type": "base64",
+                                "media_type": att.mime,
+                                "data": att.data_base64,
+                            }
+                        }));
+                    } else if att.is_text_doc() {
+                        // Decode + inline as a text block. We don't try to render
+                        // PDFs here — just include a header so the model knows
+                        // a document was attached. Anthropic's PDF support is a
+                        // separate beta we don't ship in v0.1.
+                        let preview = base64_decode_to_text(&att.data_base64)
+                            .unwrap_or_else(|| "<binary content>".to_string());
+                        let trimmed: String = preview.chars().take(20_000).collect();
+                        blocks.push(json!({
+                            "type": "text",
+                            "text": format!(
+                                "[Attached file: {} · {}]\n\n{}",
+                                att.name, att.mime, trimmed
+                            )
+                        }));
+                    }
+                }
+                if !m.content.is_empty() || blocks.is_empty() {
+                    blocks.push(json!({"type": "text", "text": m.content}));
+                }
+                json!({"role": role, "content": blocks})
             })
             .collect();
 
         let mut full_assistant = String::new();
         let mut iterations = 0;
+        let tool_ctx = ToolCtx::new(ctx).context("build ToolCtx")?;
+        let schemas = tool_schemas();
 
         loop {
             iterations += 1;
-            if iterations > 6 {
+            if iterations > 8 {
                 let _ = deltas.send(LlmDelta::Error("agent loop limit reached".into()));
                 break;
             }
@@ -69,8 +106,8 @@ impl AnthropicClient {
             let body = json!({
                 "model": self.model,
                 "max_tokens": 2048,
-                "system": SYSTEM_PROMPT,
-                "tools": [tool_schema()],
+                "system": SYSTEM_PROMPT_COMPOSED,
+                "tools": schemas,
                 "stream": true,
                 "messages": messages,
             });
@@ -321,13 +358,34 @@ impl AnthropicClient {
             if stop_reason.as_deref() == Some("tool_use") && !tool_uses.is_empty() {
                 let mut user_content: Vec<Value> = Vec::new();
                 for tu in &tool_uses {
-                    let result = match tu.name.as_str() {
-                        GET_ACTIVE_BUILD => ctx.render_tool_result(),
-                        other => json!({"error": format!("unknown tool {}", other)}).to_string(),
+                    let parsed_input: Value = if tu.input_json.trim().is_empty() {
+                        json!({})
+                    } else {
+                        serde_json::from_str(&tu.input_json).unwrap_or(json!({}))
                     };
+                    let (result, status) = match dispatch(&tu.name, &parsed_input, &tool_ctx).await {
+                        Ok(s) => (s, ToolStatus::Done),
+                        Err(e) => (
+                            json!({"error": e.to_string()}).to_string(),
+                            ToolStatus::Failed,
+                        ),
+                    };
+                    crate::devlog::log_value(
+                        "tool_call",
+                        json!({
+                            "name": tu.name,
+                            "input": parsed_input,
+                            "status": match status {
+                                ToolStatus::Done => "done",
+                                ToolStatus::Failed => "failed",
+                                ToolStatus::Running => "running",
+                            },
+                            "result_bytes": result.len(),
+                        }),
+                    );
                     let _ = deltas.send(LlmDelta::ToolEnd {
                         id: tu.id.clone(),
-                        status: ToolStatus::Done,
+                        status,
                         summary: None,
                     });
                     user_content.push(json!({

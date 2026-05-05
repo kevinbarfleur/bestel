@@ -1,0 +1,9 @@
+name = "trade_query_ring"
+provider = "any"
+prompt = "How do I search PoE1 trade for a rare ring with at least 70 maximum life total and 80 total elemental resistance? Walk me through what filters to use on pathofexile.com/trade. No need to fabricate stat IDs — just explain the procedure and cite the trade URL."
+timeout_secs = 120
+cost = "low"
+
+[[expectations]]
+must_match = ["pathofexile\\.com/trade", "(?i)(ring|amulet|jewelry|accessory)"]
+must_not_match = ["fandom\\.com", "fextralife"]

@@ -1,12 +1,30 @@
 /target
 **/*.rs.bk
 Cargo.lock
+
+# Frontend (Tauri / Vite)
+**/node_modules/
+**/dist/
+**/dist-ssr/
+crates/bestel/ui/.vite/
+crates/bestel/gen/
+
+# Tauri build artifacts
+crates/bestel/target/
+
+# Local secrets and logs
 .env
 .env.local
 *.log
+
+# Editor / OS
 .idea/
 .vscode/
 *.swp
 *.swo
 .DS_Store
 Thumbs.db
+
+# Local scratch
+tmp_*
+*.tmp

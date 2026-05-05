@@ -11,6 +11,32 @@ future-us) doesn't re-discover it.
 
 ---
 
+## Tool dispatch — Anthropic-only (Phase 3)
+
+Bestel registers a small toolbox (`get_active_build`, `wiki_search`,
+`wiki_parse`, `wiki_cargo`, `trade_resolve_stats`, `trade_build_query`,
+`fetch_url`) in `crates/bestel-core/src/llm/tools.rs`. **Only the
+Anthropic API path can dispatch them.**
+
+Why: the CLI providers (Codex, Claude Code) are subprocesses that own their
+own tool catalog. We send them a prompt and stream their output back; we
+cannot inject tool definitions or intercept their tool calls. They use
+their native `web_search` / `web_fetch` and report what they did via
+`item.started/completed` events that we surface as tool cards in the TUI.
+
+Strategy:
+- **Anthropic API**: full tool loop in `anthropic.rs::run` calls
+  `tools::dispatch(name, input, ctx)`. Up to 8 iterations.
+- **Codex / Claude CLI**: zero custom tools wired. The improvement comes
+  from the enriched `SYSTEM_PROMPT.md` which guides their built-in
+  `web_search` toward the right hosts (poewiki.net, poe2wiki.net, poedb,
+  poe.ninja, GGG official) and forbids the blocked ones (Fandom, Fextralife).
+
+If we ever add a 4th provider whose CLI accepts custom tool definitions,
+extract dispatch into a small trait and wire it in there.
+
+---
+
 ## Anthropic API (`anthropic.rs`)
 
 - **Stable**, versioned via the `anthropic-version: 2023-06-01` header.

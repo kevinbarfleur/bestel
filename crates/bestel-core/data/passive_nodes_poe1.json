@@ -1,0 +1,46 @@
+{
+  "_": "Seed dictionary of well-known PoE1 passive nodes (keystones, notables, ascendancy keystones). Schema: {id, name, kind, description, ascendancy?}. Run download-passive-nodes.ps1 to regenerate from the live tree. kind ∈ keystone | notable | mastery | jewel_socket | ascendancy_keystone | ascendancy_notable | ascendancy_small.",
+  "nodes": [
+    { "id": 5934, "name": "Resolute Technique", "kind": "keystone", "description": "Your hits can't be Evaded. Never deal Critical Strikes." },
+    { "id": 65532, "name": "Mind Over Matter", "kind": "keystone", "description": "30% of Damage taken from Mana before Life. Damage taken from your Mana before Life is 50% Effective." },
+    { "id": 26661, "name": "Eldritch Battery", "kind": "keystone", "description": "Spend Energy Shield before Mana for Skill Costs. Energy Shield protects Mana instead of Life. 50% less Energy Shield Recharge Rate." },
+    { "id": 38085, "name": "Acrobatics", "kind": "keystone", "description": "+30% chance to Suppress Spell Damage. Spell Suppression prevents 100% of Suppressed Spell Damage. Cannot Block." },
+    { "id": 23984, "name": "Iron Reflexes", "kind": "keystone", "description": "Converts all Evasion Rating to Armour. Dexterity provides no bonus to Evasion Rating." },
+    { "id": 43164, "name": "Phase Acrobatics", "kind": "keystone", "description": "Removed in 3.16 — replaced by Spell Suppression on Acrobatics." },
+    { "id": 25441, "name": "Pain Attunement", "kind": "keystone", "description": "30% more Spell Damage when on Low Life." },
+    { "id": 39728, "name": "Crimson Dance", "kind": "keystone", "description": "Your Bleeding can stack up to 8 times. Your Bleeding deals damage 70% slower while you are not moving." },
+    { "id": 39085, "name": "Vaal Pact", "kind": "keystone", "description": "Life Leech effects Recover Energy Shield instead while on Full Life." },
+    { "id": 13164, "name": "Ghost Reaver", "kind": "keystone", "description": "Leech Energy Shield instead of Life. Maximum Recoverable Energy Shield is 50% of Energy Shield." },
+    { "id": 19725, "name": "Zealot's Oath", "kind": "keystone", "description": "Life Regeneration applies to Energy Shield instead of Life." },
+    { "id": 60735, "name": "Blood Magic", "kind": "keystone", "description": "Removes all Mana. Spend Life instead of Mana for Skills." },
+    { "id": 55190, "name": "Avatar of Fire", "kind": "keystone", "description": "50% of Physical, Cold and Lightning Damage Converted to Fire Damage. Deal no Non-Fire Damage." },
+    { "id": 33509, "name": "Elemental Equilibrium", "kind": "keystone", "description": "Enemies you hit with Elemental Damage temporarily get +25% Resistance to those Elements and -50% Resistance to other Elements." },
+    { "id": 48305, "name": "Elemental Overload", "kind": "keystone", "description": "40% more Elemental Damage if you've Crit in the past 8 seconds. No Critical Strike Multiplier, no damage Multiplier for Ailments from Critical Strikes." },
+    { "id": 14914, "name": "Point Blank", "kind": "keystone", "description": "Projectile Attack Hits deal up to 30% more Damage to targets at the start of their movement, dealing less Damage to targets as the projectile travels farther." },
+    { "id": 11455, "name": "Iron Grip", "kind": "keystone", "description": "The increase to Physical Damage from Strength applies to Projectile Attacks as well as Melee Attacks." },
+    { "id": 5876, "name": "Iron Will", "kind": "keystone", "description": "Strength's Damage bonus applies to Spell Damage as well as Attack Damage." },
+    { "id": 36634, "name": "Mistwalker", "kind": "keystone", "description": "Critical Strikes which inflict Bleeding also inflict Rupture. Removed in newer patches; check current league." },
+    { "id": 10803, "name": "Glancing Blows", "kind": "keystone", "description": "+20% Chance to Block Attack Damage. +15% Chance to Block Spell Damage. 50% less Damage Blocked." },
+    { "id": 53728, "name": "The Agnostic", "kind": "keystone", "description": "Your Maximum Mana is 0. Your Maximum Energy Shield is 0. 60% of your Maximum Life is converted to Mana. 60% of your Maximum Life is converted to Energy Shield." },
+    { "id": 31875, "name": "The Impaler", "kind": "keystone", "description": "Your Hits permanently Intimidate Enemies that are on Full Life. Removed/changed; verify current league." },
+    { "id": 4172, "name": "Wicked Ward", "kind": "keystone", "description": "Energy Shield Recharge is not interrupted by Damage if Recharge began Recently. 50% less Energy Shield Recharge Rate." },
+    { "id": 13836, "name": "Necromantic Aegis", "kind": "keystone", "description": "All bonuses from an equipped Shield apply to your Minions instead of you." },
+    { "id": 31875, "name": "Ancestral Bond", "kind": "keystone", "description": "You can't deal Damage with your Skills yourself. Can have up to 1 additional Totem summoned at a time." },
+    { "id": 51552, "name": "Call to Arms", "kind": "keystone", "description": "Warcries are Instant. Warcries no longer count Targets, Enemy Power or grant Duration. Warcries grant a fraction of their effect, scaling with the Power they would have shared otherwise." },
+    { "id": 5237, "name": "Precise Technique", "kind": "keystone", "description": "Your Hits can't be Evaded. Your Critical Strike Chance is 0 if your Accuracy Rating is lower than your Maximum Life." },
+
+    { "id": 49254, "name": "Inevitable Judgement", "kind": "ascendancy_keystone", "ascendancy": "Inquisitor", "description": "Critical Strikes ignore Enemy Monster Elemental Resistances." },
+    { "id": 16221, "name": "Sanctuary", "kind": "ascendancy_notable", "ascendancy": "Inquisitor", "description": "+1% to all maximum Elemental Resistances. Recover 1% of Life when you Block. Auras and Buffs you Cast grant 1% increased Damage to you and Allies." },
+    { "id": 2311, "name": "Pious Path", "kind": "ascendancy_notable", "ascendancy": "Inquisitor", "description": "Your Energy Shield Recharge is not interrupted by Damage. 100% increased total Energy Shield Recharge Rate from your Sources of Faith." },
+    { "id": 29033, "name": "Righteous Providence", "kind": "ascendancy_notable", "ascendancy": "Inquisitor", "description": "+200 to Strength and Intelligence." },
+    { "id": 21389, "name": "Instruments of Virtue", "kind": "ascendancy_notable", "ascendancy": "Inquisitor", "description": "10% more Attack Damage for each Non-Instant Spell you've Cast in the past 8 seconds, up to a maximum of 30%. 10% more Cast Speed for each Attack you've used Recently, up to a maximum of 30%. Skills which Throw Mines or Throw Traps grant Mine Throwing Speed and Trap Throwing Speed instead of Cast Speed." },
+    { "id": 51954, "name": "Augury of Penitence", "kind": "ascendancy_notable", "ascendancy": "Inquisitor", "description": "Nearby Enemies have -10% to Elemental Resistances. 10% increased Elemental Damage for each type of Element you have an Equipped Item with a Modifier providing Resistance to." },
+
+    { "id": 9408, "name": "Doryani's Lesson", "kind": "notable", "description": "Recover 0.6% of Life on Hit with Lightning Damage." },
+    { "id": 38130, "name": "Sovereignty", "kind": "notable", "description": "+10 to Strength. 8% reduced Mana Reserved." },
+    { "id": 40439, "name": "Heart of the Warrior", "kind": "notable", "description": "+30 to maximum Life. 6% increased maximum Life." },
+    { "id": 65668, "name": "Arcane Vision", "kind": "notable", "description": "Sight Radius is based on your Energy Shield instead of your Light Radius. +20% increased Light Radius." },
+
+    { "id": 0, "name": "Jewel Socket", "kind": "jewel_socket", "description": "An expansion socket where a jewel can be placed." }
+  ]
+}

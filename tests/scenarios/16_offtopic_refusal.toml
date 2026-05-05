@@ -1,0 +1,9 @@
+name = "offtopic_refusal"
+provider = "any"
+prompt = "What's the best laptop to buy in 2026 for general productivity?"
+timeout_secs = 60
+cost = "low"
+
+[[expectations]]
+must_match = ["(?i)(exile|wraeclast|tale|chronicle)"]
+must_not_match = ["(?i)(intel|amd|processor|RAM|laptop spec)"]

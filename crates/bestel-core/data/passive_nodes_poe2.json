@@ -1,0 +1,33 @@
+{
+  "_": "Seed dictionary of well-known PoE2 passive nodes (keystones, notables, ascendancy keystones). Schema: {id, name, kind, description, ascendancy?}. PoE2 is in Early Access — node IDs and effects shift between patches. Run download-passive-nodes.ps1 to regenerate from the live tree.",
+  "nodes": [
+    { "id": 1143, "name": "Resolute Technique", "kind": "keystone", "description": "Your Attack Hits can't be Evaded. Your Attacks can't be Critical Strikes." },
+    { "id": 4656, "name": "Mind Over Matter", "kind": "keystone", "description": "30% of Damage taken from Mana before Life." },
+    { "id": 12462, "name": "Eldritch Battery", "kind": "keystone", "description": "Energy Shield protects Mana instead of Life. 50% less Energy Shield Recharge Rate." },
+    { "id": 29861, "name": "Acrobatics", "kind": "keystone", "description": "Removed/replaced in PoE2 — verify current league." },
+    { "id": 17260, "name": "Iron Reflexes", "kind": "keystone", "description": "Converts all Evasion Rating to Armour. Dexterity provides no bonus to Evasion Rating." },
+    { "id": 32353, "name": "Avatar of Fire", "kind": "keystone", "description": "50% of Physical, Cold and Lightning Damage from Hits Converted to Fire Damage. Deal no Non-Fire Damage from Hits." },
+    { "id": 26196, "name": "Magebane", "kind": "keystone", "description": "Gains 1% to maximum chance to Suppress Spell Damage per 14 Dexterity. Cannot Block Spell Damage." },
+    { "id": 47931, "name": "Ancestral Bond", "kind": "keystone", "description": "Can have up to 1 additional Totem Summoned at a time. You can't deal Damage with your Skills yourself." },
+    { "id": 27303, "name": "Iron Will", "kind": "keystone", "description": "Strength's Damage bonus applies to Spell Damage as well as Attack Damage." },
+    { "id": 35876, "name": "Iron Grip", "kind": "keystone", "description": "The increase to Physical Damage from Strength applies to Projectile Attacks as well as Melee Attacks." },
+    { "id": 65189, "name": "Pain Attunement", "kind": "keystone", "description": "30% more Spell Damage when on Low Life." },
+    { "id": 28950, "name": "Wind Dancer", "kind": "keystone", "description": "30% chance to Avoid being Stunned. 30% increased Evasion Rating if you haven't been Hit Recently." },
+    { "id": 53989, "name": "Heart of Oak", "kind": "keystone", "description": "Druid keystone — Treant form bonuses." },
+    { "id": 41012, "name": "Lone Spirit", "kind": "keystone", "description": "If you have no Allies nearby, gain Onslaught and 30% increased Damage." },
+    { "id": 32932, "name": "Vital Force", "kind": "keystone", "description": "Your Life Regeneration also applies to Energy Shield. 50% less Life Regeneration Rate." },
+
+    { "id": 11433, "name": "Charge Infusion", "kind": "ascendancy_notable", "ascendancy": "Shaman", "description": "Druid Shaman ascendancy node — bonus from active charges." },
+    { "id": 14654, "name": "Wolf's Howl", "kind": "ascendancy_notable", "ascendancy": "Shaman", "description": "Druid Shaman ascendancy node — wolf companion mechanics." },
+    { "id": 29762, "name": "Ferocious Roar", "kind": "ascendancy_notable", "ascendancy": "Shaman", "description": "Druid Shaman ascendancy node — Ferocious Roar interactions." },
+    { "id": 51868, "name": "Bear Form Mastery", "kind": "ascendancy_notable", "ascendancy": "Shaman", "description": "Druid Shaman ascendancy node — bear form bonuses." },
+    { "id": 50084, "name": "Stormcaller", "kind": "ascendancy_notable", "ascendancy": "Shaman", "description": "Druid Shaman ascendancy node — lightning attunement." },
+
+    { "id": 30334, "name": "Druidic Prowess", "kind": "notable", "description": "Increased effect of Rage. Bonuses to shapeshift forms." },
+    { "id": 56933, "name": "Heart of the Warrior", "kind": "notable", "description": "+30 to maximum Life. 8% increased maximum Life." },
+    { "id": 58170, "name": "Trinity", "kind": "notable", "description": "Convert excess elemental damage; key to multi-element scaling." },
+    { "id": 62200, "name": "Pounce Mastery", "kind": "notable", "description": "Bonuses to Pounce skill effect and damage." },
+
+    { "id": 0, "name": "Jewel Socket", "kind": "jewel_socket", "description": "An expansion socket where a jewel can be placed." }
+  ]
+}

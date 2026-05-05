@@ -1,0 +1,27 @@
+name = "active_build_poe2_with_analysis"
+provider = "any"
+build_fixture = "poe2_druid"
+prompt = """
+Look at my loaded PoB build. Identify class, ascendancy, level, main skill.
+Then give me ONE specific defensive weakness with the exact number from the
+build, and TWO actionable suggestions to fix it (named items, ascendancy
+nodes, support gems, or jewel mods — not generic advice). For each
+suggestion, explain the trade-off. Cite the wiki page(s) supporting your
+suggestions.
+"""
+timeout_secs = 420
+cost = "low"
+
+[[expectations]]
+must_match = [
+    "Druid",
+    "Shaman",
+    "87",
+    # Action verb — wide net to allow natural phrasings the model picks.
+    "(?i)\\b(suggest|swap|recommend|consider|aim|target|raise|invest|allocate|equip|use|try|replace|switch|change|pick|choose|prefer|drop|take|select|move|favor|run)\\b",
+]
+must_not_match = ["fandom\\.com", "fextralife"]
+must_cite_domain = ["poe2wiki.net", "poewiki.net", "pathofexile.com", "poe2db.tw"]
+must_call_tool = "web"
+min_final_text_len = 600
+min_tool_calls = 2

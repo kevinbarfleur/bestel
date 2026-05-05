@@ -5,11 +5,12 @@ use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::mpsc;
 
+use super::mcp_config::strip_mcp_prefix;
 use super::spawn::cli_command;
 use super::tools::BuildContext;
 use super::{ChatMessage, LlmDelta, Role, ToolStatus};
 use crate::devlog;
-use crate::prompt::SYSTEM_PROMPT;
+use crate::prompt::SYSTEM_PROMPT_COMPOSED;
 
 pub struct ClaudeCliClient {
     version: String,
@@ -34,14 +35,27 @@ impl ClaudeCliClient {
         ctx: BuildContext,
         deltas: mpsc::UnboundedSender<LlmDelta>,
     ) -> Result<String> {
+        // Same rationale as codex_cli: surface the build context as a
+        // synthetic tool card so the user sees Bestel read their PoB.
+        emit_build_context_card(&ctx, &deltas);
+
         let user_prompt = build_user_prompt(&history);
         let system_addon = format!(
-            "{}\n\n[CURRENT PATH OF BUILDING DATA]\n{}\n\n[INSTRUCTIONS]\n\
-             Stay in character as Bestel. Do not modify files. Do not run shell commands. \
-             Answer in the user's language (French by default). \
-             Quote concrete numbers from the build above when relevant.",
-            SYSTEM_PROMPT,
-            ctx.render_tool_result()
+            "{persona}\n\n[CURRENT PATH OF BUILDING DATA]\n{build}\n\n\
+             [TURN INSTRUCTIONS — read this AFTER the persona, BEFORE answering]\n\
+             Run the pre-flight checkpoint defined in the persona prompt before writing. \
+             All five steps must be satisfied. Do not write the final answer while a step is open.\n\n\
+             Mandatory tool calls for every keystone, mechanic, item, skill, build-fix, or league question:\n\
+             1. `web_search` site:poewiki.net (or site:poe2wiki.net for PoE2) for the core topic, then `web_fetch` the top hit.\n\
+             2. `find_synergies(topic=\"…\")` — never skip. Pull 2-4 mechanically-relevant candidates from the reverse-link index.\n\
+             3. Re-read the build context with the mechanic in mind. Compute concrete current-vs-target math.\n\n\
+             Answer shape:\n\
+             - Length floor: 15 sentences minimum. No ceiling. The answer expands to fit the work; mechanics are never compressed to make room for synergies.\n\
+             - Required paragraphs in order: (1) mechanics with full text and numbers; (2) build math from the PoB; (3) acquisition naming every source; (4) path/fix steps; (5) `Synergies:` bullet list of 2-4 named candidates; (6) `Sources:` markdown links.\n\
+             - Wrap every PoE entity in `backticks` (items, keystones, uniques, gems, ascendancies, passive nodes). The TUI converts those into clickable wiki links.\n\
+             - Stay in character as Bestel. Default to English; mirror the exile's language for prose, keep proper nouns in English. Do not modify files or run shell commands.",
+            persona = SYSTEM_PROMPT_COMPOSED,
+            build = ctx.render_tool_result()
         );
 
         let mut cmd = cli_command("claude");
@@ -95,17 +109,46 @@ impl ClaudeCliClient {
 
         let mut state = ClaudeState::default();
 
-        while let Some(line) = reader.next_line().await? {
-            let trimmed = line.trim();
-            if trimmed.is_empty() {
-                continue;
+        // Same idle-timeout guard as codex_cli to prevent infinite hangs
+        // when the subprocess stalls. Default 3 min between events.
+        let idle_window = std::time::Duration::from_secs(
+            std::env::var("BESTEL_CLAUDE_IDLE_SECS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(180),
+        );
+
+        loop {
+            match tokio::time::timeout(idle_window, reader.next_line()).await {
+                Ok(Ok(Some(line))) => {
+                    let trimmed = line.trim();
+                    if trimmed.is_empty() {
+                        continue;
+                    }
+                    devlog::log_provider_raw("claude", trimmed);
+                    let v: Value = match serde_json::from_str(trimmed) {
+                        Ok(v) => v,
+                        Err(_) => continue,
+                    };
+                    handle_claude_event(&v, &deltas, &mut state);
+                }
+                Ok(Ok(None)) => break,
+                Ok(Err(e)) => return Err(e.into()),
+                Err(_) => {
+                    devlog::log_str(
+                        "claude_idle_timeout",
+                        "secs",
+                        &idle_window.as_secs().to_string(),
+                    );
+                    let _ = child.kill().await;
+                    let msg = format!(
+                        "claude est resté silencieux pendant {}s — je l'ai arrêté. Réessaie.",
+                        idle_window.as_secs()
+                    );
+                    let _ = deltas.send(LlmDelta::Error(msg.clone()));
+                    return Err(anyhow!(msg));
+                }
             }
-            devlog::log_provider_raw("claude", trimmed);
-            let v: Value = match serde_json::from_str(trimmed) {
-                Ok(v) => v,
-                Err(_) => continue,
-            };
-            handle_claude_event(&v, &deltas, &mut state);
         }
 
         if state.reasoning_open {
@@ -289,11 +332,11 @@ fn handle_inner_stream_event(
                         .and_then(|s| s.as_str())
                         .unwrap_or("")
                         .to_string();
-                    let name = block
+                    let raw_name = block
                         .get("name")
                         .and_then(|s| s.as_str())
-                        .unwrap_or("tool")
-                        .to_string();
+                        .unwrap_or("tool");
+                    let name = strip_mcp_prefix(raw_name).to_string();
                     if !state.running_tools.contains_key(&id) {
                         state.running_tools.insert(id.clone(), name.clone());
                         let _ = deltas.send(LlmDelta::ToolBegin {
@@ -369,6 +412,53 @@ fn first_line_summary(s: &str, max: usize) -> String {
     }
 }
 
+fn emit_build_context_card(
+    ctx: &BuildContext,
+    deltas: &mpsc::UnboundedSender<LlmDelta>,
+) {
+    let id = "pob-context".to_string();
+    let detail = match ctx.get() {
+        Some(b) => Some(b.summary_line()),
+        None => Some("aucun build chargé".to_string()),
+    };
+    let summary = match ctx.get() {
+        Some(b) => {
+            let mut bits: Vec<String> = Vec::new();
+            if let Some(skill) = &b.main_skill {
+                bits.push(format!("main: {skill}"));
+            }
+            if let Some(life) = b.life() {
+                bits.push(format!("Life {}", life as i64));
+            }
+            if let Some(ehp) = b.ehp() {
+                bits.push(format!("EHP {}", ehp as i64));
+            }
+            if let Some(dps) = b.dps() {
+                bits.push(format!("DPS {:.0}", dps));
+            }
+            if !b.items.is_empty() {
+                bits.push(format!("{} items", b.items.len()));
+            }
+            if bits.is_empty() {
+                Some(b.summary_line())
+            } else {
+                Some(bits.join(" · "))
+            }
+        }
+        None => None,
+    };
+    let _ = deltas.send(LlmDelta::ToolBegin {
+        id: id.clone(),
+        name: "get_active_build".into(),
+        detail,
+    });
+    let _ = deltas.send(LlmDelta::ToolEnd {
+        id,
+        status: ToolStatus::Done,
+        summary,
+    });
+}
+
 fn build_user_prompt(history: &[ChatMessage]) -> String {
     let mut s = String::new();
     let take = history.len().saturating_sub(8);
@@ -377,6 +467,14 @@ fn build_user_prompt(history: &[ChatMessage]) -> String {
             Role::User => "Exile",
             Role::Assistant => "Bestel",
         };
+        for att in &m.attachments {
+            if att.is_image() {
+                s.push_str(&format!(
+                    "{}: [attached image: {} ({})] — note: this provider does not support vision; ask the exile to describe it if needed.\n",
+                    speaker, att.name, att.mime
+                ));
+            }
+        }
         s.push_str(&format!("{}: {}\n", speaker, m.content));
     }
     if !s.trim_end().ends_with(':') {

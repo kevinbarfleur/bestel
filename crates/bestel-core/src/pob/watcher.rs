@@ -6,8 +6,8 @@ use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use tokio::sync::{broadcast, mpsc};
 
 use super::locator::{find_pob_dirs, most_recent_build, PobInstall};
-use super::parser::parse_file;
-use super::PobBuild;
+use super::parser::{parse_file, parse_summary};
+use super::{PobBuild, PobBuildSummary};
 
 pub struct PobWatcher {
     pub installs: Vec<PobInstall>,
@@ -100,5 +100,43 @@ impl PobWatcher {
 
     pub fn subscribe(&self) -> broadcast::Receiver<PobBuild> {
         self.events.subscribe()
+    }
+
+    /// Walk every detected install dir, parse a lightweight summary for each
+    /// XML file. Sorted by modification time descending so the build picker
+    /// shows the most recently saved first.
+    pub fn list_all_builds(&self) -> Vec<PobBuildSummary> {
+        let mut out: Vec<PobBuildSummary> = Vec::new();
+        for install in &self.installs {
+            walk_xml(&install.builds_dir, &mut out);
+        }
+        out.sort_by(|a, b| match (b.mtime, a.mtime) {
+            (Some(b), Some(a)) => b.cmp(&a),
+            (Some(_), None) => std::cmp::Ordering::Less,
+            (None, Some(_)) => std::cmp::Ordering::Greater,
+            _ => std::cmp::Ordering::Equal,
+        });
+        out
+    }
+}
+
+fn walk_xml(dir: &std::path::Path, out: &mut Vec<PobBuildSummary>) {
+    let rd = match std::fs::read_dir(dir) {
+        Ok(rd) => rd,
+        Err(_) => return,
+    };
+    for entry in rd.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            walk_xml(&path, out);
+            continue;
+        }
+        if path.extension().and_then(|s| s.to_str()) != Some("xml") {
+            continue;
+        }
+        match parse_summary(&path) {
+            Ok(s) => out.push(s),
+            Err(e) => tracing::debug!(target: "pob_watcher", "summary skip {}: {}", path.display(), e),
+        }
     }
 }

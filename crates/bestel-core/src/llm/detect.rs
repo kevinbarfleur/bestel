@@ -1,8 +1,11 @@
 use std::process::Stdio;
 
+use anyhow::{anyhow, Result};
+
 use super::anthropic::AnthropicClient;
 use super::claude_cli::ClaudeCliClient;
 use super::codex_cli::CodexCliClient;
+use super::models::{ModelProfile, ProviderKind};
 use super::spawn::cli_command;
 use super::Provider;
 
@@ -120,6 +123,41 @@ fn cli_label(bin: &str) -> &'static str {
         "claude" => "claude code",
         "gemini" => "gemini cli",
         _ => "cli",
+    }
+}
+
+/// Build a fresh `Provider` for the given profile, reusing the existing
+/// detection results to know whether the underlying CLI is installed
+/// (codex/claude) or whether the API key is set (Anthropic). Used by the
+/// model picker to hot-swap providers without restarting Bestel.
+pub async fn build_provider_for_profile(
+    profile: &ModelProfile,
+) -> Result<Provider> {
+    match profile.provider {
+        ProviderKind::Anthropic => {
+            // Honors the persisted profile via models::resolved_model_for.
+            let c = AnthropicClient::from_env()
+                .map_err(|e| anyhow!("ANTHROPIC_API_KEY missing or unreadable: {e}"))?;
+            Ok(Provider::Anthropic(c))
+        }
+        ProviderKind::CodexCli => {
+            let p = probe_cli("codex").await;
+            if !p.installed {
+                return Err(anyhow!("codex CLI not detected on PATH"));
+            }
+            Ok(Provider::CodexCli(CodexCliClient::new(
+                p.version.unwrap_or_default(),
+            )))
+        }
+        ProviderKind::ClaudeCli => {
+            let p = probe_cli("claude").await;
+            if !p.installed {
+                return Err(anyhow!("claude CLI not detected on PATH"));
+            }
+            Ok(Provider::ClaudeCli(ClaudeCliClient::new(
+                p.version.unwrap_or_default(),
+            )))
+        }
     }
 }
 

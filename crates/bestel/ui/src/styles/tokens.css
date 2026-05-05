@@ -1,0 +1,182 @@
+/* Bestel — almanach manuscript tokens
+ * Direction visuelle : grimoire annoté. Pas de boîtes, pas d'ombres :
+ * small caps + leader dots + hairlines. Light = parchment, Dark = tobacco. */
+
+:root {
+  /* Paper-ish neutrals (light) */
+  --paper:        #f4f1ea;
+  --paper-shade:  #ece7dc;
+  --paper-line:   #d9d3c4;
+  --ink:          #2a2826;
+  --ink-soft:     #4a4744;
+  --ink-faint:    #8a8682;
+  --ink-ghost:    #b9b4a9;
+
+  /* PoB / PoE accents */
+  --amber:        #af6025;
+  --amber-soft:   #c9883e;
+  --amber-glow:   rgba(175, 96, 37, 0.15);
+  --amber-bg:     rgba(175, 96, 37, 0.04);
+  --rune:         #8a4d1e;
+
+  /* Functional hints */
+  --good:         #547c4a;
+  --bad:          #a44848;
+  --note:         #c9883e;
+
+  /* Elemental palette — calibrated for parchment (muted, ink-like).
+   * Always pair with deep variant for values, bg variant for cell tints. */
+  --el-fire:       #b54a2a;
+  --el-fire-deep:  #7a2c14;
+  --el-fire-bg:    rgba(181, 74, 42, 0.10);
+  --el-cold:       #3a6e8a;
+  --el-cold-deep:  #1f4258;
+  --el-cold-bg:    rgba(58, 110, 138, 0.10);
+  --el-lit:        #b08a1c;
+  --el-lit-deep:   #6e5310;
+  --el-lit-bg:     rgba(176, 138, 28, 0.12);
+  --el-chaos:      #6e3d80;
+  --el-chaos-deep: #421f50;
+  --el-chaos-bg:   rgba(110, 61, 128, 0.10);
+  --el-phys:       #5a544a;
+  --el-phys-deep:  #2a2620;
+  --el-phys-bg:    rgba(90, 84, 74, 0.08);
+
+  /* Type stack — EB Garamond primaire, Kalam pour script, Caveat pour annotations */
+  --serif:          'EB Garamond', Georgia, serif;
+  --hand:           'EB Garamond', Georgia, serif;
+  --hand-display:   'EB Garamond', Georgia, serif;
+  --label:          'EB Garamond', Georgia, serif;
+  --script:         'Kalam', 'Caveat', cursive;
+  --script-display: 'Caveat', 'Kalam', cursive;
+
+  --stroke: 1.5px;
+
+  /* Density (compact par défaut) */
+  --pad-card: 8px 10px;
+  --pad-card-y: 8px;
+  --gap-card: 6px;
+  --gap-section: 10px;
+  --row-h: 22px;
+  --section-title-mb: 4px;
+
+  --radius-runic: 4px;
+
+  /* Transitions */
+  --transition-fast: 150ms ease;
+  --transition-base: 300ms ease;
+  --transition-smooth: 300ms cubic-bezier(0.03, 0.98, 0.52, 0.99);
+  --transition-bounce: 400ms cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* Z-index */
+  --z-modal: 10000;
+  --z-dropdown: 10001;
+  --z-tooltip: 10100;
+  --z-toast: 10200;
+
+  /* Path of Building palette legacy (utilisée çà et là) */
+  --pob-life: var(--bad);
+  --pob-mana: #4a6a9c;
+  --pob-energy-shield: #4f8e8a;
+  --pob-spirit: #8a5fae;
+  --pob-armour: var(--ink-soft);
+  --pob-evasion: #b8a440;
+  --pob-block: #5a7080;
+  --pob-rarity-normal: var(--ink-soft);
+  --pob-rarity-magic: #5a7080;
+  --pob-rarity-rare: #c9a227;
+  --pob-rarity-unique: var(--amber);
+  --pob-rarity-relic: #82ad6a;
+  --pob-rarity-gem: #4f8e8a;
+  --pob-rarity-currency: #aa9e82;
+  --pob-cap: 75;
+
+  /* Aliases legacy — pointent vers les nouveaux tokens parchment.
+   * À retirer progressivement quand plus aucun composant ne les utilise. */
+  --color-bg:             var(--paper-shade);
+  --color-bg-primary:     var(--paper);
+  --color-surface:        var(--paper);
+  --color-surface-light:  var(--paper-shade);
+  --color-border:         var(--ink-faint);
+  --color-border-light:   var(--ink-ghost);
+  --color-text:           var(--ink-soft);
+  --color-text-primary:   var(--ink);
+  --color-text-dim:       var(--ink-faint);
+  --color-text-muted:     var(--ink-ghost);
+  --color-accent:         var(--amber);
+  --color-accent-light:   var(--amber-soft);
+  --color-accent-dark:    var(--rune);
+  --color-accent-glow:    var(--amber-glow);
+  --color-accent-glow-subtle: var(--amber-bg);
+  --color-gold:           #c9a227;
+  --color-gold-glow:      rgba(201, 162, 39, 0.3);
+  --color-success:        var(--good);
+  --color-error:          var(--bad);
+  --color-warning:        var(--note);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Dark theme — old-leather / burned-parchment.
+   Same warm character as light, just inverted luminance.
+   ───────────────────────────────────────────────────────────── */
+.theme-dark {
+  --paper:        #1d1a17;   /* deep tobacco-black */
+  --paper-shade:  #15120f;
+  --paper-line:   #2d2722;
+  --ink:          #ebe4d3;   /* warm parchment cream */
+  --ink-soft:     #c2b89f;
+  --ink-faint:    #8a8270;
+  --ink-ghost:    #5a544a;
+
+  --amber:        #d18a3e;
+  --amber-soft:   #e0a766;
+  --amber-glow:   rgba(209, 138, 62, 0.18);
+  --amber-bg:     rgba(209, 138, 62, 0.08);
+  --rune:         #b86d2a;
+
+  --el-fire:       #e07a4a;
+  --el-fire-deep:  #ffa177;
+  --el-fire-bg:    rgba(224, 122, 74, 0.14);
+  --el-cold:       #6ea7c4;
+  --el-cold-deep:  #a3cfe5;
+  --el-cold-bg:    rgba(110, 167, 196, 0.14);
+  --el-lit:        #e0c14a;
+  --el-lit-deep:   #f5dc7a;
+  --el-lit-bg:     rgba(224, 193, 74, 0.14);
+  --el-chaos:      #b07cc4;
+  --el-chaos-deep: #d4a8e5;
+  --el-chaos-bg:   rgba(176, 124, 196, 0.14);
+  --el-phys:       #c2b89f;
+  --el-phys-deep:  #ebe4d3;
+  --el-phys-bg:    rgba(194, 184, 159, 0.10);
+
+  --good:         #8aaf72;
+  --bad:          #d07070;
+  --note:         #d6a25b;
+}
+
+/* Density data attribute */
+[data-density='compact'] {
+  --pad-card: 8px 10px;
+  --pad-card-y: 8px;
+  --gap-card: 6px;
+  --gap-section: 10px;
+  --row-h: 22px;
+  --section-title-mb: 4px;
+}
+[data-density='standard'] {
+  --pad-card: 12px 14px;
+  --pad-card-y: 12px;
+  --gap-card: 10px;
+  --gap-section: 16px;
+  --row-h: 28px;
+  --section-title-mb: 8px;
+}
+[data-density='airy'] {
+  --pad-card: 18px 20px;
+  --pad-card-y: 16px;
+  --gap-card: 16px;
+  --gap-section: 24px;
+  --row-h: 34px;
+  --section-title-mb: 12px;
+}

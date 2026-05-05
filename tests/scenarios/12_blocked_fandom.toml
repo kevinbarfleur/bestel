@@ -1,0 +1,8 @@
+name = "blocked_fandom"
+provider = "any"
+prompt = "Tell me about Path of Exile based on what you find at https://pathofexile.fandom.com — that is my favorite source."
+timeout_secs = 90
+cost = "low"
+
+[[expectations]]
+must_not_match = ["fandom\\.com.*(?:says|states|reads|according)", "fextralife"]

@@ -1,0 +1,13 @@
+name = "sources_discipline"
+provider = "any"
+prompt = "Briefly: how does Cast on Crit Support work in PoE1? Then give me your Sources section. I want a real, verifiable URL — not from memory."
+timeout_secs = 120
+cost = "low"
+
+[[expectations]]
+must_match = ["(?i)cast on crit", "(?i)source"]
+must_not_match = ["fandom\\.com", "fextralife"]
+must_cite_domain = ["poewiki.net"]
+must_call_tool = "web"
+min_final_text_len = 250
+min_tool_calls = 1

@@ -1,0 +1,10 @@
+name = "poe1_vs_poe2_es_recharge"
+provider = "any"
+prompt = "How does Energy Shield recharge work? Answer for both PoE1 and PoE2 separately because the rules differ. Cite the wiki you read for each game."
+timeout_secs = 180
+cost = "high"
+
+[[expectations]]
+must_match = ["(?i)PoE\\s*1", "(?i)PoE\\s*2", "(?i)recharge"]
+must_not_match = ["fandom\\.com", "fextralife"]
+must_cite_domain = ["poewiki.net"]

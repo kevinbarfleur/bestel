@@ -2,35 +2,89 @@
 
 > *"Let me tell you a tale, exile."*
 
-**Bestel** est un assistant IA en terminal pour **Path of Exile 1 & 2**, incarné par le chroniqueur de Lioneye's Watch. Il voit ton build Path of Building en direct, t'aide sur les mécaniques, l'optimisation de personnage, l'économie de la ligue.
+**Bestel** is a desktop AI companion for **Path of Exile 1 and Path of Exile 2**, written for the player who wants more than a wiki tab. It watches your live Path of Building file, reads it, and lets you have a real conversation about your build with an LLM that has been taught to think like a PoE veteran — verify everything on the wiki before answering, distinguish PoE1 from PoE2, and surface the named items, keystones and supports that actually solve your problem.
 
-## v0.1 — vertical slice
+The voice is Bestel, chronicler of Lioneye's Watch. Wraeclast wisdom, no pep talks.
 
-- TUI Ratatui (Windows-first, fonctionne aussi Linux/Mac)
-- Watcher Path of Building : tout build sauvegardé est récupéré automatiquement
-- Provider : **Anthropic** (clé API)
-- Outil interne : `get_active_build`
+## What it does
 
-## Prérequis
+- **Live Path of Building watcher.** Save a build in PoB / PoB2 → it appears in the sidebar. Switch builds, the panel updates. The active build is sent to the LLM as ground truth.
+- **Three providers, auto-detected.** Anthropic API key, Claude Code CLI, or Codex CLI — whichever you have. The model picker lets you switch on the fly.
+- **Structured chat.** Thinking, tool calls, web searches, build imports, and citations are rendered as inline manuscript artefacts (not buried in raw text).
+- **Persistent chat history.** Conversations are saved locally with their attached build, restored on the next launch.
+- **PoE-aware reasoning core.** A baked-in knowledge layer (`crates/bestel-core/CORE_KNOWLEDGE.md`) gives the agent build ontology, search planning, validation reflexes, and the genre / GGG priors — so it plans searches well rather than guessing from memory.
+- **MCP server mode.** Run `bestel mcp-serve` to expose Bestel's PoE tools (`get_active_build`, `find_synergies`, `wiki_*`, `trade_*`, etc.) to other AI tools (Claude Desktop, Claude Code, Cursor, Windsurf).
 
-- Path of Building (PoE1) ou Path of Building (PoE2) installé
-- Une clé API Anthropic dans `ANTHROPIC_API_KEY`
-- Rust 1.80+
+## Stack
 
-## Build & lancement
+- **Backend** — Rust 2021 workspace. `tokio` async, `reqwest` (rustls), `quick-xml` for PoB, `notify` for the watcher, `rmcp` for MCP.
+- **Frontend** — Tauri 2 + Vue 3 + TypeScript + Vite + Pinia. Custom titlebar, manuscript-style design system (small caps + leader dots + EB Garamond + Kalam).
+- **LLM providers** — Anthropic Messages API with native tool-use, plus shell-out to Claude Code CLI and Codex CLI for users who already pay a subscription.
+
+The full structure is documented in `docs/references/` (concept docs, source policy, build reasoning, retrieval playbooks, validation checklists, vocabulary, plus the Maxroll catalogs and the build-creators methodology).
+
+## Requirements
+
+- **Path of Building** (PoE1) and / or **Path of Building 2** (PoE2) installed and used at least once. Bestel reads the build XML files those tools save under your Documents directory.
+- One of:
+  - `ANTHROPIC_API_KEY` set in your environment, or
+  - `claude` CLI ([Claude Code](https://docs.claude.com/en/docs/claude-code)) on your `PATH`, or
+  - `codex` CLI ([OpenAI Codex CLI](https://github.com/openai/codex)) on your `PATH`.
+- **Rust 1.80+** and **Node 18+** to build from source.
+- Windows is the primary target. macOS and Linux build but have less testing coverage.
+
+## Build and run
 
 ```sh
-cargo build --release
-$env:ANTHROPIC_API_KEY = "sk-ant-..."
-.\target\release\bestel.exe
+git clone https://github.com/kevinbarfleur/bestel
+cd bestel
+
+# install frontend deps
+cd crates/bestel/ui && npm install && cd ../../..
+
+# release build
+cargo build --release -p bestel
+
+# launch
+./target/release/bestel.exe        # Windows
+./target/release/bestel            # macOS / Linux
 ```
 
-Sauvegarde un build dans PoB → il apparaît dans le panneau de gauche. Pose une question à Bestel à droite.
+For development with hot-reload:
 
-## Roadmap
+```sh
+cd crates/bestel
+cargo tauri dev
+```
 
-Voir [ROADMAP.md](ROADMAP.md). Au programme : OpenAI/Gemini, fetch wiki live, vision/screenshots, serveur MCP, PoB headless.
+## MCP server mode
 
-## Licence
+```sh
+bestel mcp-serve
+```
 
-MIT.
+Bestel speaks JSON-RPC on stdin / stdout. Wire it into Claude Desktop, Cursor or any MCP-aware client by pointing the client at the `bestel.exe` binary with the `mcp-serve` argument. The same PoE tools the in-app chat uses become available to the host model.
+
+## Configuration
+
+| Variable | Default | Role |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | — | Anthropic API key. |
+| `BESTEL_PROVIDER` | `auto` | Force `anthropic`, `claude`, or `codex`. |
+| `BESTEL_MODEL` | latest Sonnet | Model id for the Anthropic provider. |
+| `BESTEL_CACHE_DIR` | `~/.bestel/cache` | Cache directory for wiki / trade / fetch tools. |
+| `BESTEL_DEV_LOG` | unset | `1` to enable JSONL devlog under `~/.bestel/logs/`. |
+| `BESTEL_DEV_LOG_DIR` | `~/.bestel/logs` | Devlog directory override. |
+| `BESTEL_REASONING` | `low` | Codex CLI reasoning level (`minimal` / `low` / `medium` / `high` / `xhigh`). |
+| `BESTEL_REASONING_SUMMARY` | `detailed` | Codex CLI reasoning summary (`auto` / `concise` / `detailed`). |
+| `BESTEL_CONTACT_EMAIL` | `hi@kevinbarfleur.dev` | Email injected into the User-Agent sent to GGG APIs (their ToS asks for a contact). Override when forking. |
+
+## Sources Bestel trusts
+
+The agent uses a strict source allowlist: official `pathofexile.com` (forum, patch notes, trade, developer docs) → official wikis (`poewiki.net`, `poe2wiki.net`) → datamined data (`poedb.tw`, `poe2db.tw`, `repoe-fork`) → calculators (`pathofbuilding.community`, `craftofexile.com`) → economy (`poe.ninja`) → trusted creator guides (Maxroll, Mobalytics, pohx.net) with explicit patch + author + date. Fandom, Fextralife, RMT sites, and AI-aggregator answers are blocked.
+
+The full registry lives in `docs/references/15_source_registry.md`. Build creator profiles and the build-crafting decision framework are in `docs/references/16_build_methodology_and_creators.md`. The Maxroll article catalogs sit under `docs/references/maxroll/`.
+
+## License
+
+[MIT](LICENSE).

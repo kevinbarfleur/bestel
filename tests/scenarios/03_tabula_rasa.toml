@@ -1,0 +1,16 @@
+name = "tabula_rasa_poe1"
+provider = "any"
+prompt = "What does the unique body armour Tabula Rasa give in PoE1? Tell me the base item, drop level, and key property. Verify on the wiki and cite the URL."
+timeout_secs = 180
+cost = "low"
+
+[[expectations]]
+must_match = [
+    "[Ss]imple [Rr]obe",
+    "(?i)(socket|link|six.?link|6.link)",
+]
+must_not_match = ["fandom\\.com", "fextralife"]
+must_cite_domain = ["poewiki.net"]
+must_call_tool = "web"
+min_final_text_len = 200
+min_tool_calls = 1

@@ -1,0 +1,9 @@
+name = "trade_stat_ids"
+provider = "any"
+prompt = "Briefly: when searching pathofexile.com/trade for items, when do I pick a pseudo stat versus an explicit stat? Two sentences max. No need to invent stat IDs."
+timeout_secs = 300
+cost = "low"
+
+[[expectations]]
+must_match = ["(?i)pseudo", "(?i)explicit"]
+must_not_match = ["fandom\\.com", "fextralife"]

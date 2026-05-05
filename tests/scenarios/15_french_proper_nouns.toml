@@ -1,0 +1,11 @@
+name = "french_proper_nouns"
+provider = "any"
+prompt = "En français : explique-moi brièvement comment fonctionne la mécanique Spell Suppression dans Path of Exile 1. Garde les noms propres (Spell Suppression, etc.) en anglais. Cite la source wiki."
+timeout_secs = 120
+cost = "low"
+
+[[expectations]]
+must_match = ["[Ss]pell [Ss]uppression"]
+must_not_match = ["fandom\\.com", "fextralife", "[Ss]uppression de [Ss]ort"]
+must_cite_domain = ["poewiki.net"]
+must_call_tool = "web"

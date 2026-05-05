@@ -1,0 +1,212 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #app {
+    height: 100%;
+    margin: 0;
+    background: var(--paper-shade);
+    color: var(--ink);
+    font-family: var(--hand);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow: hidden;
+  }
+
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  ::selection {
+    background: var(--amber-glow);
+    color: var(--ink);
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   Almanach grammar — réutilisée partout dans le UI.
+   ───────────────────────────────────────────────────────────── */
+
+/* Inline link — amber, dotted underline (not web-default blue).
+   Use on item names, source titles, prices, anything navigable. */
+.link {
+  color: var(--amber);
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-decoration-color: var(--amber-soft);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  font-weight: inherit;
+  transition: color var(--transition-fast);
+}
+.link:hover {
+  text-decoration-style: solid;
+  color: var(--amber-soft);
+}
+
+/* Subtle variant — for inline mentions (passive nodes, secondary refs). */
+.link--soft {
+  color: var(--ink);
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-decoration-color: var(--ink-faint);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  transition: color var(--transition-fast);
+}
+.link--soft:hover {
+  text-decoration-color: var(--amber);
+  color: var(--amber);
+}
+
+/* Small caps category label — used in margins, section heads, footer meta. */
+.label-caps {
+  font-family: var(--label);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* Section header — small caps title + flex grow hairline + right meta italic */
+.h-section {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding-bottom: 4px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--paper-line);
+  white-space: nowrap;
+}
+.h-section__title {
+  font-family: var(--label);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.h-section__grow {
+  flex: 1;
+}
+.h-section__meta {
+  font-family: var(--script);
+  font-size: 11px;
+  color: var(--ink-faint);
+  font-style: italic;
+  white-space: nowrap;
+}
+
+/* Leader-dot row — key (small caps) ··· value (hand-display).
+   The dotted spacer is translated up 3px to align with baseline. */
+.leader-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.leader-row__k {
+  font-family: var(--label);
+  font-size: 10px;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  font-weight: 500;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.leader-row__dots {
+  flex: 1;
+  min-width: 12px;
+  border-bottom: 1px dotted var(--paper-line);
+  transform: translateY(-3px);
+}
+.leader-row__v {
+  font-family: var(--hand-display);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+/* Hairline horizontal rule */
+.sk-hr {
+  border: 0;
+  border-top: 1px solid var(--paper-line);
+  margin: 0;
+}
+.sk-hr--dashed {
+  border-top-style: dashed;
+}
+.sk-hr--amber {
+  border-top: 1px solid var(--amber);
+  opacity: 0.7;
+}
+
+/* Sketchy paper background — subtle grain + warm gradient pools */
+.sketch-bg {
+  background:
+    radial-gradient(circle at 20% 15%, rgba(175, 96, 37, 0.04), transparent 50%),
+    radial-gradient(circle at 80% 85%, rgba(120, 90, 60, 0.04), transparent 50%),
+    repeating-linear-gradient(0deg, transparent 0 31px, rgba(180, 170, 140, 0.06) 31px 32px),
+    var(--paper);
+}
+.theme-dark .sketch-bg {
+  background:
+    radial-gradient(circle at 20% 15%, rgba(209, 138, 62, 0.05), transparent 50%),
+    radial-gradient(circle at 80% 85%, rgba(180, 140, 90, 0.05), transparent 50%),
+    repeating-linear-gradient(0deg, transparent 0 31px, rgba(120, 100, 70, 0.06) 31px 32px),
+    var(--paper);
+}
+
+/* Aside — small Garamond meta inline (e.g. "· 14m ago", "· 4 queries") */
+.aside {
+  font-family: var(--hand);
+  font-size: 12px;
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+
+/* Streaming cursor — blinking amber bar at end of streaming text */
+.streaming-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 14px;
+  background: var(--amber);
+  margin-left: 4px;
+  vertical-align: text-bottom;
+  animation: blink 1s steps(2) infinite;
+}
+@keyframes blink {
+  50% { opacity: 0; }
+}
+
+/* Runic scrollbar — minimal, stays in mood */
+.runic-scrollbar::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.runic-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.runic-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--ink-ghost);
+  border-radius: 4px;
+}
+.runic-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--ink-faint);
+}
+.runic-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--ink-ghost) transparent;
+}

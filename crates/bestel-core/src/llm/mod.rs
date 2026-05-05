@@ -14,8 +14,11 @@ pub mod anthropic;
 pub mod claude_cli;
 pub mod codex_cli;
 pub mod detect;
+pub mod mcp_config;
+pub mod models;
 pub mod spawn;
 pub mod tools;
+pub mod wiki;
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
@@ -33,10 +36,38 @@ pub enum Role {
     Assistant,
 }
 
+/// A single attachment carried by a user message: image (sent as base64
+/// content block to vision-capable providers) or text-like document
+/// (PDF / TXT / MD — inlined as text with a header preamble).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Attachment {
+    pub name: String,
+    pub mime: String,
+    pub data_base64: String,
+}
+
+impl Attachment {
+    pub fn is_image(&self) -> bool {
+        matches!(
+            self.mime.as_str(),
+            "image/png" | "image/jpeg" | "image/jpg" | "image/webp" | "image/gif"
+        )
+    }
+
+    pub fn is_text_doc(&self) -> bool {
+        matches!(
+            self.mime.as_str(),
+            "text/plain" | "text/markdown" | "application/pdf"
+        )
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChatMessage {
     pub role: Role,
     pub content: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub attachments: Vec<Attachment>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

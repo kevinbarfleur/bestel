@@ -1,0 +1,9 @@
+name = "recent_patch_notes"
+provider = "any"
+prompt = "What was added or rebalanced in the most recent PoE2 content patch? Search the official forum patch notes and summarize the top three gameplay-affecting changes. Cite the official thread URL."
+timeout_secs = 180
+cost = "high"
+
+[[expectations]]
+must_not_match = ["fandom\\.com", "fextralife"]
+must_cite_domain = ["pathofexile.com"]

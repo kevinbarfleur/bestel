@@ -6,11 +6,12 @@ use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::mpsc;
 
+use super::mcp_config::strip_mcp_prefix;
 use super::spawn::cli_command;
 use super::tools::BuildContext;
 use super::{ChatMessage, LlmDelta, Role, ToolStatus};
 use crate::devlog;
-use crate::prompt::SYSTEM_PROMPT;
+use crate::prompt::SYSTEM_PROMPT_COMPOSED;
 
 pub struct CodexCliClient {
     version: String,
@@ -36,11 +37,23 @@ impl CodexCliClient {
         deltas: mpsc::UnboundedSender<LlmDelta>,
     ) -> Result<String> {
         let prompt = build_full_prompt(&history, &ctx);
+
+        // The CLI providers receive the build inline in the prompt, so the
+        // model never emits a `get_active_build` tool call. To match the
+        // Anthropic API path where users *see* a tool card every turn,
+        // synthesise one here from the BuildContext snapshot.
+        emit_build_context_card(&ctx, &deltas);
+
         let reasoning =
-            std::env::var("BESTEL_REASONING").unwrap_or_else(|_| "low".to_string());
+            std::env::var("BESTEL_REASONING").unwrap_or_else(|_| "high".to_string());
 
         let mut cmd = cli_command("codex");
-        cmd.arg("exec")
+        // `--search` is a global flag (not on `exec`) that enables the
+        // native web_search tool. Without it Codex answers from memory and
+        // the build context only — no live verification, no source URLs.
+        // This is the one flag that makes Bestel actually useful on Codex.
+        cmd.arg("--search")
+            .arg("exec")
             .arg("--json")
             .arg("--skip-git-repo-check")
             .arg("--sandbox")
@@ -56,7 +69,9 @@ impl CodexCliClient {
                     .unwrap_or_else(|_| "detailed".to_string())
             ));
 
-        if let Ok(model) = std::env::var("BESTEL_MODEL") {
+        if let Some(model) =
+            super::models::resolved_model_for(super::models::ProviderKind::CodexCli)
+        {
             cmd.arg("-m").arg(model);
         }
 
@@ -102,17 +117,52 @@ impl CodexCliClient {
             acc
         });
 
-        while let Some(line) = reader.next_line().await? {
-            let trimmed = line.trim();
-            if trimmed.is_empty() {
-                continue;
+        // Idle timeout: if codex stops emitting events for this long,
+        // assume the subprocess hung (stalled web search, dead OpenAI
+        // request, internal bug) and kill it so the user sees an error
+        // instead of an infinite spinner. The window is generous because
+        // legitimate reasoning between web searches can take 30-60s.
+        let idle_window = Duration::from_secs(
+            std::env::var("BESTEL_CODEX_IDLE_SECS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(180),
+        );
+
+        loop {
+            match tokio::time::timeout(idle_window, reader.next_line()).await {
+                Ok(Ok(Some(line))) => {
+                    let trimmed = line.trim();
+                    if trimmed.is_empty() {
+                        continue;
+                    }
+                    devlog::log_provider_raw("codex", trimmed);
+                    let v: Value = match serde_json::from_str(trimmed) {
+                        Ok(v) => v,
+                        Err(_) => continue,
+                    };
+                    handle_codex_event(&v, &deltas, &mut state).await;
+                }
+                Ok(Ok(None)) => break, // clean EOF — child closed stdout
+                Ok(Err(e)) => return Err(e.into()),
+                Err(_) => {
+                    // Idle timeout — kill the child and tell the user.
+                    devlog::log_str(
+                        "codex_idle_timeout",
+                        "secs",
+                        &idle_window.as_secs().to_string(),
+                    );
+                    let _ = child.kill().await;
+                    let msg = format!(
+                        "codex est resté silencieux pendant {}s — je l'ai arrêté. \
+                         Cela arrive parfois (surcharge OpenAI, recherche bloquée). \
+                         Réessaie ; si ça persiste, augmente BESTEL_CODEX_IDLE_SECS.",
+                        idle_window.as_secs()
+                    );
+                    let _ = deltas.send(LlmDelta::Error(msg.clone()));
+                    return Err(anyhow!(msg));
+                }
             }
-            devlog::log_provider_raw("codex", trimmed);
-            let v: Value = match serde_json::from_str(trimmed) {
-                Ok(v) => v,
-                Err(_) => continue,
-            };
-            handle_codex_event(&v, &deltas, &mut state).await;
         }
 
         // close any reasoning still open
@@ -281,12 +331,12 @@ async fn handle_codex_event(
                 state,
             );
         }
-        "function_call" | "tool_call" => {
-            let name = item
+        "function_call" | "tool_call" | "mcp_tool_call" | "mcp_call" => {
+            let raw_name = item
                 .get("name")
                 .and_then(|c| c.as_str())
-                .unwrap_or("tool")
-                .to_string();
+                .unwrap_or("tool");
+            let name = strip_mcp_prefix(raw_name).to_string();
             let detail = extract_first_str(
                 item,
                 &["arguments", "args", "input", "params", "query", "url"],
@@ -376,7 +426,7 @@ async fn handle_codex_event(
 fn derive_tool_label(item_type: &str, item: &Value) -> String {
     if let Some(name) = item.get("name").and_then(|n| n.as_str()) {
         if !name.is_empty() {
-            return name.to_string();
+            return strip_mcp_prefix(name).to_string();
         }
     }
     let lower = item_type.to_lowercase();
@@ -678,23 +728,84 @@ fn first_line_summary(s: &str, max: usize) -> String {
     }
 }
 
+/// Emit a synthetic `get_active_build` tool card so the user sees that
+/// Bestel read the PoB context. Codex/Claude CLI both receive the build
+/// inline in the prompt — they never issue a real tool call for it — but
+/// the user still wants visibility, the same as on the Anthropic API path.
+fn emit_build_context_card(
+    ctx: &BuildContext,
+    deltas: &mpsc::UnboundedSender<LlmDelta>,
+) {
+    let id = "pob-context".to_string();
+    let detail = match ctx.get() {
+        Some(b) => Some(b.summary_line()),
+        None => Some("aucun build chargé".to_string()),
+    };
+    let summary = match ctx.get() {
+        Some(b) => {
+            let mut bits: Vec<String> = Vec::new();
+            if let Some(skill) = &b.main_skill {
+                bits.push(format!("main: {skill}"));
+            }
+            if let Some(life) = b.life() {
+                bits.push(format!("Life {}", life as i64));
+            }
+            if let Some(ehp) = b.ehp() {
+                bits.push(format!("EHP {}", ehp as i64));
+            }
+            if let Some(dps) = b.dps() {
+                bits.push(format!("DPS {:.0}", dps));
+            }
+            if !b.items.is_empty() {
+                bits.push(format!("{} items", b.items.len()));
+            }
+            if !b.skill_groups.is_empty() {
+                bits.push(format!("{} skill groups", b.skill_groups.len()));
+            }
+            if bits.is_empty() {
+                Some(b.summary_line())
+            } else {
+                Some(bits.join(" · "))
+            }
+        }
+        None => None,
+    };
+    let _ = deltas.send(LlmDelta::ToolBegin {
+        id: id.clone(),
+        name: "get_active_build".into(),
+        detail,
+    });
+    let _ = deltas.send(LlmDelta::ToolEnd {
+        id,
+        status: ToolStatus::Done,
+        summary,
+    });
+}
+
 fn build_full_prompt(history: &[ChatMessage], ctx: &BuildContext) -> String {
     let mut s = String::new();
     s.push_str("[BESTEL — PERSONA INSTRUCTIONS]\n");
-    s.push_str(SYSTEM_PROMPT);
+    s.push_str(SYSTEM_PROMPT_COMPOSED);
     s.push_str("\n\n[CURRENT PATH OF BUILDING DATA]\n");
     s.push_str(
         "Below is the live build the user has open in Path of Building. Use it as ground truth. \
          You do NOT need any tool to access this — it is already provided.\n\n",
     );
     s.push_str(&ctx.render_tool_result());
-    s.push_str("\n\n[INSTRUCTIONS]\n");
+    s.push_str("\n\n[TURN INSTRUCTIONS — read this AFTER the persona, BEFORE answering]\n");
     s.push_str(
-        "- Stay in character as Bestel.\n\
-         - Answer in the user's language (French by default).\n\
-         - Do not modify any files. Do not run shell commands. Just answer.\n\
-         - Quote concrete numbers from the build above when relevant.\n\
-         - Be concise. A chronicler weighs his words.\n\n",
+        "Run the pre-flight checkpoint defined in the persona prompt before writing. \
+         All five steps must be satisfied. Do not write the final answer while a step is open.\n\n\
+         Mandatory tool calls for every keystone, mechanic, item, skill, build-fix, or league question:\n\
+         1. `web_search site:poewiki.net <core-topic>` (or `site:poe2wiki.net` if the build is PoE2). Then `web_fetch` the top result and read past the first paragraph.\n\
+         2. `find_synergies(topic=\"<core-topic>\")` — never skip. The reverse-link index reveals the items the user did not name. Then optionally `web_fetch` 1-2 candidates to confirm they actually pair.\n\
+         3. Re-read the build context with the mechanic in mind. Compute the concrete numbers (current vs target).\n\n\
+         Answer shape:\n\
+         - Length floor: **15 sentences minimum** for non-trivial questions. There is no ceiling. The right size is the size that explains the mechanic, the build math, the acquisition, the path forward, the synergies, and the sources — in that order, in distinct paragraphs.\n\
+         - Required sections, in order: (1) mechanics paragraph with the full keystone/item text and numbers; (2) build paragraph with concrete math from the loaded PoB; (3) acquisition paragraph naming every source; (4) path paragraph with the steps from current state to desired state; (5) `Synergies:` section as a bullet list of 2-4 named candidates with one sentence each; (6) `Sources:` section as markdown links.\n\
+         - Wrap every PoE entity in backticks: items (`The Fourth Vow`), keystones (`Divine Flesh`), uniques, gems, ascendancies, passive nodes, league mechanics, bosses. The TUI auto-converts those into clickable wiki links.\n\
+         - Stay in character as Bestel. Default to English; mirror the exile's language for prose, keep proper nouns in English regardless. Do not modify files or run shell commands.\n\
+         - Do not compress mechanics to fit synergies. The answer expands. If the synergy sweep yielded less than 2 mechanically-relevant candidates, briefly say so and skip the section.\n\n",
     );
     s.push_str("[CONVERSATION]\n");
     let take = history.len().saturating_sub(8);
@@ -703,6 +814,16 @@ fn build_full_prompt(history: &[ChatMessage], ctx: &BuildContext) -> String {
             Role::User => "Exile",
             Role::Assistant => "Bestel",
         };
+        if !m.attachments.is_empty() {
+            for att in &m.attachments {
+                if att.is_image() {
+                    s.push_str(&format!(
+                        "{}: [attached image: {} ({})] — note: this provider does not support vision; describe what you can see in text or ask the exile to describe it.\n",
+                        speaker, att.name, att.mime
+                    ));
+                }
+            }
+        }
         s.push_str(&format!("{}: {}\n", speaker, m.content));
     }
     s.push_str("Bestel:");
