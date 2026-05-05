@@ -24,6 +24,8 @@ pub enum ProviderKind {
     CodexCli,
     /// `ClaudeCliClient` — spawns the `claude` subprocess. Subscription billing.
     ClaudeCli,
+    /// `OllamaClient` — connects to a local Ollama daemon. Free, offline-capable.
+    Ollama,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -37,6 +39,7 @@ pub enum SpeedTier {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum CostTier {
+    Free,
     Cheap,
     Mid,
     Premium,
@@ -133,6 +136,66 @@ const PROFILES: &[ModelProfile] = &[
         cost: CostTier::Subscription,
         cost_per_mtok: None,
     },
+    // Local / free models via Ollama. Free, offline, no API key. Tool
+    // calling depends on the model — the entries below all support
+    // function calling. Model availability depends on which models the
+    // user has pulled (`ollama pull <name>`); the picker filters this
+    // list against the live `/api/tags` probe at startup.
+    ModelProfile {
+        id: "ollama-llama3.1-8b",
+        provider: ProviderKind::Ollama,
+        model_id: "llama3.1:8b",
+        display_name: "Ollama · Llama 3.1 8B",
+        description:
+            "Local Llama 3.1 8B via Ollama. Free, fast on consumer GPUs (8 GB VRAM), supports tool calling. Run `ollama pull llama3.1:8b` first.",
+        speed: SpeedTier::Fast,
+        cost: CostTier::Free,
+        cost_per_mtok: None,
+    },
+    ModelProfile {
+        id: "ollama-llama3.1-70b",
+        provider: ProviderKind::Ollama,
+        model_id: "llama3.1:70b",
+        display_name: "Ollama · Llama 3.1 70B",
+        description:
+            "Local Llama 3.1 70B via Ollama. Heavy: needs ~40 GB VRAM or strong CPU offload. Stronger reasoning than the 8B; supports tool calling.",
+        speed: SpeedTier::Heavy,
+        cost: CostTier::Free,
+        cost_per_mtok: None,
+    },
+    ModelProfile {
+        id: "ollama-qwen2.5-7b",
+        provider: ProviderKind::Ollama,
+        model_id: "qwen2.5:7b",
+        display_name: "Ollama · Qwen 2.5 7B",
+        description:
+            "Local Qwen 2.5 7B via Ollama. Free, strong on tool calling and structured output. Good default for low-VRAM machines.",
+        speed: SpeedTier::Fast,
+        cost: CostTier::Free,
+        cost_per_mtok: None,
+    },
+    ModelProfile {
+        id: "ollama-mistral-nemo",
+        provider: ProviderKind::Ollama,
+        model_id: "mistral-nemo",
+        display_name: "Ollama · Mistral Nemo 12B",
+        description:
+            "Local Mistral Nemo 12B via Ollama. Free, strong multilingual support, native tool calling. Run `ollama pull mistral-nemo` first.",
+        speed: SpeedTier::Balanced,
+        cost: CostTier::Free,
+        cost_per_mtok: None,
+    },
+    ModelProfile {
+        id: "ollama-llama3.2-vision",
+        provider: ProviderKind::Ollama,
+        model_id: "llama3.2-vision",
+        display_name: "Ollama · Llama 3.2 Vision",
+        description:
+            "Local Llama 3.2 Vision via Ollama. Free, accepts image attachments. Lighter on tool calling than text-only models — use it when you want to drop a screenshot.",
+        speed: SpeedTier::Balanced,
+        cost: CostTier::Free,
+        cost_per_mtok: None,
+    },
 ];
 
 pub fn default_profile() -> &'static ModelProfile {
@@ -223,6 +286,7 @@ mod tests {
     #[test]
     fn lookup_known_returns_some() {
         assert!(find_profile("anthropic-sonnet-4-5").is_some());
-        assert!(find_profile("codex-gpt-5").is_some());
+        assert!(find_profile("codex-gpt-5-codex").is_some());
+        assert!(find_profile("ollama-llama3.1-8b").is_some());
     }
 }

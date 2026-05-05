@@ -16,6 +16,7 @@ pub mod codex_cli;
 pub mod detect;
 pub mod mcp_config;
 pub mod models;
+pub mod ollama;
 pub mod spawn;
 pub mod tools;
 pub mod wiki;
@@ -27,6 +28,7 @@ use tokio::sync::mpsc;
 use anthropic::AnthropicClient;
 use claude_cli::ClaudeCliClient;
 use codex_cli::CodexCliClient;
+use ollama::OllamaClient;
 use tools::BuildContext;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -105,6 +107,7 @@ pub enum Provider {
     Anthropic(AnthropicClient),
     CodexCli(CodexCliClient),
     ClaudeCli(ClaudeCliClient),
+    Ollama(OllamaClient),
 }
 
 impl Provider {
@@ -113,6 +116,7 @@ impl Provider {
             Provider::Anthropic(c) => format!("anthropic api · {}", c.model()),
             Provider::CodexCli(c) => format!("codex cli · {}", c.version_label()),
             Provider::ClaudeCli(c) => format!("claude cli · {}", c.version_label()),
+            Provider::Ollama(c) => format!("ollama · {}", c.model()),
         }
     }
 
@@ -121,6 +125,7 @@ impl Provider {
             Provider::Anthropic(_) => "API key",
             Provider::CodexCli(_) => "subscription",
             Provider::ClaudeCli(_) => "subscription",
+            Provider::Ollama(_) => "local",
         }
     }
 
@@ -134,6 +139,7 @@ impl Provider {
             Provider::Anthropic(c) => c.run(history, ctx, deltas).await,
             Provider::CodexCli(c) => c.run(history, ctx, deltas).await,
             Provider::ClaudeCli(c) => c.run(history, ctx, deltas).await,
+            Provider::Ollama(c) => c.run(history, ctx, deltas).await,
         }
     }
 }

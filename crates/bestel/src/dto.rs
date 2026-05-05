@@ -394,6 +394,7 @@ fn provider_kind_label(p: ProviderKind) -> &'static str {
         ProviderKind::Anthropic => "anthropic",
         ProviderKind::CodexCli => "codex_cli",
         ProviderKind::ClaudeCli => "claude_cli",
+        ProviderKind::Ollama => "ollama",
     }
 }
 
@@ -407,6 +408,7 @@ fn speed_label(s: SpeedTier) -> &'static str {
 
 fn cost_label(c: CostTier) -> &'static str {
     match c {
+        CostTier::Free => "free",
         CostTier::Cheap => "cheap",
         CostTier::Mid => "mid",
         CostTier::Premium => "premium",
