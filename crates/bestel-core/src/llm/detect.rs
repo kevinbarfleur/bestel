@@ -6,6 +6,7 @@ use super::anthropic::AnthropicClient;
 use super::claude_cli::ClaudeCliClient;
 use super::codex_cli::CodexCliClient;
 use super::models::{ModelProfile, ProviderKind};
+use super::ollama::{self, OllamaClient};
 use super::spawn::cli_command;
 use super::Provider;
 
@@ -50,12 +51,66 @@ pub async fn detect_provider() -> Detection {
         note: if key_set {
             None
         } else {
-            Some("ANTHROPIC_API_KEY non définie".into())
+            Some("ANTHROPIC_API_KEY not set".into())
         },
     });
     if chosen.is_none() && key_set {
         if let Ok(c) = AnthropicClient::from_env() {
             chosen = Some(Provider::Anthropic(c));
+        }
+    }
+
+    // Ollama is the free / local fallback. We surface it as a probe even when
+    // a paid provider is already chosen so the user can see local mode is
+    // available and switch to it via the model picker. If nothing else
+    // succeeded above and Ollama is reachable, default to it.
+    let ollama_host = std::env::var("OLLAMA_HOST")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "http://localhost:11434".to_string());
+    let ollama_models = ollama::probe_models(Some(&ollama_host)).await;
+    match &ollama_models {
+        Some(list) if !list.is_empty() => {
+            let preview = list
+                .iter()
+                .take(3)
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(", ");
+            let extra = if list.len() > 3 {
+                format!(" (+{} more)", list.len() - 3)
+            } else {
+                String::new()
+            };
+            probes.push(Probe {
+                name: "ollama",
+                installed: true,
+                version: Some(format!("{} models{}", list.len(), extra)),
+                note: Some(format!("e.g. {preview}")),
+            });
+            if chosen.is_none() {
+                if let Ok(c) = OllamaClient::from_env() {
+                    chosen = Some(Provider::Ollama(c));
+                }
+            }
+        }
+        Some(_) => {
+            probes.push(Probe {
+                name: "ollama",
+                installed: true,
+                version: None,
+                note: Some(format!(
+                    "daemon reachable at {ollama_host} but no model installed — run `ollama pull llama3.1:8b`"
+                )),
+            });
+        }
+        None => {
+            probes.push(Probe {
+                name: "ollama",
+                installed: false,
+                version: None,
+                note: Some(format!("no daemon at {ollama_host} — install from https://ollama.com")),
+            });
         }
     }
 
@@ -156,6 +211,34 @@ pub async fn build_provider_for_profile(
             }
             Ok(Provider::ClaudeCli(ClaudeCliClient::new(
                 p.version.unwrap_or_default(),
+            )))
+        }
+        ProviderKind::Ollama => {
+            let host = std::env::var("OLLAMA_HOST")
+                .ok()
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| "http://localhost:11434".to_string());
+            let models = ollama::probe_models(Some(&host))
+                .await
+                .ok_or_else(|| {
+                    anyhow!(
+                        "Ollama daemon not reachable at {host}. Install from https://ollama.com and run `ollama serve`."
+                    )
+                })?;
+            // Verify the requested model is installed locally; otherwise the
+            // first call would fail with a confusing 500 from the daemon.
+            if !profile.model_id.is_empty()
+                && !models.iter().any(|m| m == profile.model_id || m.starts_with(&format!("{}:", profile.model_id)))
+            {
+                return Err(anyhow!(
+                    "Ollama model `{}` not found locally. Run `ollama pull {}` first.",
+                    profile.model_id,
+                    profile.model_id
+                ));
+            }
+            Ok(Provider::Ollama(OllamaClient::with(
+                host,
+                profile.model_id.to_string(),
             )))
         }
     }

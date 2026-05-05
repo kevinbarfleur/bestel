@@ -9,7 +9,7 @@ The voice is Bestel, chronicler of Lioneye's Watch. Wraeclast wisdom, no pep tal
 ## What it does
 
 - **Live Path of Building watcher.** Save a build in PoB / PoB2 → it appears in the sidebar. Switch builds, the panel updates. The active build is sent to the LLM as ground truth.
-- **Three providers, auto-detected.** Anthropic API key, Claude Code CLI, or Codex CLI — whichever you have. The model picker lets you switch on the fly.
+- **Four providers, auto-detected.** Anthropic API key, Claude Code CLI, Codex CLI, or **Ollama for free local inference** — whichever you have. The model picker lets you switch on the fly.
 - **Structured chat.** Thinking, tool calls, web searches, build imports, and citations are rendered as inline manuscript artefacts (not buried in raw text).
 - **Persistent chat history.** Conversations are saved locally with their attached build, restored on the next launch.
 - **PoE-aware reasoning core.** A baked-in knowledge layer (`crates/bestel-core/CORE_KNOWLEDGE.md`) gives the agent build ontology, search planning, validation reflexes, and the genre / GGG priors — so it plans searches well rather than guessing from memory.
@@ -29,7 +29,8 @@ The full structure is documented in `docs/references/` (concept docs, source pol
 - One of:
   - `ANTHROPIC_API_KEY` set in your environment, or
   - `claude` CLI ([Claude Code](https://docs.claude.com/en/docs/claude-code)) on your `PATH`, or
-  - `codex` CLI ([OpenAI Codex CLI](https://github.com/openai/codex)) on your `PATH`.
+  - `codex` CLI ([OpenAI Codex CLI](https://github.com/openai/codex)) on your `PATH`, or
+  - **[Ollama](https://ollama.com)** running locally with at least one model pulled (e.g. `ollama pull llama3.1:8b`) — the free / offline path.
 - **Rust 1.80+** and **Node 18+** to build from source.
 - Windows is the primary target. macOS and Linux build but have less testing coverage.
 
@@ -57,6 +58,26 @@ cd crates/bestel
 cargo tauri dev
 ```
 
+## Free / offline mode (Ollama)
+
+Bestel can run end-to-end with no API key and no subscription, against a local [Ollama](https://ollama.com) daemon. The active build, the manuscript-style chat, the structured artefacts, and the PoE-aware reasoning core all keep working — you just lose access to frontier models.
+
+```sh
+# 1. install Ollama from https://ollama.com (one-time)
+# 2. pull a model with native tool calling
+ollama pull llama3.1:8b
+
+# 3. start Ollama (a system tray on Windows / a daemon on macOS+Linux)
+ollama serve
+
+# 4. launch Bestel — it auto-detects the daemon and shows installed models in the picker
+./target/release/bestel.exe
+```
+
+Recommended models for tool calling: `llama3.1:8b` (default), `qwen2.5:7b`, `mistral-nemo`. For vision (image attachments in chat) try `llama3.2-vision`. Heavier rigs can run `llama3.1:70b` for closer-to-frontier reasoning. The picker only shows models you have actually pulled — Bestel polls `/api/tags` at startup.
+
+The persisted active-model preference (`~/.bestel/runtime/model.json`) is honoured across providers, so you can flip between Anthropic and Ollama via the picker without restarting.
+
 ## MCP server mode
 
 ```sh
@@ -70,8 +91,9 @@ Bestel speaks JSON-RPC on stdin / stdout. Wire it into Claude Desktop, Cursor or
 | Variable | Default | Role |
 |---|---|---|
 | `ANTHROPIC_API_KEY` | — | Anthropic API key. |
-| `BESTEL_PROVIDER` | `auto` | Force `anthropic`, `claude`, or `codex`. |
-| `BESTEL_MODEL` | latest Sonnet | Model id for the Anthropic provider. |
+| `BESTEL_PROVIDER` | `auto` | Force `anthropic`, `claude`, `codex`, or `ollama`. |
+| `BESTEL_MODEL` | latest Sonnet | Model id for the Anthropic / Ollama provider. |
+| `OLLAMA_HOST` | `http://localhost:11434` | Ollama daemon URL (override for remote / non-default port). |
 | `BESTEL_CACHE_DIR` | `~/.bestel/cache` | Cache directory for wiki / trade / fetch tools. |
 | `BESTEL_DEV_LOG` | unset | `1` to enable JSONL devlog under `~/.bestel/logs/`. |
 | `BESTEL_DEV_LOG_DIR` | `~/.bestel/logs` | Devlog directory override. |

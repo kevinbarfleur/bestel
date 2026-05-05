@@ -232,6 +232,7 @@ watch(
 
 .model-picker__tag--fast    { color: var(--good); border-color: var(--good); }
 .model-picker__tag--heavy   { color: var(--bad); border-color: var(--bad); }
+.model-picker__tag--free    { color: var(--good); border-color: var(--good); }
 .model-picker__tag--cheap   { color: var(--good); border-color: var(--good); }
 .model-picker__tag--premium { color: var(--bad); border-color: var(--bad); }
 .model-picker__tag--subscription { color: var(--amber); border-color: var(--amber); }
