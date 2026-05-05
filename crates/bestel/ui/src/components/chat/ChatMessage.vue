@@ -8,6 +8,7 @@ import type { ChatMessageVm, ReasoningSegment, TextSegment, ToolSegment } from '
 import ToolCallBadge from './ToolCallBadge.vue';
 import ArtThinking from './artifacts/ArtThinking.vue';
 import ArtPoBImport from './artifacts/ArtPoBImport.vue';
+import ArtWikiPage from './artifacts/ArtWikiPage.vue';
 import AttachmentChip from './artifacts/AttachmentChip.vue';
 
 const props = defineProps<{ message: ChatMessageVm }>();
@@ -45,20 +46,38 @@ interface Turn {
   key: string;
   label: string;
   color: string;
-  kind: 'text' | 'reasoning' | 'tool-pob' | 'tool-generic' | 'placeholder';
+  kind: 'text' | 'reasoning' | 'tool-pob' | 'tool-wiki-page' | 'tool-generic' | 'placeholder';
   segment: TextSegment | ReasoningSegment | ToolSegment | null;
   isLast: boolean;
 }
 
 const TOOL_KIND_LABEL: Record<string, { label: string; color: string }> = {
+  // Build context
   get_active_build: { label: 'import', color: 'var(--el-lit)' },
-  web_search: { label: 'search', color: 'var(--ink-soft)' },
+  // Wiki tools
+  wiki_search: { label: 'search', color: 'var(--ink-soft)' },
+  wiki_parse: { label: 'wiki', color: 'var(--el-cold)' },
+  wiki_synergies: { label: 'sweep', color: 'var(--good)' },
+  wiki_cargo: { label: 'cargo', color: 'var(--ink-soft)' },
+  // Legacy alias for the renamed wiki_synergies tool
+  find_synergies: { label: 'sweep', color: 'var(--good)' },
+  // Trade tools
+  trade_resolve_stats: { label: 'trade', color: 'var(--ink-soft)' },
+  trade_search_url: { label: 'trades', color: 'var(--ink-soft)' },
   trade_search: { label: 'trades', color: 'var(--ink-soft)' },
-  find_synergies: { label: 'diff', color: 'var(--good)' },
+  // Generic web fetch (allowlisted)
+  web_fetch: { label: 'fetch', color: 'var(--ink-soft)' },
+  web_search: { label: 'search', color: 'var(--ink-soft)' },
 };
 
 function toolLabel(name: string): { label: string; color: string } {
   return TOOL_KIND_LABEL[name] ?? { label: 'tool', color: 'var(--ink-soft)' };
+}
+
+function toolKind(name: string): 'tool-pob' | 'tool-wiki-page' | 'tool-generic' {
+  if (name === 'get_active_build') return 'tool-pob';
+  if (name === 'wiki_parse') return 'tool-wiki-page';
+  return 'tool-generic';
 }
 
 const turns = computed<Turn[]>(() => {
@@ -91,7 +110,7 @@ const turns = computed<Turn[]>(() => {
         key: seg.id,
         label: meta.label,
         color: meta.color,
-        kind: seg.name === 'get_active_build' ? 'tool-pob' : 'tool-generic',
+        kind: toolKind(seg.name),
         segment: seg,
         isLast,
       });
@@ -166,6 +185,12 @@ const turns = computed<Turn[]>(() => {
         <!-- TOOL get_active_build → ArtPoBImport -->
         <ArtPoBImport
           v-else-if="t.kind === 'tool-pob' && t.segment"
+          :segment="t.segment as ToolSegment"
+        />
+
+        <!-- TOOL wiki_parse → ArtWikiPage (title, sections, excerpt) -->
+        <ArtWikiPage
+          v-else-if="t.kind === 'tool-wiki-page' && t.segment"
           :segment="t.segment as ToolSegment"
         />
 
