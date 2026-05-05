@@ -5,9 +5,16 @@
 //! Tool support depends on the model: `llama3.1`, `llama3.2`, `qwen2.5`,
 //! `mistral-nemo`, `mixtral`, `command-r`, etc. ship with native tool
 //! calling. Models without tool calling will simply answer without
-//! invoking `get_active_build` / `find_synergies` — to keep parity with
-//! the CLI providers, we **also inline the active build into the system
-//! prompt**, so even tool-blind models see the exile's character.
+//! invoking the helpers — to keep parity with the CLI providers, we
+//! **also inline the active build into the system prompt**, so even
+//! tool-blind models see the exile's character.
+//!
+//! With Phase G the in-app tool surface (the same one Anthropic API
+//! uses) gives Ollama models real wiki / trade / web research:
+//! `get_active_build`, `wiki_search`, `wiki_parse`, `wiki_cargo`,
+//! `wiki_synergies`, `trade_resolve_stats`, `trade_search_url`, and
+//! `web_fetch` (allowlisted to tier-1–7 hosts). The inline guidance
+//! below nudges the model toward calling them aggressively.
 
 use anyhow::{anyhow, Context, Result};
 use futures_util::StreamExt;
@@ -80,7 +87,16 @@ impl OllamaClient {
         let build_block = ctx.render_tool_result();
         let system_prompt = format!(
             "{persona}\n\n[CURRENT PATH OF BUILDING DATA]\n{build}\n\n\
-             [Tool guidance] Two helper tools are available: `get_active_build` (returns the build above as JSON) and `find_synergies(topic)` (queries the wiki reverse-link index). Call them when useful, but do not block on tool calls if your model does not support them.",
+             [Tool guidance — eight helpers are available, use them aggressively]\n\
+             - `get_active_build()` — returns the build above as JSON.\n\
+             - `wiki_search(query, game)` — opensearch the wiki when you don't know the exact page title.\n\
+             - `wiki_parse(title, game)` — fetch the full text of a specific wiki page (Mechanics / Caps / Interactions). Your primary research tool.\n\
+             - `wiki_synergies(topic, game)` — list pages that LINK to the topic (uniques, keystones, cluster notables) — for the synergy sweep.\n\
+             - `wiki_cargo(table, fields, where, game)` — structured table query for mod tiers, item bases, etc. (niche).\n\
+             - `trade_resolve_stats(phrase, game)` — map a stat phrase to its trade-stat ID before any trade search.\n\
+             - `trade_search_url(league, query_body, game)` — build a shareable trade URL for the exile to open.\n\
+             - `web_fetch(url)` — fetch any URL on Bestel's tier-1–7 allowlist (patch notes, PoEDB, Maxroll, …).\n\n\
+             Default research loop: `wiki_parse` the named entity, then `wiki_synergies` for the sweep, then optionally `web_fetch` 1–2 sources to confirm. Always cite the URLs you fetched at the end of your answer in a `Sources:` section.",
             persona = SYSTEM_PROMPT_COMPOSED,
             build = build_block,
         );
