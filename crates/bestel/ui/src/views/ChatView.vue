@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue';
 import { storeToRefs } from 'pinia';
+import { useRouter } from 'vue-router';
 
 import { useStreaming } from '../composables/useStreaming';
 import { useBuildWatcher } from '../composables/useBuildWatcher';
@@ -20,6 +21,7 @@ const chatHistory = useChatHistoryStore();
 const buildStore = useBuildStore();
 const settings = useSettingsStore();
 const ui = useUiStore();
+const router = useRouter();
 
 const { current } = storeToRefs(buildStore);
 
@@ -37,6 +39,9 @@ useShortcuts({
   },
   onResetChat: () => {
     void chat.reset();
+  },
+  onOpenDebug: () => {
+    void router.push('/debug');
   },
 });
 

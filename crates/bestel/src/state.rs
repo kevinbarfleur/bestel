@@ -57,7 +57,7 @@ impl AppState {
         id
     }
 
-    pub fn active_model_profile(&self) -> &'static ModelProfile {
+    pub fn active_model_profile(&self) -> ModelProfile {
         let id = {
             let g = self.inner.lock().expect("inner mutex poisoned");
             g.active_model_id.clone()

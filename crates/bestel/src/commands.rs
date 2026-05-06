@@ -6,9 +6,13 @@ use tauri_plugin_opener::OpenerExt;
 use tokio::sync::{mpsc, oneshot};
 
 use bestel_core::llm::detect::{build_provider_for_profile, detect_provider};
-use bestel_core::llm::models::{all_profiles, find_profile, save_active_profile};
+use bestel_core::llm::models::{find_profile, list_profiles_with_local, save_active_profile};
+use bestel_core::llm::recorder::{
+    self as debug_recorder, PersistedAttachment, PersistedRun, Recorder,
+};
 use bestel_core::llm::{ChatMessage, LlmDelta, Role};
 use bestel_core::pob::parser::{parse_file, parse_summary};
+use std::sync::Mutex;
 
 use crate::dto::{
     summary_dto_from_build, AttachmentDto, BuildEvent, DeltaEvent, DetectionDto, ModelProfileDto,
@@ -23,13 +27,17 @@ pub fn ping(name: String) -> String {
 }
 
 #[tauri::command]
-pub fn list_models() -> Vec<ModelProfileDto> {
-    all_profiles().iter().map(ModelProfileDto::from).collect()
+pub async fn list_models() -> Vec<ModelProfileDto> {
+    list_profiles_with_local()
+        .await
+        .iter()
+        .map(ModelProfileDto::from)
+        .collect()
 }
 
 #[tauri::command]
 pub fn get_active_model(state: State<'_, AppState>) -> ModelProfileDto {
-    ModelProfileDto::from(state.active_model_profile())
+    ModelProfileDto::from(&state.active_model_profile())
 }
 
 #[tauri::command]
@@ -43,7 +51,7 @@ pub async fn set_active_model(
         let mut g = state.inner.lock().map_err(|_| "state poisoned".to_string())?;
         g.active_model_id = id.clone();
     }
-    Ok(ModelProfileDto::from(profile))
+    Ok(ModelProfileDto::from(&profile))
 }
 
 #[tauri::command]
@@ -166,9 +174,30 @@ pub async fn chat_start(
     };
 
     let profile = state.active_model_profile();
-    let provider = build_provider_for_profile(profile)
+    let provider_kind_label = match profile.provider {
+        bestel_core::llm::models::ProviderKind::Anthropic => "anthropic",
+        bestel_core::llm::models::ProviderKind::CodexCli => "codex_cli",
+        bestel_core::llm::models::ProviderKind::ClaudeCli => "claude_cli",
+        bestel_core::llm::models::ProviderKind::Ollama => "ollama",
+    };
+    let provider = build_provider_for_profile(&profile)
         .await
         .map_err(|e| format!("build provider: {e}"))?;
+
+    let recorder = Arc::new(Mutex::new(Recorder::new(
+        "ui",
+        provider_kind_label,
+        profile.model_id.clone(),
+        profile.display_name.clone(),
+        trimmed.to_string(),
+        attachments
+            .iter()
+            .map(|a| PersistedAttachment {
+                name: a.name.clone(),
+                mime: a.mime.clone(),
+            })
+            .collect(),
+    )));
 
     let (cancel_tx, cancel_rx) = oneshot::channel::<()>();
     {
@@ -178,8 +207,16 @@ pub async fn chat_start(
 
     let (delta_tx, delta_rx) = mpsc::unbounded_channel::<LlmDelta>();
     let pump_window = window.clone();
+    let recorder_for_pump = recorder.clone();
     let pump_handle = tauri::async_runtime::spawn(async move {
-        pump_deltas(pump_window, session_id, delta_rx, cancel_rx).await
+        pump_deltas(
+            pump_window,
+            session_id,
+            delta_rx,
+            cancel_rx,
+            Some(recorder_for_pump),
+        )
+        .await
     });
 
     let provider = Arc::new(provider);
@@ -192,19 +229,22 @@ pub async fn chat_start(
 
     let state_app: AppHandle = window.app_handle().clone();
     let window_for_finish = window.clone();
+    let recorder_for_save = recorder.clone();
     tauri::async_runtime::spawn(async move {
         let result = run_handle.await;
         let cancelled = pump_handle.await.unwrap_or(false);
 
         let app_state = state_app.try_state::<AppState>();
-        match result {
+        let mut final_text = String::new();
+        match &result {
             Ok(Ok(assistant_text)) => {
                 if !cancelled {
+                    final_text = assistant_text.clone();
                     if let Some(s) = app_state.as_ref() {
                         if let Ok(mut g) = s.inner.lock() {
                             g.history.push(ChatMessage {
                                 role: Role::Assistant,
-                                content: assistant_text,
+                                content: assistant_text.clone(),
                                 attachments: Vec::new(),
                             });
                         }
@@ -235,6 +275,13 @@ pub async fn chat_start(
             }
         }
 
+        if let Some(rec_arc) = Arc::try_unwrap(recorder_for_save).ok().and_then(|m| m.into_inner().ok()) {
+            let run = rec_arc.finish(final_text);
+            if let Err(e) = debug_recorder::save_run(&run) {
+                eprintln!("failed to persist debug run: {e}");
+            }
+        }
+
         if let Some(s) = app_state.as_ref() {
             if let Ok(mut g) = s.inner.lock() {
                 if g.active_session == Some(session_id) {
@@ -246,6 +293,26 @@ pub async fn chat_start(
     });
 
     Ok(session_id)
+}
+
+#[tauri::command]
+pub async fn list_debug_runs() -> Result<Vec<PersistedRun>, String> {
+    debug_recorder::list_runs().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_debug_run(id: String) -> Result<Option<PersistedRun>, String> {
+    debug_recorder::get_run(&id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn delete_debug_run(id: String) -> Result<(), String> {
+    debug_recorder::delete_run(&id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn delete_all_debug_runs() -> Result<usize, String> {
+    debug_recorder::delete_all_runs().map_err(|e| e.to_string())
 }
 
 #[tauri::command]

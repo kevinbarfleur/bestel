@@ -18,6 +18,7 @@ const PROVIDER_LABELS: Record<ProviderKindLabel, string> = {
   anthropic: 'Anthropic API',
   codex_cli: 'Codex CLI',
   claude_cli: 'Claude Code CLI',
+  ollama: 'Ollama (local)',
 };
 
 const grouped = computed(() => {
@@ -101,6 +102,13 @@ watch(
                 </span>
                 <span class="model-picker__tag" :class="`model-picker__tag--${m.cost}`">
                   {{ m.cost }}
+                </span>
+                <span
+                  v-if="m.provider === 'ollama'"
+                  class="model-picker__tag model-picker__tag--experimental"
+                  title="Local models — quality varies. Persona, refusal, and PoE knowledge are weaker than Anthropic."
+                >
+                  experimental
                 </span>
               </div>
               <p class="model-picker__desc">{{ m.description }}</p>
@@ -233,6 +241,11 @@ watch(
 .model-picker__tag--fast    { color: var(--good); border-color: var(--good); }
 .model-picker__tag--heavy   { color: var(--bad); border-color: var(--bad); }
 .model-picker__tag--free    { color: var(--good); border-color: var(--good); }
+.model-picker__tag--experimental {
+  color: var(--amber);
+  border-color: var(--amber);
+  border-style: dashed;
+}
 .model-picker__tag--cheap   { color: var(--good); border-color: var(--good); }
 .model-picker__tag--premium { color: var(--bad); border-color: var(--bad); }
 .model-picker__tag--subscription { color: var(--amber); border-color: var(--amber); }

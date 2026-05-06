@@ -17,6 +17,7 @@ pub mod detect;
 pub mod mcp_config;
 pub mod models;
 pub mod ollama;
+pub mod recorder;
 pub mod spawn;
 pub mod tools;
 pub mod wiki;

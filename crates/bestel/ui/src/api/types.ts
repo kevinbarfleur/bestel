@@ -77,9 +77,9 @@ export interface PobBuildDto {
   allocated_notables: PassiveNodeDto[];
 }
 
-export type ProviderKindLabel = 'anthropic' | 'codex_cli' | 'claude_cli';
+export type ProviderKindLabel = 'anthropic' | 'codex_cli' | 'claude_cli' | 'ollama';
 export type SpeedLabel = 'fast' | 'balanced' | 'heavy';
-export type CostLabel = 'cheap' | 'mid' | 'premium' | 'subscription';
+export type CostLabel = 'free' | 'cheap' | 'mid' | 'premium' | 'subscription';
 
 export interface ModelProfileDto {
   id: string;
@@ -114,6 +114,49 @@ export interface ProviderStatusEvent {
 }
 
 export type ToolStatus = 'running' | 'done' | 'failed';
+
+export interface DebugRunStats {
+  elapsed_ms: number;
+  text_bytes: number;
+  reasoning_bytes: number;
+  tool_calls: number;
+  tool_done: number;
+  tool_failed: number;
+}
+
+export interface DebugRunAttachment {
+  name: string;
+  mime: string;
+}
+
+export type DebugRunSegment =
+  | { kind: 'text'; text: string }
+  | { kind: 'reasoning'; text: string }
+  | {
+      kind: 'tool';
+      id: string;
+      name: string;
+      detail: string | null;
+      outputs: string[];
+      status: ToolStatus;
+      summary: string | null;
+    };
+
+export interface DebugRunDto {
+  id: string;
+  started_at: string;
+  ended_at: string | null;
+  source: string;
+  provider: string;
+  model_id: string;
+  model_display_name: string;
+  user_text: string;
+  user_attachments: DebugRunAttachment[];
+  assistant_segments: DebugRunSegment[];
+  final_text: string;
+  stats: DebugRunStats;
+  error: string | null;
+}
 
 export type LlmDeltaEvent =
   | { kind: 'text'; session_id: number; text: string }

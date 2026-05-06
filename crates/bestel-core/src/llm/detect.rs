@@ -228,7 +228,9 @@ pub async fn build_provider_for_profile(
             // Verify the requested model is installed locally; otherwise the
             // first call would fail with a confusing 500 from the daemon.
             if !profile.model_id.is_empty()
-                && !models.iter().any(|m| m == profile.model_id || m.starts_with(&format!("{}:", profile.model_id)))
+                && !models.iter().any(|m| {
+                    m == &profile.model_id || m.starts_with(&format!("{}:", profile.model_id))
+                })
             {
                 return Err(anyhow!(
                     "Ollama model `{}` not found locally. Run `ollama pull {}` first.",
@@ -238,7 +240,7 @@ pub async fn build_provider_for_profile(
             }
             Ok(Provider::Ollama(OllamaClient::with(
                 host,
-                profile.model_id.to_string(),
+                profile.model_id.clone(),
             )))
         }
     }
