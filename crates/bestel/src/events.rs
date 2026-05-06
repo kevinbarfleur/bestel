@@ -1,6 +1,9 @@
+use std::sync::{Arc, Mutex};
+
 use tauri::{Emitter, Window};
 use tokio::sync::{mpsc, oneshot};
 
+use bestel_core::llm::recorder::Recorder;
 use bestel_core::llm::LlmDelta;
 
 use crate::dto::DeltaEvent;
@@ -15,6 +18,7 @@ pub async fn pump_deltas(
     session_id: u64,
     mut rx: mpsc::UnboundedReceiver<LlmDelta>,
     mut cancel: oneshot::Receiver<()>,
+    recorder: Option<Arc<Mutex<Recorder>>>,
 ) -> bool {
     let mut cancelled = false;
     loop {
@@ -29,6 +33,11 @@ pub async fn pump_deltas(
             }
             d = rx.recv() => match d {
                 Some(delta) => {
+                    if let Some(rec) = recorder.as_ref() {
+                        if let Ok(mut g) = rec.lock() {
+                            g.apply(&delta);
+                        }
+                    }
                     let _ = window.emit(LLM_DELTA, DeltaEvent::from_delta(session_id, delta));
                 }
                 None => break,

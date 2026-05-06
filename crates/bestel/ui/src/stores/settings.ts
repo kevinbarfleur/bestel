@@ -57,6 +57,7 @@ export const useSettingsStore = defineStore('settings', () => {
       anthropic: false,
       codex_cli: false,
       claude_cli: false,
+      ollama: false,
     };
     if (!detection.value) return map;
     for (const probe of detection.value.probes) {
@@ -64,6 +65,7 @@ export const useSettingsStore = defineStore('settings', () => {
       if (name.includes('anthropic')) map.anthropic = probe.installed;
       else if (name.includes('codex')) map.codex_cli = probe.installed;
       else if (name.includes('claude')) map.claude_cli = probe.installed;
+      else if (name.includes('ollama')) map.ollama = probe.installed;
     }
     return map;
   });

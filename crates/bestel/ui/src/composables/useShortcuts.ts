@@ -5,6 +5,7 @@ export interface ShortcutHandlers {
   onModelPicker?: () => void;
   onEscape?: () => void;
   onResetChat?: () => void;
+  onOpenDebug?: () => void;
 }
 
 const isEditableTarget = (e: KeyboardEvent): boolean => {
@@ -33,6 +34,9 @@ export function useShortcuts(handlers: ShortcutHandlers) {
     } else if (k === 'l' && !isEditableTarget(e)) {
       e.preventDefault();
       handlers.onResetChat?.();
+    } else if (k === 'd' && e.shiftKey) {
+      e.preventDefault();
+      handlers.onOpenDebug?.();
     }
   };
 

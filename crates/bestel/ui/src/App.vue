@@ -18,6 +18,8 @@ import { useUiStore } from './stores/ui';
 
 const route = useRoute();
 const isComponentsRoute = computed(() => route.path === '/components');
+const isDebugRoute = computed(() => route.path === '/debug');
+const hideTopBar = computed(() => isComponentsRoute.value || isDebugRoute.value);
 
 const { state: tooltipState } = useTooltip();
 const toastsStore = useToastsStore();
@@ -53,7 +55,7 @@ const chatOpen = computed({
 
 <template>
   <div class="app-shell">
-    <TopBar v-if="!isComponentsRoute" />
+    <TopBar v-if="!hideTopBar" />
     <main class="app-body">
       <RouterView />
     </main>

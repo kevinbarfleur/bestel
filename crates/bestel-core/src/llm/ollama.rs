@@ -77,26 +77,17 @@ impl OllamaClient {
         deltas: mpsc::UnboundedSender<LlmDelta>,
     ) -> Result<String> {
         let tool_ctx = ToolCtx::new(ctx.clone()).context("build ToolCtx")?;
-        let tools = anthropic_tools_to_openai(tool_schemas());
+        // Local 7-8B models drown in 8 tools — drop the niche ones (cargo,
+        // trade pair, find_synergies legacy alias) to reduce selection
+        // confusion. Anthropic / MCP keep the full surface untouched.
+        let tools = anthropic_tools_to_openai(local_friendly_tools(tool_schemas()));
 
         // Inline the active build inside the system prompt for the benefit
         // of tool-blind local models. Tool-capable models will call
-        // `get_active_build` and overwrite this with the same data, so the
-        // overhead is small. We also append a short instruction to lean on
-        // tool calls when available.
+        // `get_active_build` and overwrite this with the same data.
         let build_block = ctx.render_tool_result();
         let system_prompt = format!(
-            "{persona}\n\n[CURRENT PATH OF BUILDING DATA]\n{build}\n\n\
-             [Tool guidance — eight helpers are available, use them aggressively]\n\
-             - `get_active_build()` — returns the build above as JSON.\n\
-             - `wiki_search(query, game)` — opensearch the wiki when you don't know the exact page title.\n\
-             - `wiki_parse(title, game)` — fetch the full text of a specific wiki page (Mechanics / Caps / Interactions). Your primary research tool.\n\
-             - `wiki_synergies(topic, game)` — list pages that LINK to the topic (uniques, keystones, cluster notables) — for the synergy sweep.\n\
-             - `wiki_cargo(table, fields, where, game)` — structured table query for mod tiers, item bases, etc. (niche).\n\
-             - `trade_resolve_stats(phrase, game)` — map a stat phrase to its trade-stat ID before any trade search.\n\
-             - `trade_search_url(league, query_body, game)` — build a shareable trade URL for the exile to open.\n\
-             - `web_fetch(url)` — fetch any URL on Bestel's tier-1–7 allowlist (patch notes, PoEDB, Maxroll, …).\n\n\
-             Default research loop: `wiki_parse` the named entity, then `wiki_synergies` for the sweep, then optionally `web_fetch` 1–2 sources to confirm. Always cite the URLs you fetched at the end of your answer in a `Sources:` section.",
+            "{persona}\n\n[CURRENT PATH OF BUILDING DATA]\n{build}\n\n{LOCAL_ADDENDUM}",
             persona = SYSTEM_PROMPT_COMPOSED,
             build = build_block,
         );
@@ -141,7 +132,29 @@ impl OllamaClient {
                 "tools": tools,
                 "stream": true,
                 "options": {
-                    "num_ctx": 16384,
+                    // 8K context: balance between fitting SYSTEM_PROMPT +
+                    // CORE_KNOWLEDGE + a few turns of history, and keeping the
+                    // KV cache small enough that Ollama's allocator (notably on
+                    // Windows + qwen3 family) can secure a contiguous chunk.
+                    // 16K and above triggers `memory layout cannot be allocated`
+                    // failures on Ollama 0.23.x for qwen3:8b on a 32 GB machine
+                    // — even with plenty of free RAM.
+                    "num_ctx": 8192,
+                    // 4K output cap so the model can write a thorough
+                    // multi-paragraph answer without being truncated mid-thought.
+                    "num_predict": 4096,
+                    // Low-but-not-zero temperature: factual analysis benefits
+                    // from determinism; pure 0 can produce repetitive / stuck
+                    // outputs on small models. 0.3 is the sweet spot for
+                    // tool-using research agents.
+                    "temperature": 0.3,
+                    // Tight nucleus sampling — discourages the model from
+                    // wandering into rare-token hallucinations (the typical
+                    // source of invented item / mod names).
+                    "top_p": 0.9,
+                    // Mild repetition penalty — small models love to repeat
+                    // bullet headers and recap the same items twice.
+                    "repeat_penalty": 1.1,
                 }
             });
 
@@ -262,10 +275,15 @@ impl OllamaClient {
                     .and_then(|s| s.as_str())
                     .map(|s| s.to_string())
                     .unwrap_or_else(|| format!("ollama-{}-{}", name, full_assistant.len()));
+                // Surface the tool args as the delta detail so the UI can
+                // show "wiki_parse(title=Resolute Technique)" instead of
+                // just a bare badge. Mirrors the visibility Anthropic
+                // already gives via its native tool_use blocks.
+                let detail = summarize_tool_args(&arguments);
                 let _ = deltas.send(LlmDelta::ToolBegin {
                     id: id.clone(),
                     name: name.clone(),
-                    detail: None,
+                    detail,
                 });
 
                 let (result, status) = match dispatch(&name, &arguments, &tool_ctx).await {
@@ -288,10 +306,11 @@ impl OllamaClient {
                         "result_bytes": result.len(),
                     }),
                 );
+                let summary = summarize_tool_result(&result, status == ToolStatus::Failed);
                 let _ = deltas.send(LlmDelta::ToolEnd {
                     id: id.clone(),
                     status,
-                    summary: None,
+                    summary,
                 });
 
                 messages.push(json!({
@@ -309,6 +328,119 @@ impl OllamaClient {
         Ok(full_assistant)
     }
 }
+
+/// Format the tool call arguments as a compact human-readable detail
+/// string for the delta stream. Used to give the UI parity with
+/// Anthropic which surfaces `tool_use.input` natively.
+fn summarize_tool_args(args: &Value) -> Option<String> {
+    let obj = args.as_object()?;
+    if obj.is_empty() {
+        return None;
+    }
+    let mut parts: Vec<String> = Vec::new();
+    for (k, v) in obj.iter() {
+        let val_str = match v {
+            Value::String(s) => {
+                let s = s.trim();
+                if s.len() > 60 {
+                    format!("\"{}…\"", &s[..59])
+                } else {
+                    format!("\"{s}\"")
+                }
+            }
+            Value::Number(n) => n.to_string(),
+            Value::Bool(b) => b.to_string(),
+            Value::Null => "null".to_string(),
+            other => {
+                let s = other.to_string();
+                if s.len() > 60 {
+                    format!("{}…", &s[..59])
+                } else {
+                    s
+                }
+            }
+        };
+        parts.push(format!("{k}={val_str}"));
+        if parts.len() == 3 {
+            break;
+        }
+    }
+    Some(parts.join(", "))
+}
+
+/// Compress a tool dispatch result into a short summary line for the
+/// delta stream. Errors are passed through verbatim (they're already
+/// short JSON); successes are truncated to ~200 chars of the first
+/// non-empty line. The full result still flows into the conversation
+/// history — this is purely a UI hint.
+fn summarize_tool_result(result: &str, is_error: bool) -> Option<String> {
+    if result.is_empty() {
+        return None;
+    }
+    if is_error {
+        let trimmed = result.trim();
+        if trimmed.len() > 200 {
+            return Some(format!("{}…", &trimmed[..199]));
+        }
+        return Some(trimmed.to_string());
+    }
+    // Try to extract a single readable line. JSON results look like
+    // `{"title":"...","sections":[...]}` — strip braces and quotes for a
+    // cleaner one-liner.
+    let trimmed = result.trim();
+    let first_line = trimmed.lines().next().unwrap_or(trimmed);
+    let cleaned: String = first_line
+        .chars()
+        .map(|c| if c == '\n' || c == '\t' { ' ' } else { c })
+        .collect();
+    let cleaned = cleaned.trim();
+    if cleaned.is_empty() {
+        return None;
+    }
+    if cleaned.len() > 200 {
+        Some(format!("{}…", &cleaned[..199]))
+    } else {
+        Some(cleaned.to_string())
+    }
+}
+
+/// Tools we expose to local 7-8B models. SLM literature is unanimous
+/// (cf. arxiv 2510.03847): fewer focused tools beat broader surfaces on
+/// small models because tool-selection accuracy collapses with similar-
+/// sounding alternatives. Anthropic and the MCP server still see the
+/// full `tool_schemas()` surface — this filter is local-only.
+const LOCAL_TOOL_ALLOWLIST: &[&str] = &[
+    "get_active_build",
+    "wiki_search",
+    "wiki_parse",
+    "wiki_synergies",
+    "web_fetch",
+];
+
+/// Drop tools not in [`LOCAL_TOOL_ALLOWLIST`] from the schema list. The
+/// dispatch path (`crate::llm::tools::dispatch`) still recognises every
+/// tool — we just don't advertise the niche ones to the local model.
+fn local_friendly_tools(schemas: Vec<Value>) -> Vec<Value> {
+    schemas
+        .into_iter()
+        .filter(|s| {
+            s.get("name")
+                .and_then(|n| n.as_str())
+                .map(|n| LOCAL_TOOL_ALLOWLIST.contains(&n))
+                .unwrap_or(false)
+        })
+        .collect()
+}
+
+/// Local-model addendum to the base SYSTEM_PROMPT_COMPOSED. Strengthens
+/// the 5 things small 7-8B models slip on relative to Sonnet 4.5:
+/// first-person voice, in-character refusal, escape hatch on
+/// get_active_build when inline data is sufficient, PoE2 verification
+/// reflex, and clarification gate on vague prompts. Final `/no_think`
+/// flag is for qwen3 family — issue QwenLM/Qwen3#1817 documents that
+/// thinking mode + tools = ~60% fabricated tool calls; non-thinking
+/// mode → 100% execution.
+const LOCAL_ADDENDUM: &str = include_str!("./local_addendum.md");
 
 /// Convert Anthropic-style tool schemas to OpenAI / Ollama format.
 /// Anthropic ships `{name, description, input_schema}`; OpenAI / Ollama
@@ -339,6 +471,31 @@ fn anthropic_tools_to_openai(schemas: Vec<Value>) -> Vec<Value> {
 /// installed model names if reachable, `None` otherwise. Times out fast so
 /// the startup probe doesn't block the UI when nothing is listening.
 pub async fn probe_models(host: Option<&str>) -> Option<Vec<String>> {
+    probe_models_detailed(host)
+        .await
+        .map(|infos| infos.into_iter().map(|i| i.name).collect())
+}
+
+/// Richer view of an installed Ollama model. Populated from the same
+/// `/api/tags` response, with the optional `details.parameter_size` /
+/// `details.family` fields surfaced when present.
+#[derive(Debug, Clone)]
+pub struct OllamaModelInfo {
+    /// Full tag, e.g. `qwen3:8b`. Pass directly to `/api/chat` `model`.
+    pub name: String,
+    /// On-disk size in bytes (uncompressed weights).
+    pub size_bytes: Option<u64>,
+    /// Parameter size hint, e.g. `"8.0B"`, `"30B"`. Source: `details.parameter_size`.
+    pub parameter_size: Option<String>,
+    /// Family name, e.g. `"qwen3"`, `"llama"`. Source: `details.family`.
+    pub family: Option<String>,
+}
+
+/// Detailed variant of [`probe_models`]. Returns each installed model with
+/// the metadata Ollama exposes via `/api/tags` so the model picker can
+/// build human-readable labels and rough speed/heaviness hints without a
+/// second roundtrip.
+pub async fn probe_models_detailed(host: Option<&str>) -> Option<Vec<OllamaModelInfo>> {
     let host = host.unwrap_or(DEFAULT_HOST);
     let url = format!("{}/api/tags", host.trim_end_matches('/'));
     let client = reqwest::Client::builder()
@@ -351,13 +508,29 @@ pub async fn probe_models(host: Option<&str>) -> Option<Vec<String>> {
     }
     let body: Value = resp.json().await.ok()?;
     let arr = body.get("models")?.as_array()?;
-    let mut names: Vec<String> = Vec::new();
+    let mut out: Vec<OllamaModelInfo> = Vec::new();
     for m in arr {
-        if let Some(n) = m.get("name").and_then(|s| s.as_str()) {
-            names.push(n.to_string());
-        }
+        let Some(name) = m.get("name").and_then(|s| s.as_str()) else {
+            continue;
+        };
+        let size_bytes = m.get("size").and_then(|v| v.as_u64());
+        let details = m.get("details");
+        let parameter_size = details
+            .and_then(|d| d.get("parameter_size"))
+            .and_then(|s| s.as_str())
+            .map(|s| s.to_string());
+        let family = details
+            .and_then(|d| d.get("family"))
+            .and_then(|s| s.as_str())
+            .map(|s| s.to_string());
+        out.push(OllamaModelInfo {
+            name: name.to_string(),
+            size_bytes,
+            parameter_size,
+            family,
+        });
     }
-    Some(names)
+    Some(out)
 }
 
 #[cfg(test)]

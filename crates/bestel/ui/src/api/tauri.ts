@@ -5,6 +5,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import type {
   AttachmentDto,
   BuildEvent,
+  DebugRunDto,
   DetectionDto,
   LlmDeltaEvent,
   ModelProfileDto,
@@ -45,6 +46,13 @@ export const chatCancel = (): Promise<void> => invoke('chat_cancel');
 export const chatReset = (): Promise<void> => invoke('chat_reset');
 
 export const openExternal = (url: string): Promise<void> => invoke('open_external', { url });
+
+export const listDebugRuns = (): Promise<DebugRunDto[]> => invoke('list_debug_runs');
+export const getDebugRun = (id: string): Promise<DebugRunDto | null> =>
+  invoke('get_debug_run', { id });
+export const deleteDebugRun = (id: string): Promise<void> =>
+  invoke('delete_debug_run', { id });
+export const deleteAllDebugRuns = (): Promise<number> => invoke('delete_all_debug_runs');
 
 export const onLlmDelta = (cb: (e: LlmDeltaEvent) => void): Promise<UnlistenFn> =>
   listen<LlmDeltaEvent>('llm:delta', (ev) => cb(ev.payload));

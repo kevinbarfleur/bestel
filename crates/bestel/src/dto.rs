@@ -230,11 +230,11 @@ fn passive_node_dto_from(n: &bestel_core::pob::dict::NodeInfo) -> PassiveNodeDto
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ModelProfileDto {
-    pub id: &'static str,
+    pub id: String,
     pub provider: &'static str,
-    pub model_id: &'static str,
-    pub display_name: &'static str,
-    pub description: &'static str,
+    pub model_id: String,
+    pub display_name: String,
+    pub description: String,
     pub speed: &'static str,
     pub cost: &'static str,
     pub cost_per_mtok: Option<(f32, f32)>,
@@ -243,11 +243,11 @@ pub struct ModelProfileDto {
 impl From<&ModelProfile> for ModelProfileDto {
     fn from(p: &ModelProfile) -> Self {
         Self {
-            id: p.id,
+            id: p.id.clone(),
             provider: provider_kind_label(p.provider),
-            model_id: p.model_id,
-            display_name: p.display_name,
-            description: p.description,
+            model_id: p.model_id.clone(),
+            display_name: p.display_name.clone(),
+            description: p.description.clone(),
             speed: speed_label(p.speed),
             cost: cost_label(p.cost),
             cost_per_mtok: p.cost_per_mtok,

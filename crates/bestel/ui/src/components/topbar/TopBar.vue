@@ -53,6 +53,7 @@ const buildLevel = computed(() => {
 
 const modelLabel = computed(() => activeModel.value?.display_name ?? 'model');
 const themeLabel = computed(() => (theme.value === 'dark' ? 'dark' : 'light'));
+const isDev = import.meta.env.DEV;
 
 const chatLabel = computed(() => {
   if (!activeChatId.value) return 'New chat';
@@ -130,6 +131,17 @@ const onToggleTheme = () => settings.toggleTheme();
       <span class="topbar__picker-label">theme</span>
       <span class="topbar__picker-value topbar__picker-value--sm">{{ themeLabel }}</span>
     </button>
+
+    <!-- Debug entry (dev mode only) -->
+    <router-link
+      v-if="isDev"
+      to="/debug"
+      class="topbar__picker topbar__debug"
+      title="Debug · chat history (dev only)"
+    >
+      <span class="topbar__picker-label">debug</span>
+      <span class="topbar__picker-value topbar__picker-value--sm">runs</span>
+    </router-link>
 
     <!-- Window controls -->
     <div class="topbar__controls">
