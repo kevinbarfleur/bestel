@@ -18,7 +18,23 @@ const buildStore = useBuildStore();
 const ui = useUiStore();
 const game = computed(() => buildStore.current?.game ?? 'poe1');
 
-const renderText = (seg: TextSegment) => renderMarkdown(seg.text, game.value);
+/** Set of entity names that have a side-panel artifact in this message,
+ *  collected across ALL text segments. The markdown renderer uses this
+ *  to suppress the wiki backtick pill for those entities — the panel
+ *  button supersedes it (its chrome carries the wiki link). */
+const panelKeys = computed<Set<string>>(() => {
+  const set = new Set<string>();
+  for (const seg of props.message.segments) {
+    if (seg.kind !== 'text') continue;
+    const map = (seg as TextSegment).panelMap;
+    if (!map) continue;
+    for (const k of Object.keys(map)) set.add(k);
+  }
+  return set;
+});
+
+const renderText = (seg: TextSegment) =>
+  renderMarkdown(seg.text, game.value, panelKeys.value);
 
 const handleClick = (e: MouseEvent) => {
   const target = e.target as HTMLElement | null;

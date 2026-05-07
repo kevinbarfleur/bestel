@@ -166,7 +166,7 @@ md.renderer.rules.link_open = function (tokens, idx, options, env, self) {
 const wikiBase = (game: Game): string =>
   game === 'poe2' ? 'https://www.poe2wiki.net/wiki/' : 'https://www.poewiki.net/wiki/';
 
-const makeWikiUrl = (name: string, game: Game): string =>
+export const makeWikiUrl = (name: string, game: Game): string =>
   wikiBase(game) + encodeURIComponent(name.trim().replace(/\s+/g, '_'));
 
 /**
@@ -255,7 +255,11 @@ function renderPanelMarker(_full: string, star: string, _type: string, name: str
   );
 }
 
-export const renderMarkdown = (text: string, game: Game): string => {
+export const renderMarkdown = (
+  text: string,
+  game: Game,
+  panelKeys?: ReadonlySet<string>,
+): string => {
   // 1. Strip the optional ⟦panel-data⟧{...}⟦/panel-data⟧ sidecar — its JSON
   //    is the chat store's responsibility (extractPanelSidecar). Inline
   //    ⟦panel:…⟧ markers stay; they're converted to buttons in step 3.
@@ -276,6 +280,15 @@ export const renderMarkdown = (text: string, game: Game): string => {
       // Emphasis without linking — Bestel uses backticks to highlight values
       // (numbers, percentages) in addition to entities. Render as an
       // emphasis chip in monochrome.
+      return `<span class="md-emph">${safe}</span>`;
+    }
+    // 1c. Dedup: if this entity has a side-panel marker in the same
+    //     message, the panel button is the canonical affordance. Drop
+    //     the wiki pill (chain icon would duplicate the panel's
+    //     external-link button) and render the entity as plain
+    //     emphasis instead. Defensive against the model emitting both
+    //     a backtick and a marker for the same name.
+    if (panelKeys && panelKeys.has(raw.trim())) {
       return `<span class="md-emph">${safe}</span>`;
     }
     const url = makeWikiUrl(raw, game);

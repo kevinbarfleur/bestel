@@ -3,7 +3,9 @@ import { computed } from 'vue';
 import { storeToRefs } from 'pinia';
 
 import { useUiStore } from '../../stores/ui';
-import { useToastsStore } from '../../stores/toasts';
+import { useBuildStore } from '../../stores/build';
+import { openLink } from '../../api/tauri';
+import { makeWikiUrl } from '../../api/markdown';
 import RunicIcon from '../runic/RunicIcon.vue';
 import PanelItemCard from './PanelItemCard.vue';
 import PanelGemDetail from './PanelGemDetail.vue';
@@ -11,8 +13,9 @@ import PanelMechanic from './PanelMechanic.vue';
 import PanelMarkdown from './PanelMarkdown.vue';
 
 const ui = useUiStore();
-const toasts = useToastsStore();
+const buildStore = useBuildStore();
 const { panelArtifact, panelStack, panelHasHistory } = storeToRefs(ui);
+const game = computed(() => buildStore.current?.game ?? 'poe1');
 
 const kindLabel = computed(() => {
   switch (panelArtifact.value?.type) {
@@ -29,11 +32,15 @@ const prevTitle = computed(() => {
   return stack.length > 1 ? stack[stack.length - 2].title : null;
 });
 
+/** Open the wiki page for the current artifact in the in-app webview.
+ *  This is the affordance that replaces the per-entity backtick pill in
+ *  prose: when an entity has a panel, its panel chrome carries the
+ *  external link instead of cluttering the chat with a duplicate pill. */
 function onExternal() {
-  toasts.push({
-    variant: 'info',
-    title: 'External view — coming soon.',
-  });
+  const artifact = panelArtifact.value;
+  if (!artifact) return;
+  const url = makeWikiUrl(artifact.title, game.value);
+  void openLink(url);
 }
 </script>
 
