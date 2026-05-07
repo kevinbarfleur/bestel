@@ -114,6 +114,18 @@ function toolKind(
   return 'tool-generic';
 }
 
+/** True for any turn that should sit inside the indented artifact stack
+ *  (vertical line on the left). Excludes plain text turns from Bestel
+ *  and the streaming-cursor placeholder. */
+function isArtifactKind(k: Turn['kind']): boolean {
+  return (
+    k === 'reasoning' ||
+    k === 'tool-pob' ||
+    k === 'tool-wiki-page' ||
+    k === 'tool-generic'
+  );
+}
+
 const fmtTokens = (n: number): string => {
   if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
   return `${n}`;
@@ -217,7 +229,13 @@ const turns = computed<Turn[]>(() => {
       v-for="(t, i) in turns"
       :key="t.key"
       class="turn"
-      :class="[`turn--${t.kind}`, { 'turn--first-asst': i === 0 }]"
+      :class="[
+        `turn--${t.kind}`,
+        {
+          'turn--first-asst': i === 0,
+          'turn--artifact': isArtifactKind(t.kind),
+        },
+      ]"
     >
       <div class="turn__gutter">
         <span class="turn__label" :style="{ color: t.color }">{{ t.label }}</span>
@@ -302,6 +320,32 @@ const turns = computed<Turn[]>(() => {
 .turn__body {
   flex: 1;
   min-width: 0;
+}
+
+/* Artifact stack — reasoning + tool turns sit inside an indented
+ * sub-block grouped by a single thin vertical line on the left. Same
+ * affordance as Slack thread replies or GitHub conversation nesting:
+ * the line says "these belong together as the work that produced the
+ * answer below". The bestel text turns above and below are NOT
+ * indented; the line begins at the first artifact's top and ends at
+ * the last one's bottom, never extending into the prose turns. */
+.turn--artifact .turn__body {
+  border-left: 1px solid var(--paper-line);
+  padding-left: 14px;
+  position: relative;
+}
+/* The chat-stream parent uses `gap: 22px` between flex children, so
+ * two consecutive artifact turns would otherwise show a 22px break in
+ * the line. This pseudo-element bridges the gap. Keep in sync if the
+ * parent gap changes (ChatStream.vue `.chat-stream`). */
+.turn--artifact + .turn--artifact .turn__body::before {
+  content: '';
+  position: absolute;
+  left: -1px;
+  top: -22px;
+  width: 1px;
+  height: 22px;
+  background: var(--paper-line);
 }
 
 /* User text — Kalam italic 17/1.5 */
