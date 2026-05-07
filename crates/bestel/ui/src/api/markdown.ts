@@ -61,6 +61,14 @@ const ALLOWED_PANEL_TYPES: ReadonlySet<PanelArtifactType> = new Set([
 ]);
 
 const PANEL_SIDECAR_RE = /⟦panel-data⟧\s*([\s\S]*?)\s*⟦\/panel-data⟧/;
+/**
+ * Unclosed sidecar — opens with ⟦panel-data⟧ but never closes. Happens
+ * when the model truncates mid-JSON (max_tokens hit, network drop). We
+ * hide everything from the opening tag to end-of-message so the user
+ * doesn't see a JSON dump leak into the prose; the panelMap stays empty
+ * (the truncated JSON isn't parseable).
+ */
+const PANEL_SIDECAR_UNCLOSED_RE = /⟦panel-data⟧[\s\S]*$/;
 const PANEL_MARKER_RE = /⟦panel(\*?):([a-z-]+):([^⟧]+?)⟧/g;
 
 /**
@@ -79,7 +87,15 @@ export function extractPanelSidecar(
   text: string,
 ): { stripped: string; map: Record<string, PanelArtifact> } {
   const match = PANEL_SIDECAR_RE.exec(text);
-  if (!match) return { stripped: text, map: {} };
+  if (!match) {
+    // No closed sidecar — but the message may still carry a truncated
+    // opening tag (model cut off mid-JSON). Strip it so the chat doesn't
+    // leak a raw JSON dump into the prose.
+    if (PANEL_SIDECAR_UNCLOSED_RE.test(text)) {
+      return { stripped: text.replace(PANEL_SIDECAR_UNCLOSED_RE, '').trimEnd(), map: {} };
+    }
+    return { stripped: text, map: {} };
+  }
   const stripped = text.replace(PANEL_SIDECAR_RE, '').trimEnd();
   let parsed: unknown;
   try {
@@ -226,7 +242,12 @@ export const renderMarkdown = (text: string, game: Game): string => {
   // 1. Strip the optional ⟦panel-data⟧{...}⟦/panel-data⟧ sidecar — its JSON
   //    is the chat store's responsibility (extractPanelSidecar). Inline
   //    ⟦panel:…⟧ markers stay; they're converted to buttons in step 3.
-  const stripped = text.replace(PANEL_SIDECAR_RE, '').trimEnd();
+  //    Also strip an unclosed opening tag in case the model truncated mid
+  //    JSON (max_tokens hit) — would otherwise leak the raw JSON dump.
+  const stripped = text
+    .replace(PANEL_SIDECAR_RE, '')
+    .replace(PANEL_SIDECAR_UNCLOSED_RE, '')
+    .trimEnd();
   md.renderer.rules.code_inline = (tokens: ReadonlyArray<{ content: string }>, idx: number) => {
     const raw = tokens[idx].content;
     // 1a. Element / status entity tag (`fire:75%`, `good:capped`, …)
