@@ -88,7 +88,9 @@ function shortName(rel: string) {
               {{ shortName(file.rel_path) }}
               <span v-if="file.modified_vs_bundled" class="prompts-files__dot" title="Modified vs bundled">•</span>
             </div>
-            <div class="prompts-files__meta">{{ file.line_count }} lines</div>
+            <div class="prompts-files__meta">
+              {{ file.description || `${file.line_count} lines` }}
+            </div>
           </div>
           <span
             v-if="file.kind === 'shipped'"

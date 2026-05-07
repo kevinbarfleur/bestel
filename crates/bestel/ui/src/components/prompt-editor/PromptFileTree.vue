@@ -35,8 +35,10 @@ function shortName(rel: string) {
 }
 
 function metaFor(item: PromptFileMeta) {
-  const lines = `${item.line_count} line${item.line_count === 1 ? '' : 's'}`;
-  return lines;
+  if (item.description && item.description.trim().length > 0) {
+    return item.description;
+  }
+  return `${item.line_count} line${item.line_count === 1 ? '' : 's'}`;
 }
 </script>
 
@@ -65,6 +67,7 @@ function metaFor(item: PromptFileMeta) {
           <span class="pe-tree__group-rule" />
           <span class="pe-tree__group-count">{{ group.items.length }}</span>
         </div>
+        <p v-if="group.description" class="pe-tree__group-desc">{{ group.description }}</p>
         <div
           v-for="item in group.items"
           :key="item.rel_path"
@@ -173,6 +176,14 @@ function metaFor(item: PromptFileMeta) {
 .pe-tree__group-count {
   font-weight: 400;
   letter-spacing: 0.02em;
+}
+
+.pe-tree__group-desc {
+  margin: 4px 18px 6px;
+  font-size: 12px;
+  font-style: italic;
+  line-height: 1.4;
+  color: var(--ink-faint);
 }
 
 .pe-tree__row {

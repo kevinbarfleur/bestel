@@ -123,10 +123,12 @@ export interface PromptFileMeta {
   modified_vs_bundled: boolean;
   byte_size: number;
   line_count: number;
+  description: string;
 }
 
 export interface PromptGroup {
   label: string;
+  description: string;
   items: PromptFileMeta[];
 }
 
