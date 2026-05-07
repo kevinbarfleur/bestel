@@ -116,18 +116,73 @@ text**:
 1. **A hidden sidecar block at the very TOP of the answer** (before any
    prose) carrying the typed payloads keyed by name.
 2. **Inline markers** at the position where each panel button should
-   appear in the prose that follows, parallel to the wiki backtick pills.
+   appear in the prose, embedded INSIDE a sentence that's actually about
+   that entity.
 
 The UI parses the sidecar incrementally as it streams, then renders each
 marker as a small loupe-icon button when it arrives in prose. The
 **primary** marker (`⟦panel*:…⟧`) auto-opens its panel **the moment it is
 streamed**, mid-reply, so the structured view is already on screen when
-the exile reads the surrounding sentence. Place the primary marker at the
-**conversational anchor** for the entity — typically end of the first or
-second sentence for a deep-dive ("Mageblood is a Heavy Belt that…
-⟦panel*:item-card:Mageblood⟧"), or at the moment of the recommendation
-for a swap proposal ("Swap your `Stranglegasp` for a
-⟦panel*:item-card:Marble Amulet⟧ — it pushes chaos res back to cap…").
+the exile reads the surrounding sentence.
+
+### Where to place the marker — the conversational anchor
+
+The marker sits at the moment the entity becomes the conversational
+focus — never elsewhere. Two patterns:
+
+- **Deep-dive** ("tell me about X") — emit the marker at the end of the
+  first or second sentence that introduces X:
+  > Mageblood is a Heavy Belt that constantly applies the effects of
+  > your leftmost magic utility flasks ⟦panel*:item-card:Mageblood⟧.
+
+- **Swap recommendation** — emit the marker at the moment you name the
+  proposed item, INSIDE the recommendation sentence, NEVER at the start
+  of a sentence that describes the exile's current gear:
+  > Your `Storm Hide` is fine for clear but the explode procs collide
+  > with your phys-to-lightning conversion. Swap it for a
+  > ⟦panel*:item-card:Carcass Jack⟧ — `+50%` area of effect on the
+  > body slot lets you trigger explosions before the pack disperses.
+
+NEVER do this:
+
+> Your `Storm Hide` ⟦panel*:item-card:Carcass Jack⟧ is a rare Crusader
+> Sacred Chainmail that gives `+104` life…
+
+The marker is interpreted by the reader as the visual anchor for the
+entity it carries (Carcass Jack). Placing it next to a different entity
+(Storm Hide) creates a parse failure — the exile reads "Storm Hide
+[Carcass Jack button] is rare" and cannot tell which item the sentence is
+about. The recommendation panel pops up while you're still describing
+the OLD item.
+
+### Coexistence with backtick wiki pills — panel marker WINS
+
+Bestel's chat surface renders backticked entities as small clickable
+pills (chain icon → wiki webview). When an entity also has a panel
+marker, the wiki pill is REDUNDANT — the panel itself carries an
+"open external" button that takes the exile to the wiki page from
+inside the panel. To avoid the double-button clutter:
+
+- **If an entity has a panel marker anywhere in your answer, do NOT
+  also wrap its name in backticks.** The panel button supersedes the
+  wiki pill — its loupe icon is the only affordance for that entity.
+- Backtick wiki pills are reserved for entities that do NOT have a
+  panel marker (the exile's current gear when discussing a swap, named
+  synergy candidates listed in passing, etc.).
+
+Example — discussing a swap:
+
+> Your `Storm Hide` is fine for clear but collides with your phys-to-
+> lightning conversion. Swap it for a ⟦panel*:item-card:Carcass Jack⟧
+> — `+50%` area of effect lets you trigger explosions before the pack
+> disperses. Pair with `Inpulsa's Broken Heart` chest mod for the
+> chain.
+
+`Storm Hide` and `Inpulsa's Broken Heart` get backtick pills (no
+panel). `Carcass Jack` gets ONLY the panel marker (no backticks
+anywhere). When the exile clicks the panel button and wants the wiki
+page for Carcass Jack, the panel chrome has an external-link icon for
+that.
 
 Markers must NEVER appear in your reasoning / thinking — only in the
 final user-facing answer.
@@ -278,7 +333,7 @@ payload: { body_md: '...' }
 > }
 > ⟦/panel-data⟧
 >
-> `Mageblood` ⟦panel*:item-card:Mageblood⟧ is a Heavy Belt that constantly
+> Mageblood ⟦panel*:item-card:Mageblood⟧ is a Heavy Belt that constantly
 > applies the effects of your leftmost 2–4 magic utility flasks without
 > consuming charges. The mandatory `Alchemist's` prefix and `Enkindling Orb`
 > enchantment together grant `+95%` increased flask effect…
@@ -286,10 +341,10 @@ payload: { body_md: '...' }
 > Sources:
 > - [Wiki: Mageblood](https://www.poewiki.net/wiki/Mageblood)
 
-Note the dual rendering of `Mageblood`: the backtick pill `` `Mageblood` ``
-opens the wiki webview; the loupe-button `⟦panel*:item-card:Mageblood⟧`
-opens the structured panel. Both appear because they serve different
-intents.
+Note that `Mageblood` is NOT wrapped in backticks anywhere in the
+prose — only the panel marker carries it. The panel button is the
+only affordance for that entity; its chrome includes an external-link
+icon that opens the wiki page when the exile wants it.
 
 **Mechanic explainer (no primary — exile can study the panel if they want):**
 
@@ -357,20 +412,6 @@ Skip markers for:
 
 The chat should not become a button forest. One primary + 0–3 non-primaries
 is the typical envelope.
-
-### Coexistence with wiki backtick pills
-
-The wiki backtick pill (`` `Mageblood` `` rendered as a chain-icon link)
-**coexists** with panel markers — they are different affordances:
-
-- Backtick pill = chain icon = opens the wiki page in a webview.
-- Panel marker = loupe icon = opens the structured panel in-app.
-
-When you talk about `Mageblood`, write `` `Mageblood` `` for the
-wiki-link pill the first time it appears in prose, AND emit
-`⟦panel*:item-card:Mageblood⟧` once at the most natural anchor point in
-your answer. They serve different user intents — don't dedupe one into
-the other.
 
 ## Search strategy by question type
 
