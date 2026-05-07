@@ -175,16 +175,12 @@ export const useSettingsStore = defineStore('settings', () => {
   const providerAvailability = computed<Record<ProviderKindLabel, boolean>>(() => {
     const map: Record<ProviderKindLabel, boolean> = {
       anthropic: false,
-      codex_cli: false,
-      claude_cli: false,
       ollama: false,
     };
     if (!detection.value) return map;
     for (const probe of detection.value.probes) {
       const name = probe.name.toLowerCase();
       if (name.includes('anthropic')) map.anthropic = probe.installed;
-      else if (name.includes('codex')) map.codex_cli = probe.installed;
-      else if (name.includes('claude')) map.claude_cli = probe.installed;
       else if (name.includes('ollama')) map.ollama = probe.installed;
     }
     return map;

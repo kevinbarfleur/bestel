@@ -1,25 +1,16 @@
 // Each provider has its own native event schema; see `PROVIDER_NOTES.md`
-// in this directory for the quirks we've documented (Codex's batched
-// web_search, Anthropic's structured thinking blocks, etc.). The parsers
-// translate native events into the shared `LlmDelta` enum below — every
-// downstream consumer (TUI rendering, devlog, focus, scroll) is provider-
-// agnostic and only deals with `LlmDelta`.
-//
-// TODO: when we wire a 4th provider (Gemini CLI is the obvious next),
-// extract the duplicated helpers (`first_line_summary`, `extract_first_str`,
-// `dump_item_for_detail`, JSON-encoded-args probing) into a shared
-// `extractors` module.
+// in this directory for the quirks we've documented (Anthropic's
+// structured thinking blocks, Ollama's NDJSON tool-call accumulation).
+// The parsers translate native events into the shared `LlmDelta` enum
+// below — every downstream consumer (TUI rendering, devlog, focus,
+// scroll) is provider-agnostic and only deals with `LlmDelta`.
 
 pub mod anthropic;
-pub mod claude_cli;
-pub mod codex_cli;
 pub mod detect;
 pub mod keys;
-pub mod mcp_config;
 pub mod models;
 pub mod ollama;
 pub mod recorder;
-pub mod spawn;
 pub mod tools;
 pub mod wiki;
 
@@ -28,8 +19,6 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
 
 use anthropic::AnthropicClient;
-use claude_cli::ClaudeCliClient;
-use codex_cli::CodexCliClient;
 use ollama::OllamaClient;
 use tools::BuildContext;
 
@@ -128,8 +117,6 @@ pub struct UsageStats {
 
 pub enum Provider {
     Anthropic(AnthropicClient),
-    CodexCli(CodexCliClient),
-    ClaudeCli(ClaudeCliClient),
     Ollama(OllamaClient),
 }
 
@@ -137,8 +124,6 @@ impl Provider {
     pub fn label(&self) -> String {
         match self {
             Provider::Anthropic(c) => format!("anthropic api · {}", c.model()),
-            Provider::CodexCli(c) => format!("codex cli · {}", c.version_label()),
-            Provider::ClaudeCli(c) => format!("claude cli · {}", c.version_label()),
             Provider::Ollama(c) => format!("ollama · {}", c.model()),
         }
     }
@@ -146,8 +131,6 @@ impl Provider {
     pub fn auth_label(&self) -> &'static str {
         match self {
             Provider::Anthropic(_) => "API key",
-            Provider::CodexCli(_) => "subscription",
-            Provider::ClaudeCli(_) => "subscription",
             Provider::Ollama(_) => "local",
         }
     }
@@ -160,8 +143,6 @@ impl Provider {
     ) -> Result<String> {
         match self {
             Provider::Anthropic(c) => c.run(history, ctx, deltas).await,
-            Provider::CodexCli(c) => c.run(history, ctx, deltas).await,
-            Provider::ClaudeCli(c) => c.run(history, ctx, deltas).await,
             Provider::Ollama(c) => c.run(history, ctx, deltas).await,
         }
     }

@@ -1,10 +1,10 @@
 //! Curated model registry + persistent active-profile selection.
 //!
-//! Cloud profiles (Anthropic API, Codex CLI, Claude CLI) are hand-picked
-//! and shipped statically. Ollama profiles are built dynamically from the
-//! daemon's `/api/tags` response so the picker only ever shows models the
-//! user has actually pulled — no fictional "run `ollama pull X` first"
-//! ghosts.
+//! Cloud profiles (Anthropic API, optional DeepSeek via Anthropic-compat)
+//! are hand-picked and shipped statically. Ollama profiles are built
+//! dynamically from the daemon's `/api/tags` response so the picker only
+//! ever shows models the user has actually pulled — no fictional "run
+//! `ollama pull X` first" ghosts.
 //!
 //! Persistence: `~/.bestel/runtime/model.json` stores the chosen `id`.
 //! Cloud ids are stable strings (`anthropic-sonnet-4-5` etc.). Ollama
@@ -22,12 +22,9 @@ use super::ollama::OllamaModelInfo;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProviderKind {
-    /// `AnthropicClient` — direct API, requires `ANTHROPIC_API_KEY`.
+    /// `AnthropicClient` — direct API, requires `ANTHROPIC_API_KEY` (or
+    /// `DEEPSEEK_API_KEY` against DeepSeek's Anthropic-compat endpoint).
     Anthropic,
-    /// `CodexCliClient` — spawns the `codex` subprocess. Subscription billing.
-    CodexCli,
-    /// `ClaudeCliClient` — spawns the `claude` subprocess. Subscription billing.
-    ClaudeCli,
     /// `OllamaClient` — connects to a local Ollama daemon. Free, offline-capable.
     Ollama,
 }
@@ -57,10 +54,8 @@ pub enum CostTier {
 pub struct ModelProfile {
     pub id: String,
     pub provider: ProviderKind,
-    /// Model id passed to the API / CLI (`-m` for codex, `model` field for
-    /// Anthropic API, `model` for Ollama). Empty when the provider does
-    /// not accept a model override (Claude Code CLI uses whatever the
-    /// subscription gives).
+    /// Model id passed to the API (`model` field for Anthropic API,
+    /// `model` for Ollama).
     pub model_id: String,
     pub display_name: String,
     pub description: String,
@@ -100,12 +95,11 @@ const ANTHROPIC_MODELS_URL: &str = "https://platform.claude.com/docs/en/docs/abo
 const ANTHROPIC_KEYS_URL: &str = "https://platform.claude.com/settings/keys";
 const DEEPSEEK_DOCS_URL: &str = "https://api-docs.deepseek.com/";
 const DEEPSEEK_KEYS_URL: &str = "https://platform.deepseek.com/apikeys";
-const CODEX_CLI_DOCS_URL: &str = "https://developers.openai.com/codex/cli";
-const CLAUDE_CLI_DOCS_URL: &str = "https://code.claude.com/docs/en/overview";
 const OLLAMA_LIBRARY_URL: &str = "https://ollama.com/library";
 
-/// All cloud profiles (Anthropic + Codex + Claude CLI). Pure data, sync.
-/// Ollama profiles are NOT here — they come from [`list_profiles_with_local`].
+/// All cloud profiles (Anthropic API + DeepSeek via Anthropic-compat).
+/// Pure data, sync. Ollama profiles are NOT here — they come from
+/// [`list_profiles_with_local`].
 pub fn cloud_profiles() -> Vec<ModelProfile> {
     vec![
         ModelProfile {
@@ -170,54 +164,6 @@ pub fn cloud_profiles() -> Vec<ModelProfile> {
             api_key_env: Some("ANTHROPIC_API_KEY".into()),
             info_url: Some(ANTHROPIC_MODELS_URL.into()),
             api_key_url: Some(ANTHROPIC_KEYS_URL.into()),
-            vision_capable: true,
-        },
-        ModelProfile {
-            id: "codex-default".into(),
-            provider: ProviderKind::CodexCli,
-            model_id: "".into(),
-            display_name: "Codex CLI (default)".into(),
-            description:
-                "Whatever model your Codex CLI subscription resolves to (gpt-5-codex on ChatGPT accounts). The safe pick — Bestel passes no `-m` flag and lets codex choose.".into(),
-            speed: SpeedTier::Balanced,
-            cost: CostTier::Subscription,
-            cost_per_mtok: None,
-            base_url: None,
-            api_key_env: None,
-            info_url: Some(CODEX_CLI_DOCS_URL.into()),
-            api_key_url: None,
-            vision_capable: true,
-        },
-        ModelProfile {
-            id: "codex-gpt-5-codex".into(),
-            provider: ProviderKind::CodexCli,
-            model_id: "gpt-5-codex".into(),
-            display_name: "Codex CLI · GPT-5 Codex".into(),
-            description:
-                "Explicit gpt-5-codex via `-m`. Code-specialised; works on ChatGPT accounts. Same model as the default for most subscriptions.".into(),
-            speed: SpeedTier::Balanced,
-            cost: CostTier::Subscription,
-            cost_per_mtok: None,
-            base_url: None,
-            api_key_env: None,
-            info_url: Some(CODEX_CLI_DOCS_URL.into()),
-            api_key_url: None,
-            vision_capable: true,
-        },
-        ModelProfile {
-            id: "claude-cli".into(),
-            provider: ProviderKind::ClaudeCli,
-            model_id: "".into(),
-            display_name: "Claude Code CLI".into(),
-            description:
-                "Whatever model the user's Claude subscription provides. No model override possible — the CLI picks.".into(),
-            speed: SpeedTier::Balanced,
-            cost: CostTier::Subscription,
-            cost_per_mtok: None,
-            base_url: None,
-            api_key_env: None,
-            info_url: Some(CLAUDE_CLI_DOCS_URL.into()),
-            api_key_url: None,
             vision_capable: true,
         },
     ]
@@ -517,8 +463,10 @@ mod tests {
 
     #[test]
     fn lookup_cloud_returns_some() {
+        assert!(find_profile("anthropic-haiku-4-5").is_some());
         assert!(find_profile("anthropic-sonnet-4-5").is_some());
-        assert!(find_profile("codex-gpt-5-codex").is_some());
+        assert!(find_profile("anthropic-opus-4-7").is_some());
+        assert!(find_profile("deepseek-v3-2").is_some());
     }
 
     #[test]

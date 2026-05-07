@@ -83,7 +83,7 @@ export interface PobBuildDto {
   allocated_notables: PassiveNodeDto[];
 }
 
-export type ProviderKindLabel = 'anthropic' | 'codex_cli' | 'claude_cli' | 'ollama';
+export type ProviderKindLabel = 'anthropic' | 'ollama';
 export type SpeedLabel = 'fast' | 'balanced' | 'heavy';
 export type CostLabel = 'free' | 'cheap' | 'mid' | 'premium' | 'subscription';
 

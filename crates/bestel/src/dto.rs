@@ -460,8 +460,6 @@ fn game_label(g: PoeVersion) -> &'static str {
 fn provider_kind_label(p: ProviderKind) -> &'static str {
     match p {
         ProviderKind::Anthropic => "anthropic",
-        ProviderKind::CodexCli => "codex_cli",
-        ProviderKind::ClaudeCli => "claude_cli",
         ProviderKind::Ollama => "ollama",
     }
 }

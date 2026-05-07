@@ -1,13 +1,8 @@
-use std::process::Stdio;
-
 use anyhow::{anyhow, Result};
 
 use super::anthropic::AnthropicClient;
-use super::claude_cli::ClaudeCliClient;
-use super::codex_cli::CodexCliClient;
 use super::models::{ModelProfile, ProviderKind};
 use super::ollama::{self, OllamaClient};
-use super::spawn::cli_command;
 use super::Provider;
 
 #[derive(Debug, Clone)]
@@ -26,22 +21,6 @@ pub struct Detection {
 pub async fn detect_provider() -> Detection {
     let mut probes: Vec<Probe> = Vec::new();
     let mut chosen: Option<Provider> = None;
-
-    let codex = probe_cli("codex").await;
-    probes.push(codex.clone());
-    if codex.installed && chosen.is_none() {
-        chosen = Some(Provider::CodexCli(CodexCliClient::new(
-            codex.version.clone().unwrap_or_default(),
-        )));
-    }
-
-    let claude = probe_cli("claude").await;
-    probes.push(claude.clone());
-    if claude.installed && chosen.is_none() {
-        chosen = Some(Provider::ClaudeCli(ClaudeCliClient::new(
-            claude.version.clone().unwrap_or_default(),
-        )));
-    }
 
     let key_set = std::env::var("ANTHROPIC_API_KEY").is_ok();
     probes.push(Probe {
@@ -132,71 +111,8 @@ pub async fn detect_provider() -> Detection {
     }
 }
 
-async fn probe_cli(bin: &str) -> Probe {
-    let child = cli_command(bin)
-        .arg("--version")
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .kill_on_drop(true)
-        .spawn();
-
-    let probe = Probe {
-        name: cli_label(bin),
-        installed: false,
-        version: None,
-        note: None,
-    };
-
-    let mut child = match child {
-        Ok(c) => c,
-        Err(_) => return probe,
-    };
-
-    let timeout = tokio::time::sleep(std::time::Duration::from_secs(3));
-    tokio::pin!(timeout);
-
-    let mut buf = String::new();
-    let stdout = child.stdout.take();
-    let read = async move {
-        if let Some(mut s) = stdout {
-            use tokio::io::AsyncReadExt;
-            let _ = s.read_to_string(&mut buf).await;
-        }
-        buf
-    };
-
-    tokio::select! {
-        v = read => {
-            let _ = child.wait().await;
-            let trimmed = v.trim().to_string();
-            Probe {
-                name: cli_label(bin),
-                installed: !trimmed.is_empty(),
-                version: if trimmed.is_empty() { None } else { Some(trimmed) },
-                note: None,
-            }
-        }
-        _ = &mut timeout => {
-            let _ = child.kill().await;
-            probe
-        }
-    }
-}
-
-fn cli_label(bin: &str) -> &'static str {
-    match bin {
-        "codex" => "codex cli",
-        "claude" => "claude code",
-        "gemini" => "gemini cli",
-        _ => "cli",
-    }
-}
-
-/// Build a fresh `Provider` for the given profile, reusing the existing
-/// detection results to know whether the underlying CLI is installed
-/// (codex/claude) or whether the API key is set (Anthropic). Used by the
-/// model picker to hot-swap providers without restarting Bestel.
+/// Build a fresh `Provider` for the given profile. Used by the model
+/// picker to hot-swap providers without restarting Bestel.
 pub async fn build_provider_for_profile(
     profile: &ModelProfile,
 ) -> Result<Provider> {
@@ -223,24 +139,6 @@ pub async fn build_provider_for_profile(
             )
             .map_err(|e| anyhow!("{env_var} missing or endpoint unreachable: {e}"))?;
             Ok(Provider::Anthropic(c))
-        }
-        ProviderKind::CodexCli => {
-            let p = probe_cli("codex").await;
-            if !p.installed {
-                return Err(anyhow!("codex CLI not detected on PATH"));
-            }
-            Ok(Provider::CodexCli(CodexCliClient::new(
-                p.version.unwrap_or_default(),
-            )))
-        }
-        ProviderKind::ClaudeCli => {
-            let p = probe_cli("claude").await;
-            if !p.installed {
-                return Err(anyhow!("claude CLI not detected on PATH"));
-            }
-            Ok(Provider::ClaudeCli(ClaudeCliClient::new(
-                p.version.unwrap_or_default(),
-            )))
         }
         ProviderKind::Ollama => {
             let host = std::env::var("OLLAMA_HOST")

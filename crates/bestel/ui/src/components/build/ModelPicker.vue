@@ -28,8 +28,6 @@ const toasts = useToastsStore();
 
 const PROVIDER_LABELS: Record<ProviderKindLabel, string> = {
   anthropic: 'Anthropic API',
-  codex_cli: 'Codex CLI',
-  claude_cli: 'Claude Code CLI',
   ollama: 'Ollama (local)',
 };
 
@@ -55,8 +53,8 @@ const filteredModels = computed(() => {
 
 const grouped = computed(() => {
   // Build groups in canonical order so the sidebar layout is stable across
-  // searches (anthropic → codex → claude → ollama).
-  const order: ProviderKindLabel[] = ['anthropic', 'codex_cli', 'claude_cli', 'ollama'];
+  // searches (anthropic → ollama).
+  const order: ProviderKindLabel[] = ['anthropic', 'ollama'];
   const groups = new Map<ProviderKindLabel, ModelProfileDto[]>();
   for (const m of filteredModels.value) {
     const list = groups.get(m.provider) ?? [];
@@ -95,7 +93,6 @@ const isProfileAvailable = (m: ModelProfileDto): boolean => {
 
 const statusKind = (m: ModelProfileDto): 'on' | 'warn' | 'off' => {
   if (isProfileAvailable(m)) return 'on';
-  if (m.provider === 'codex_cli' || m.provider === 'claude_cli') return 'warn';
   return 'off';
 };
 
@@ -180,14 +177,12 @@ function providerSubLabel(m: ModelProfileDto): string {
 
 function availabilityLabel(m: ModelProfileDto): string {
   if (isProfileAvailable(m)) return 'ready';
-  if (m.provider === 'codex_cli' || m.provider === 'claude_cli') return 'CLI detected, not signed in';
   if (m.api_key_env) return 'no key set';
   return 'unavailable';
 }
 
 function availabilityColor(m: ModelProfileDto): string {
   if (isProfileAvailable(m)) return 'var(--good)';
-  if (m.provider === 'codex_cli' || m.provider === 'claude_cli') return 'var(--note)';
   return 'var(--bad)';
 }
 

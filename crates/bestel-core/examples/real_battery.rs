@@ -186,8 +186,6 @@ async fn main() -> Result<()> {
                 "anthropic".to_string()
             }
         }
-        bestel_core::llm::models::ProviderKind::CodexCli => "codex_cli".to_string(),
-        bestel_core::llm::models::ProviderKind::ClaudeCli => "claude_cli".to_string(),
         bestel_core::llm::models::ProviderKind::Ollama => "ollama".to_string(),
     };
 
@@ -349,8 +347,6 @@ async fn run_provider(
     match provider {
         Provider::Anthropic(c) => c.run(history, ctx, tx).await,
         Provider::Ollama(c) => c.run(history, ctx, tx).await,
-        Provider::CodexCli(c) => c.run(history, ctx, tx).await,
-        Provider::ClaudeCli(c) => c.run(history, ctx, tx).await,
     }
 }
 

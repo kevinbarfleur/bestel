@@ -186,8 +186,6 @@ pub async fn chat_start(
     let profile = state.active_model_profile();
     let provider_kind_label = match profile.provider {
         bestel_core::llm::models::ProviderKind::Anthropic => "anthropic",
-        bestel_core::llm::models::ProviderKind::CodexCli => "codex_cli",
-        bestel_core::llm::models::ProviderKind::ClaudeCli => "claude_cli",
         bestel_core::llm::models::ProviderKind::Ollama => "ollama",
     };
     let provider = build_provider_for_profile(&profile)
