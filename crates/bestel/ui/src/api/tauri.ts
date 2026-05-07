@@ -116,3 +116,49 @@ export const onPobCleared = (cb: () => void): Promise<UnlistenFn> =>
 
 export const onProviderStatus = (cb: (e: ProviderStatusEvent) => void): Promise<UnlistenFn> =>
   listen<ProviderStatusEvent>('provider:status', (ev) => cb(ev.payload));
+
+export interface PromptFileMeta {
+  rel_path: string;
+  kind: 'shipped' | 'custom';
+  modified_vs_bundled: boolean;
+  byte_size: number;
+  line_count: number;
+}
+
+export interface PromptGroup {
+  label: string;
+  items: PromptFileMeta[];
+}
+
+export interface PromptTree {
+  groups: PromptGroup[];
+}
+
+export interface PromptFile {
+  rel_path: string;
+  content: string;
+  kind: 'shipped' | 'custom';
+  bundled: string | null;
+}
+
+export interface PromptsChangedEvent {
+  rel_path: string;
+  reason: string;
+}
+
+export const promptsList = (): Promise<PromptTree> => invoke('prompts_list');
+export const promptsRead = (path: string): Promise<PromptFile> =>
+  invoke('prompts_read', { path });
+export const promptsWrite = (path: string, content: string): Promise<void> =>
+  invoke('prompts_write', { path, content });
+export const promptsReset = (path: string): Promise<void> =>
+  invoke('prompts_reset', { path });
+export const promptsResetAll = (): Promise<void> => invoke('prompts_reset_all');
+export const promptsOpenEditor = (): Promise<void> => invoke('prompts_open_editor');
+export const promptsRevealInFinder = (path: string): Promise<void> =>
+  invoke('prompts_reveal_in_finder', { path });
+
+export const onPromptsChanged = (
+  cb: (e: PromptsChangedEvent) => void,
+): Promise<UnlistenFn> =>
+  listen<PromptsChangedEvent>('prompts:changed', (ev) => cb(ev.payload));
