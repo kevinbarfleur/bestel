@@ -183,7 +183,7 @@ impl AnthropicClient {
 
             let body = json!({
                 "model": self.model,
-                "max_tokens": 2048,
+                "max_tokens": 8192,
                 "system": [{
                     "type": "text",
                     "text": system_prompt_with_state,
