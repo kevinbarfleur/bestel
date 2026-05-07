@@ -9,6 +9,7 @@ import { useChatHistoryStore } from '../../stores/chatHistory';
 import { useSettingsStore } from '../../stores/settings';
 import { useUiStore } from '../../stores/ui';
 import RunicIcon from '../runic/RunicIcon.vue';
+import bestelAvatar from '../../assets/bestel-avatar.png';
 
 const buildStore = useBuildStore();
 const chatHistory = useChatHistoryStore();
@@ -70,9 +71,12 @@ const chatLabel = computed(() => {
   <header class="topbar">
     <!-- Logo -->
     <div class="topbar__logo">
-      <div class="topbar__brand" aria-hidden="true">
-        <span class="topbar__brand-mark">B</span>
-      </div>
+      <img
+        :src="bestelAvatar"
+        class="topbar__avatar"
+        alt="Bestel"
+        draggable="false"
+      />
       <span class="topbar__brand-name">Bestel</span>
     </div>
 
@@ -181,21 +185,18 @@ const chatLabel = computed(() => {
   -webkit-app-region: no-drag;
   flex-shrink: 0;
 }
-.topbar__brand {
-  width: 20px;
-  height: 20px;
-  transform: rotate(45deg);
-  border: 1.4px solid var(--amber);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.topbar__brand-mark {
-  transform: rotate(-45deg);
-  font-family: var(--hand);
-  font-size: 12px;
-  font-weight: var(--fw-bold);
-  color: var(--amber);
+.topbar__avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid var(--paper-line);
+  background: var(--paper-shade);
+  object-fit: cover;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  flex-shrink: 0;
+  user-select: none;
+  -webkit-user-drag: none;
 }
 .topbar__brand-name {
   font-family: var(--hand);
