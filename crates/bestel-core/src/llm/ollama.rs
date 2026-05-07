@@ -24,7 +24,7 @@ use tokio::sync::mpsc;
 use super::tools::{dispatch, tool_schemas, BuildContext, ToolCtx};
 use super::{ChatMessage, LlmDelta, Role, ToolStatus};
 use crate::devlog;
-use crate::prompt::SYSTEM_PROMPT_COMPOSED;
+use crate::prompts;
 
 const DEFAULT_HOST: &str = "http://localhost:11434";
 
@@ -86,10 +86,14 @@ impl OllamaClient {
         // of tool-blind local models. Tool-capable models will call
         // `get_active_build` and overwrite this with the same data.
         let build_block = ctx.render_tool_result();
+        let composed = prompts::load_composed();
+        let with_overrides = prompts::append_overrides(&composed, "ollama", &self.model);
+        let addendum = prompts::load_local_addendum();
         let system_prompt = format!(
-            "{persona}\n\n[CURRENT PATH OF BUILDING DATA]\n{build}\n\n{LOCAL_ADDENDUM}",
-            persona = SYSTEM_PROMPT_COMPOSED,
+            "{persona}\n\n[CURRENT PATH OF BUILDING DATA]\n{build}\n\n{addendum}",
+            persona = with_overrides,
             build = build_block,
+            addendum = addendum,
         );
 
         let mut messages: Vec<Value> = Vec::new();
@@ -443,16 +447,6 @@ fn local_friendly_tools(schemas: Vec<Value>) -> Vec<Value> {
         })
         .collect()
 }
-
-/// Local-model addendum to the base SYSTEM_PROMPT_COMPOSED. Strengthens
-/// the 5 things small 7-8B models slip on relative to Sonnet 4.5:
-/// first-person voice, in-character refusal, escape hatch on
-/// get_active_build when inline data is sufficient, PoE2 verification
-/// reflex, and clarification gate on vague prompts. Final `/no_think`
-/// flag is for qwen3 family — issue QwenLM/Qwen3#1817 documents that
-/// thinking mode + tools = ~60% fabricated tool calls; non-thinking
-/// mode → 100% execution.
-const LOCAL_ADDENDUM: &str = include_str!("./local_addendum.md");
 
 /// Convert Anthropic-style tool schemas to OpenAI / Ollama format.
 /// Anthropic ships `{name, description, input_schema}`; OpenAI / Ollama

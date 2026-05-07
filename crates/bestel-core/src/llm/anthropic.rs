@@ -8,7 +8,7 @@ use tokio::sync::mpsc;
 use super::tools::{dispatch, tool_schemas, BuildContext, ToolCtx};
 use super::{ChatMessage, LlmDelta, Role, ToolStatus};
 use crate::devlog;
-use crate::prompt::SYSTEM_PROMPT_COMPOSED;
+use crate::prompts;
 
 fn base64_decode_to_text(s: &str) -> Option<String> {
     let bytes = B64.decode(s).ok()?;
@@ -157,8 +157,10 @@ impl AnthropicClient {
             ),
             None => "Build state: detached".to_string(),
         };
+        let composed = prompts::load_composed();
+        let with_overrides = prompts::append_overrides(&composed, "anthropic", &self.model);
         let system_prompt_with_state =
-            format!("[{}]\n\n{}", build_state_line, SYSTEM_PROMPT_COMPOSED);
+            format!("[{}]\n\n{}", build_state_line, with_overrides);
         let tool_ctx = ToolCtx::new(ctx).context("build ToolCtx")?;
         let schemas = cached_tool_schemas();
         let mut wrap_up_done = false;
