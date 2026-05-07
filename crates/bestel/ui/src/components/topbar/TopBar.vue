@@ -17,7 +17,6 @@ const settings = useSettingsStore();
 const ui = useUiStore();
 
 const { current: currentBuild } = storeToRefs(buildStore);
-const { activeModel } = storeToRefs(settings);
 const { activeId: activeChatId } = storeToRefs(chatHistory);
 
 const isMaximized = ref(false);
@@ -54,7 +53,6 @@ const buildSub = computed(() => {
   return parts.length ? parts.join(' · ') : null;
 });
 
-const modelLabel = computed(() => activeModel.value?.display_name ?? 'pick a model');
 const isDev = import.meta.env.DEV;
 
 const chatLabel = computed(() => {
@@ -111,18 +109,6 @@ const chatLabel = computed(() => {
     >
       <span class="topbar__pill-label">chat</span>
       <span class="topbar__pill-value">{{ chatLabel }}</span>
-      <span class="topbar__pill-caret">▾</span>
-    </button>
-
-    <!-- MODEL pill -->
-    <button
-      type="button"
-      class="topbar__pill"
-      :title="`Model: ${modelLabel}`"
-      @click="ui.openModel()"
-    >
-      <span class="topbar__pill-label">model</span>
-      <span class="topbar__pill-value">{{ modelLabel }}</span>
       <span class="topbar__pill-caret">▾</span>
     </button>
 

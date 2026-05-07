@@ -6,6 +6,7 @@ import { useChatStore } from '../../stores/chat';
 import { useBuildStore } from '../../stores/build';
 import { useSettingsStore } from '../../stores/settings';
 import { useToastsStore } from '../../stores/toasts';
+import { useUiStore } from '../../stores/ui';
 import type { AttachmentDto } from '../../api/types';
 import AttachmentChip from './artifacts/AttachmentChip.vue';
 import RunicButton from '../runic/RunicButton.vue';
@@ -14,6 +15,7 @@ const chat = useChatStore();
 const buildStore = useBuildStore();
 const settings = useSettingsStore();
 const toasts = useToastsStore();
+const ui = useUiStore();
 
 const { isStreaming } = storeToRefs(chat);
 const { current } = storeToRefs(buildStore);
@@ -239,9 +241,18 @@ onMounted(() => {
         @keydown="handleKeydown"
       />
 
-      <!-- Row 3 : footer dashed top + model small caps + send button solid ink -->
+      <!-- Row 3 : footer dashed top + model selector + send button solid ink -->
       <div class="composer__footer">
-        <span class="composer__model">{{ modelName }}</span>
+        <button
+          type="button"
+          class="composer__model"
+          :title="`Active model: ${modelName} — click to switch`"
+          @click="ui.openModel()"
+        >
+          <span class="composer__model-label">model</span>
+          <span class="composer__model-name">{{ modelName }}</span>
+          <span class="composer__model-caret">▾</span>
+        </button>
         <span class="composer__grow" />
         <span class="composer__hint">⌘↵</span>
 
@@ -382,12 +393,45 @@ onMounted(() => {
   border-top: 1px dashed var(--paper-line);
 }
 .composer__model {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+  padding: 3px 8px 3px 6px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+  font-family: var(--hand);
+  color: var(--ink-soft);
+  -webkit-app-region: no-drag;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+.composer__model:hover {
+  border-color: var(--paper-line);
+  background: var(--paper-shade);
+  color: var(--ink);
+}
+.composer__model:focus { outline: none; }
+.composer__model:focus-visible {
+  border-color: var(--ink-faint);
+  background: var(--paper-shade);
+}
+.composer__model-label {
   font-family: var(--label);
-  font-size: var(--fs-caps);
+  font-size: var(--fs-micro);
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--ink-soft);
+  color: var(--ink-faint);
   font-weight: var(--fw-semibold);
+}
+.composer__model-name {
+  font-size: var(--fs-meta);
+  font-weight: var(--fw-medium);
+  color: inherit;
+}
+.composer__model-caret {
+  font-size: 9px;
+  color: var(--ink-faint);
 }
 .composer__grow { flex: 1; }
 .composer__hint {

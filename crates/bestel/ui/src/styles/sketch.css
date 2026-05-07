@@ -326,17 +326,8 @@
 .kbd,
 .sk { -webkit-app-region: no-drag; app-region: no-drag; }
 
-/* Custom scrollbar that fits parchment */
-.runic-scrollbar {
-  scrollbar-color: rgba(175, 96, 37, 0.55) transparent;
-  scrollbar-width: thin;
-}
-.runic-scrollbar::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-.runic-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(175, 96, 37, 0.55);
-  border-radius: 4px;
-}
-.runic-scrollbar::-webkit-scrollbar-track { background: transparent; }
+/* .runic-scrollbar lives in global.css now (graphite tokens). The legacy
+   amber declarations that used to sit here were superseded when the
+   chrome accent moved from amber to graphite/cream — keeping a duplicate
+   here meant Chromium's standard `scrollbar-color` could win and paint
+   the thumb amber even though the WebKit pseudo rule was graphite. */
