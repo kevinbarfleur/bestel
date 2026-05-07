@@ -35,14 +35,17 @@ function renderBody(md: string): string {
   <div class="panel-mech">
     <p v-if="data.summary" class="panel-mech__summary">{{ data.summary }}</p>
 
-    <section
-      v-for="(sec, i) in data.sections"
-      :key="i"
-      class="panel-mech__section"
-    >
-      <h4 class="panel-mech__heading">{{ sec.heading }}</h4>
-      <div class="markdown-body" v-html="renderBody(sec.body_md ?? '')" />
-    </section>
+    <div v-if="data.sections && data.sections.length" class="panel-mech__sections">
+      <section
+        v-for="(sec, i) in data.sections"
+        :key="i"
+        class="panel-mech__section"
+        :class="{ 'panel-mech__section--last': i === data.sections.length - 1 }"
+      >
+        <h4 class="panel-mech__heading">{{ sec.heading }}</h4>
+        <div class="markdown-body panel-mech__body" v-html="renderBody(sec.body_md ?? '')" />
+      </section>
+    </div>
 
     <p
       v-if="!data.summary && (!data.sections || data.sections.length === 0)"
@@ -60,40 +63,61 @@ function renderBody(md: string): string {
   gap: 18px;
 }
 
+/* v9 summary — full bordered card, not a left-border quote. Sets the
+ * tone for the rest of the panel. */
 .panel-mech__summary {
   margin: 0;
   padding: 12px 14px;
   background: var(--paper);
-  border-left: 3px solid var(--paper-line);
-  border-radius: 0 4px 4px 0;
+  border: 1px solid var(--paper-line);
+  border-radius: 4px;
   font-family: var(--hand);
-  font-size: var(--fs-body);
+  font-size: 15px;
   line-height: 1.55;
   color: var(--ink);
 }
 
+.panel-mech__sections {
+  display: flex;
+  flex-direction: column;
+}
+
+/* v9 sections — dotted dividers between siblings, no border on the last
+ * one. Vertical rhythm comes from padding+margin not gap so the dotted
+ * line sits between sections at a consistent height. */
 .panel-mech__section {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  padding-bottom: 14px;
+  margin-bottom: 14px;
+  border-bottom: 1px dotted var(--paper-line);
+}
+.panel-mech__section--last {
+  padding-bottom: 0;
+  margin-bottom: 0;
+  border-bottom: 0;
 }
 
 .panel-mech__heading {
-  margin: 0;
+  margin: 0 0 6px;
   font-family: var(--label);
-  font-size: var(--fs-caps);
+  font-size: 11px;
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--ink-soft);
-  font-weight: var(--fw-semibold);
-  padding-bottom: 6px;
-  border-bottom: 1px solid var(--paper-line);
+  font-weight: 600;
+}
+
+.panel-mech__body {
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: var(--ink);
 }
 
 .panel-mech__empty {
   margin: 0;
   font-family: var(--hand);
-  font-size: var(--fs-meta);
+  font-size: 14px;
   color: var(--ink-faint);
 }
 </style>

@@ -47,13 +47,10 @@ const subline = computed(() => {
 
 <template>
   <div class="panel-gem">
-    <header class="panel-gem__head">
-      <h3 class="panel-gem__name">{{ data.name }}</h3>
-      <p v-if="subline" class="panel-gem__sub">{{ subline }}</p>
-      <div v-if="data.tags && data.tags.length" class="panel-gem__tags">
-        <span v-for="t in data.tags" :key="t" class="panel-gem__tag">{{ t }}</span>
-      </div>
-    </header>
+    <p v-if="subline" class="panel-gem__sub">{{ subline }}</p>
+    <div v-if="data.tags && data.tags.length" class="panel-gem__tags">
+      <span v-for="t in data.tags" :key="t" class="panel-gem__tag">{{ t }}</span>
+    </div>
 
     <section v-if="data.scaling && data.scaling.length" class="panel-gem__section">
       <PickerSectionHead>Scaling</PickerSectionHead>
@@ -92,48 +89,35 @@ const subline = computed(() => {
 .panel-gem {
   display: flex;
   flex-direction: column;
-  gap: 22px;
-}
-
-.panel-gem__head {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.panel-gem__name {
-  margin: 0;
-  font-family: var(--hand);
-  font-size: var(--fs-h2);
-  font-weight: var(--fw-bold);
-  line-height: 1.2;
-  color: var(--ink);
+  gap: 18px;
 }
 
 .panel-gem__sub {
   margin: 0;
   font-family: var(--hand);
-  font-size: var(--fs-meta);
+  font-size: 14px;
   color: var(--ink-soft);
 }
 
+/* v9 tags — small-caps chips with paper bg, slightly tighter than the
+ * default chip rule. Wrap freely so a Spell/Lightning/Projectile/Chaining
+ * row can break across lines on narrow panels. */
 .panel-gem__tags {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 4px;
 }
 .panel-gem__tag {
   font-family: var(--label);
-  font-size: var(--fs-micro);
+  font-size: 11px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--ink-soft);
   background: var(--paper);
   border: 1px solid var(--paper-line);
-  padding: 2px 8px;
+  padding: 3px 8px;
   border-radius: 3px;
-  font-weight: var(--fw-semibold);
+  font-weight: 600;
 }
 
 .panel-gem__section {
@@ -150,39 +134,38 @@ const subline = computed(() => {
   gap: 4px;
 }
 
+/* v9 support rows — flat layout, no bordered box. Name carries weight,
+ * role lives one line below in soft ink. */
 .panel-gem__supports {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
+  margin-top: 4px;
 }
 .panel-gem__supports li {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 6px 10px;
-  background: var(--paper);
-  border: 1px solid var(--paper-line);
-  border-radius: 4px;
 }
 .panel-gem__support-name {
   font-family: var(--hand);
-  font-size: var(--fs-body);
-  font-weight: var(--fw-semibold);
+  font-size: 15px;
+  font-weight: 600;
   color: var(--ink);
 }
 .panel-gem__support-role {
   font-family: var(--hand);
-  font-size: var(--fs-meta);
+  font-size: 13.5px;
   color: var(--ink-soft);
 }
 
 .panel-gem__empty {
   margin: 0;
   font-family: var(--hand);
-  font-size: var(--fs-meta);
+  font-size: 14px;
   color: var(--ink-faint);
 }
 </style>

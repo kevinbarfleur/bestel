@@ -3,6 +3,7 @@ import { computed } from 'vue';
 import { storeToRefs } from 'pinia';
 
 import { useUiStore } from '../../stores/ui';
+import { useToastsStore } from '../../stores/toasts';
 import RunicIcon from '../runic/RunicIcon.vue';
 import PanelItemCard from './PanelItemCard.vue';
 import PanelGemDetail from './PanelGemDetail.vue';
@@ -10,47 +11,68 @@ import PanelMechanic from './PanelMechanic.vue';
 import PanelMarkdown from './PanelMarkdown.vue';
 
 const ui = useUiStore();
-const { panelArtifact, panelHasHistory } = storeToRefs(ui);
+const toasts = useToastsStore();
+const { panelArtifact, panelStack, panelHasHistory } = storeToRefs(ui);
 
 const kindLabel = computed(() => {
   switch (panelArtifact.value?.type) {
-    case 'item-card': return 'Item';
-    case 'gem-detail': return 'Gem';
+    case 'item-card': return 'Item card';
+    case 'gem-detail': return 'Gem detail';
     case 'mechanic': return 'Mechanic';
     case 'markdown': return 'Note';
     default: return '';
   }
 });
+
+const prevTitle = computed(() => {
+  const stack = panelStack.value;
+  return stack.length > 1 ? stack[stack.length - 2].title : null;
+});
+
+function onExternal() {
+  toasts.push({
+    variant: 'info',
+    title: 'External view — coming soon.',
+  });
+}
 </script>
 
 <template>
   <aside v-if="panelArtifact" class="panel-view runic-scrollbar">
     <header class="panel-view__head">
-      <div class="panel-view__head-left">
+      <div class="panel-view__head-row">
+        <span v-if="kindLabel" class="panel-view__kind">{{ kindLabel }}</span>
+        <span class="panel-view__head-spacer" />
         <button
-          v-if="panelHasHistory"
           type="button"
           class="panel-view__icon-btn"
-          title="Back"
-          aria-label="Back"
-          @click="ui.goBackPanel()"
+          title="Open external"
+          aria-label="Open external"
+          @click="onExternal"
         >
-          <RunicIcon name="back" :size="16" />
+          <RunicIcon name="open" :size="14" />
         </button>
-        <div class="panel-view__title-block">
-          <span v-if="kindLabel" class="panel-view__kind">{{ kindLabel }}</span>
-          <h2 class="panel-view__title">{{ panelArtifact.title }}</h2>
-        </div>
+        <button
+          type="button"
+          class="panel-view__icon-btn"
+          title="Close panel"
+          aria-label="Close panel"
+          @click="ui.closePanel()"
+        >
+          <RunicIcon name="close" :size="14" />
+        </button>
       </div>
       <button
+        v-if="panelHasHistory && prevTitle"
         type="button"
-        class="panel-view__icon-btn"
-        title="Close"
-        aria-label="Close panel"
-        @click="ui.closePanel()"
+        class="panel-view__back"
+        :title="`Back to ${prevTitle}`"
+        @click="ui.goBackPanel()"
       >
-        <RunicIcon name="close" :size="16" />
+        <span aria-hidden="true">←</span>
+        <span class="panel-view__back-label">{{ prevTitle }}</span>
       </button>
+      <h2 class="panel-view__title">{{ panelArtifact.title }}</h2>
     </header>
 
     <div class="panel-view__body">
@@ -75,72 +97,92 @@ const kindLabel = computed(() => {
 </template>
 
 <style scoped>
+/* v9 chrome — asymmetric border-radius keeps the hand-drawn feel; right
+ * border is heavier (1.5px ink-soft) for a subtle depth cue, the other
+ * three sides hairline (1px paper-line). Body bg is paper-shade so the
+ * panel reads as a recessed surface compared to the chat. */
 .panel-view {
   flex: 1;
   display: flex;
   flex-direction: column;
   min-height: 0;
   width: 100%;
-  overflow-y: auto;
+  overflow: hidden;
   background: var(--paper-shade);
+  border-top: 1px solid var(--paper-line);
+  border-bottom: 1px solid var(--paper-line);
+  border-left: 1px solid var(--paper-line);
+  border-right: 1.5px solid var(--ink-soft);
+  border-radius: 4px 6px 5px 7px / 6px 5px 7px 4px;
   font-family: var(--hand);
   color: var(--ink);
 }
 
 .panel-view__head {
   flex: none;
-  position: sticky;
-  top: 0;
-  z-index: 1;
   display: flex;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
+  gap: 6px;
   padding: 14px 18px 12px;
-  background: var(--paper-shade);
+  background: var(--paper);
   border-bottom: 1px solid var(--paper-line);
 }
 
-.panel-view__head-left {
-  flex: 1;
-  min-width: 0;
+.panel-view__head-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
 }
 
-.panel-view__title-block {
+.panel-view__head-spacer {
   flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
 }
 
 .panel-view__kind {
   font-family: var(--label);
-  font-size: var(--fs-caps);
+  font-size: 11px;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: var(--ink-faint);
-  font-weight: var(--fw-semibold);
+  color: var(--amber);
+  font-weight: 700;
 }
 
-.panel-view__title {
-  margin: 0;
+.panel-view__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
   font-family: var(--hand);
-  font-size: var(--fs-h1);
-  font-weight: var(--fw-bold);
-  line-height: 1.15;
+  font-size: 12px;
+  color: var(--ink-faint);
+  text-align: left;
+  transition: color 0.15s ease;
+}
+.panel-view__back:hover {
   color: var(--ink);
+}
+.panel-view__back-label {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
+.panel-view__title {
+  margin: 0;
+  font-family: var(--hand);
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.15;
+  color: var(--ink);
+}
+
 .panel-view__icon-btn {
   flex: none;
-  width: 32px;
-  height: 32px;
+  width: 26px;
+  height: 26px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -152,13 +194,14 @@ const kindLabel = computed(() => {
   transition: background 0.15s ease, color 0.15s ease;
 }
 .panel-view__icon-btn:hover {
-  background: var(--paper-line);
+  background: var(--paper-shade);
   color: var(--ink);
 }
 
 .panel-view__body {
   flex: 1;
   min-height: 0;
-  padding: 18px 22px 24px;
+  padding: 16px 18px 20px;
+  overflow-y: auto;
 }
 </style>

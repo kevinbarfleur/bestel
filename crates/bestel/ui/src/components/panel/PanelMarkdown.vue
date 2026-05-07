@@ -23,7 +23,7 @@ const html = computed(() => renderMarkdown(body.value, game.value));
 
 <template>
   <div class="panel-md">
-    <div v-if="body" class="markdown-body" v-html="html" />
+    <div v-if="body" class="markdown-body panel-md__body" v-html="html" />
     <p v-else class="panel-md__empty">No content.</p>
   </div>
 </template>
@@ -34,10 +34,32 @@ const html = computed(() => renderMarkdown(body.value, game.value));
   flex-direction: column;
 }
 
+/* v9 markdown panel — slightly larger body and looser line-height than the
+ * chat surface, since the panel has the reader's full attention and
+ * readability beats density. Inline code uses JetBrains Mono per spec. */
+.panel-md__body {
+  font-size: 15px;
+  line-height: 1.65;
+}
+.panel-md__body :deep(p),
+.panel-md__body :deep(ol),
+.panel-md__body :deep(ul) {
+  margin: 0 0 12px;
+}
+.panel-md__body :deep(p:last-child),
+.panel-md__body :deep(ol:last-child),
+.panel-md__body :deep(ul:last-child) {
+  margin-bottom: 0;
+}
+.panel-md__body :deep(code) {
+  font-family: 'JetBrains Mono', 'Consolas', 'Menlo', monospace;
+  font-size: 13px;
+}
+
 .panel-md__empty {
   margin: 0;
   font-family: var(--hand);
-  font-size: var(--fs-meta);
+  font-size: 14px;
   color: var(--ink-faint);
 }
 </style>
