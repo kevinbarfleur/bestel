@@ -456,3 +456,93 @@ pub async fn delete_api_key(env_name: String) -> Result<(), String> {
     Ok(())
 }
 
+const PROMPT_EDITOR_LABEL: &str = "prompt-editor";
+
+#[tauri::command]
+pub fn prompts_list() -> Result<bestel_core::prompts::PromptTree, String> {
+    bestel_core::prompts::list_files().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn prompts_read(path: String) -> Result<bestel_core::prompts::PromptFile, String> {
+    bestel_core::prompts::read_file(&path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn prompts_write(
+    path: String,
+    content: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    if let Some(root) = bestel_core::prompts::prompts_dir() {
+        state.prompts_self_writes().record(&root.join(&path));
+    }
+    bestel_core::prompts::write_file(&path, &content).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn prompts_reset(path: String, state: State<'_, AppState>) -> Result<(), String> {
+    if let Some(root) = bestel_core::prompts::prompts_dir() {
+        state.prompts_self_writes().record(&root.join(&path));
+    }
+    bestel_core::prompts::reset_file(&path).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn prompts_reset_all(state: State<'_, AppState>) -> Result<(), String> {
+    if let Some(root) = bestel_core::prompts::prompts_dir() {
+        for name in [
+            "SYSTEM_PROMPT.md",
+            "CORE_KNOWLEDGE.md",
+            "local_addendum.md",
+        ] {
+            state.prompts_self_writes().record(&root.join(name));
+        }
+    }
+    bestel_core::prompts::reset_all().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn prompts_open_editor(app: AppHandle) -> Result<(), String> {
+    if let Some(existing) = app.get_webview_window(PROMPT_EDITOR_LABEL) {
+        let _ = existing.show();
+        let _ = existing.set_focus();
+        let _ = existing.unminimize();
+        return Ok(());
+    }
+
+    // Window declared in tauri.conf.json with visible: false. The config
+    // entry handles geometry; here we just bring it up. If the user wiped
+    // it from config we fall through to a builder.
+    let url = tauri::WebviewUrl::App("prompt-editor.html".into());
+    tauri::WebviewWindowBuilder::new(&app, PROMPT_EDITOR_LABEL, url)
+        .title("Prompts & documentation — Bestel")
+        .inner_size(1280.0, 820.0)
+        .min_inner_size(900.0, 560.0)
+        .decorations(false)
+        .resizable(true)
+        .visible(true)
+        .build()
+        .map_err(|e| format!("create prompt editor window: {e}"))?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn prompts_reveal_in_finder(app: AppHandle, path: String) -> Result<(), String> {
+    let root = bestel_core::prompts::prompts_dir()
+        .ok_or_else(|| "prompts dir unresolvable".to_string())?;
+    let target = if path.is_empty() {
+        root
+    } else {
+        let candidate = root.join(&path);
+        if candidate.exists() {
+            candidate
+        } else {
+            root
+        }
+    };
+    app.opener()
+        .open_path(target.to_string_lossy().to_string(), None::<&str>)
+        .map_err(|e| format!("reveal: {e}"))
+}
+

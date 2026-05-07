@@ -7,10 +7,13 @@ use bestel_core::llm::tools::BuildContext;
 use bestel_core::llm::ChatMessage;
 use bestel_core::pob::watcher::PobWatcher;
 
+use crate::prompts_watcher::SelfWriteTracker;
+
 pub struct AppState {
     pub build_ctx: BuildContext,
     pub watcher: OnceLock<Arc<PobWatcher>>,
     pub inner: Mutex<Inner>,
+    prompts_self_writes: SelfWriteTracker,
 }
 
 pub struct Inner {
@@ -39,7 +42,12 @@ impl AppState {
             build_ctx: BuildContext::new(),
             watcher: OnceLock::new(),
             inner: Mutex::new(Inner::default()),
+            prompts_self_writes: SelfWriteTracker::default(),
         }
+    }
+
+    pub fn prompts_self_writes(&self) -> &SelfWriteTracker {
+        &self.prompts_self_writes
     }
 
     pub fn set_watcher(&self, watcher: Arc<PobWatcher>) {

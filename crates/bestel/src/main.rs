@@ -3,6 +3,7 @@
 mod commands;
 mod dto;
 mod events;
+mod prompts_watcher;
 mod state;
 mod titlebar;
 
@@ -26,6 +27,13 @@ fn main() {
     // subcommand runs (mcp-serve included), so AnthropicClient::from_env()
     // and friends see the keys without per-launch user setup.
     bestel_core::llm::keys::apply_to_env();
+
+    // Seed ~/.bestel/prompts/ with the bundled defaults on first launch.
+    // Idempotent — never overwrites user edits. Failures are logged but
+    // not fatal: the runtime loader falls back to BUNDLED_* constants.
+    if let Err(e) = bestel_core::prompts::seed_defaults_if_missing() {
+        eprintln!("bestel: failed to seed prompts directory: {e}");
+    }
 
     let mut args = std::env::args().skip(1);
     if let Some(cmd) = args.next() {
@@ -124,6 +132,13 @@ fn run_tauri() {
                 commands::list_api_keys,
                 commands::set_api_key,
                 commands::delete_api_key,
+                commands::prompts_list,
+                commands::prompts_read,
+                commands::prompts_write,
+                commands::prompts_reset,
+                commands::prompts_reset_all,
+                commands::prompts_open_editor,
+                commands::prompts_reveal_in_finder,
                 titlebar::window_minimize,
                 titlebar::window_toggle_maximize,
                 titlebar::window_close,
@@ -142,7 +157,16 @@ async fn bootstrap_runtime(app: tauri::AppHandle) {
     if let Err(e) = boot_watcher(&app).await {
         tracing::warn!(target: "bestel", "watcher boot failed: {e:?}");
     }
+    boot_prompts_watcher(&app);
     boot_provider_status(&app).await;
+}
+
+fn boot_prompts_watcher(app: &tauri::AppHandle) {
+    let tracker = match app.try_state::<AppState>() {
+        Some(s) => s.prompts_self_writes().clone(),
+        None => return,
+    };
+    prompts_watcher::spawn(app.clone(), tracker);
 }
 
 async fn boot_watcher(app: &tauri::AppHandle) -> Result<()> {
