@@ -1,19 +1,30 @@
-# Bestel
+<p align="center">
+  <img src="docs/assets/bestel-avatar.png" width="140" alt="Bestel" />
+</p>
 
-> *"Let me tell you a tale, exile."*
+<h1 align="center">Bestel</h1>
 
-**Bestel** is a desktop AI companion for **Path of Exile 1 and Path of
-Exile 2**, written for the player who wants more than a wiki tab. It
-watches your live Path of Building file, reads it, and lets you have a
-real conversation about your build with an LLM that's been taught to
-think like a PoE veteran — verify everything on the wiki before
-answering, distinguish PoE1 from PoE2, and surface the named items,
-keystones and supports that actually solve your problem.
+<p align="center">
+  <em>"Let me tell you a tale, exile."</em>
+</p>
+
+<p align="center">
+  Desktop AI companion for <b>Path of Exile 1 &amp; 2</b> — reads your
+  live Path of Building file, reasons about your build with a PoE-veteran
+  research loop, and surfaces the named items, keystones and supports
+  that actually solve your problem.
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/badge/license-MIT-amber" alt="MIT license" />
+  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey" alt="Windows | Linux" />
+  <img src="https://img.shields.io/badge/built%20with-Rust%20%2B%20Tauri%202-orange" alt="Built with Rust + Tauri 2" />
+</p>
+
+---
 
 The voice is Bestel, chronicler of Lioneye's Watch. Wraeclast wisdom,
 no pep talks.
-
-![Screenshot placeholder](docs/assets/screenshot-placeholder.png)
 
 ## What it does
 
