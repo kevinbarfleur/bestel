@@ -1,0 +1,84 @@
+name: Release
+
+# Triggered by pushing a tag like `v0.1.0` or `v1.2.3`. Builds Bestel on
+# Windows + macOS, bundles the OS-native installers (.msi / .nsis on
+# Windows, .dmg / .app on macOS), and uploads them to a draft GitHub
+# Release matching the tag. Edit the release notes by hand before
+# publishing — the workflow only fills the artifacts.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  # Manual trigger for dry-run testing without tagging.
+  workflow_dispatch:
+
+jobs:
+  release:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Apple Silicon (arm64) — covers M-series Macs.
+          - platform: macos-latest
+            args: '--target aarch64-apple-darwin'
+          # Intel macOS for older hardware. Comment out to skip.
+          - platform: macos-latest
+            args: '--target x86_64-apple-darwin'
+          # Windows x64.
+          - platform: windows-latest
+            args: ''
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          # Add the apple-darwin targets when building on macos-latest.
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './ -> target'
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: crates/bestel/ui/package-lock.json
+
+      - name: Install frontend deps
+        working-directory: crates/bestel/ui
+        run: npm ci
+
+      - name: Build + bundle via tauri-action
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # Path to the crate that contains tauri.conf.json.
+          projectPath: crates/bestel
+          # Tag name → release. tauri-action creates a draft release on the
+          # first matrix run and reuses it on subsequent runs.
+          tagName: ${{ github.ref_name }}
+          releaseName: 'Bestel ${{ github.ref_name }}'
+          releaseBody: |
+            Desktop AI companion for Path of Exile.
+
+            **macOS:** unsigned `.dmg` — Gatekeeper will warn on first launch.
+            Right-click the app → Open → confirm to bypass.
+
+            **Windows:** `.msi` (recommended) or `.exe` (NSIS).
+
+            See the README for setup (API keys, model selection).
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}

@@ -22,6 +22,18 @@ const { activeId: activeChatId } = storeToRefs(chatHistory);
 const isMaximized = ref(false);
 let unlisten: (() => void) | null = null;
 
+/** True when running on macOS — used to swap the right-side custom window
+ *  controls for the native traffic-lights overlay (positioned by the OS at
+ *  top-left). On Windows / Linux we keep our drawn-from-Vue controls.
+ *  Detection uses navigator.platform synchronously so the layout doesn't
+ *  flicker on first paint. Tauri's @tauri-apps/api/os is async; we keep
+ *  this synchronous heuristic on top of it for the initial render. */
+const isMac = computed(() => {
+  if (typeof navigator === 'undefined') return false;
+  const p = navigator.platform || '';
+  return /Mac|iPhone|iPad/.test(p);
+});
+
 onMounted(async () => {
   const w = getCurrentWindow();
   isMaximized.value = await w.isMaximized();
@@ -67,7 +79,7 @@ const chatLabel = computed(() => {
 </script>
 
 <template>
-  <header class="topbar">
+  <header class="topbar" :class="{ 'topbar--mac': isMac }">
     <!-- Logo -->
     <div class="topbar__logo">
       <div class="topbar__brand" aria-hidden="true">
@@ -144,8 +156,9 @@ const chatLabel = computed(() => {
       <span class="topbar__pill-value">runs</span>
     </router-link>
 
-    <!-- Window controls -->
-    <div class="topbar__controls">
+    <!-- Window controls — Windows / Linux only. macOS has native overlay
+         traffic-lights (top-left) via tauri.conf.json titleBarStyle. -->
+    <div v-if="!isMac" class="topbar__controls">
       <button class="topbar__btn" type="button" aria-label="Minimize" title="Minimize" @click="onMinimize">
         <svg width="10" height="10" viewBox="0 0 10 10"><line x1="1" y1="5" x2="9" y2="5" stroke="currentColor" stroke-width="1.5" /></svg>
       </button>
@@ -171,6 +184,13 @@ const chatLabel = computed(() => {
   background: var(--paper);
   flex-shrink: 0;
   -webkit-app-region: no-drag;
+}
+
+/* macOS — clear ~78px on the left so the native overlay traffic-lights
+ * (close/min/max) don't overlap our logo. The OS draws them at top-left
+ * absolute coords; padding-left in our flex flow reserves the room. */
+.topbar--mac {
+  padding-left: 78px;
 }
 
 /* Logo */
