@@ -1,0 +1,18 @@
+/* CodeMirror + editor-window-only styling. Loaded by prompt-editor-main.ts. */
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--hand);
+}
+
+#app {
+  width: 100vw;
+  height: 100vh;
+}
