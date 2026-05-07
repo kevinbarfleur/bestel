@@ -330,20 +330,38 @@ const turns = computed<Turn[]>(() => {
  * indented; the line begins at the first artifact's top and ends at
  * the last one's bottom.
  *
- * The line is drawn as `border-left` on the ARTICLE itself (not the
- * body) so it covers the article's full height regardless of how the
- * inner flex baseline-alignment positions the body. The whole turn
- * (gutter + body) is shifted right by `padding-left: 14px` — labels
- * AND content are visually indented under the line.
+ * The line is drawn by an absolutely-positioned `::before` on the
+ * article itself, anchored at `left: 86px` — the column where the
+ * body sits in the article's inner flex layout (72px gutter +
+ * 14px `.turn` gap). Going through ::before instead of `border-left`
+ * has two benefits:
+ *   - Labels (`thinking`, `wiki`, `search`) keep their original
+ *     gutter position aligned with `bestel` above and below — the
+ *     article's box is unchanged.
+ *   - The line spans `top: 0` to `height: 100%` of the article's
+ *     padding box, so it covers the full article height regardless
+ *     of where the inner flex baseline-alignment places the body.
  *
  * Between two adjacent artifact turns, the parent flex `gap: 22px` is
  * canceled with `margin-top: -22px` and replaced by `padding-top: 22px`
- * inside the article. The border-left covers the padding region, so
- * the second article sits flush against the first and the line is
- * uninterrupted across the visible 22px spacing. Keep the 22px value
- * in sync with `.chat-stream`'s gap (ChatStream.vue). */
+ * on the article. The ::before line covers the padding region too,
+ * so consecutive articles sit flush and the line is uninterrupted
+ * across the visible 22px spacing. Keep the 22px value in sync with
+ * `.chat-stream`'s gap (ChatStream.vue) and the 86px in sync with
+ * the gutter width (72px) + .turn gap (14px). */
 .turn--artifact {
-  border-left: 1px solid var(--paper-line);
+  position: relative;
+}
+.turn--artifact::before {
+  content: '';
+  position: absolute;
+  left: 86px;
+  top: 0;
+  height: 100%;
+  width: 1px;
+  background: var(--paper-line);
+}
+.turn--artifact .turn__body {
   padding-left: 14px;
 }
 .turn--artifact + .turn--artifact {
