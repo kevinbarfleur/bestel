@@ -32,6 +32,36 @@ const FILE_SYSTEM_PROMPT: &str = "SYSTEM_PROMPT.md";
 const FILE_CORE_KNOWLEDGE: &str = "CORE_KNOWLEDGE.md";
 const FILE_LOCAL_ADDENDUM: &str = "local_addendum.md";
 
+/// The reference library — 17 numbered conceptual docs + 5 maxroll catalogues.
+/// Bundled into the binary so the agent has a complete fallback even when the
+/// user has wiped `~/.bestel/prompts/references/`. The agent fetches these on
+/// demand via the `read_internal_reference` tool — they are NOT concatenated
+/// into the system prompt.
+pub const BUNDLED_REFERENCES: &[(&str, &str)] = &[
+    ("00_README.md", include_str!("../../../docs/references/00_README.md")),
+    ("01_source_policy.md", include_str!("../../../docs/references/01_source_policy.md")),
+    ("02_arpg_foundations.md", include_str!("../../../docs/references/02_arpg_foundations.md")),
+    ("03_ggg_design_philosophy.md", include_str!("../../../docs/references/03_ggg_design_philosophy.md")),
+    ("04_game_model_poe1_poe2.md", include_str!("../../../docs/references/04_game_model_poe1_poe2.md")),
+    ("05_build_reasoning_framework.md", include_str!("../../../docs/references/05_build_reasoning_framework.md")),
+    ("06_character_stats_and_mechanics.md", include_str!("../../../docs/references/06_character_stats_and_mechanics.md")),
+    ("07_offence_damage_scaling.md", include_str!("../../../docs/references/07_offence_damage_scaling.md")),
+    ("08_defence_recovery_survivability.md", include_str!("../../../docs/references/08_defence_recovery_survivability.md")),
+    ("09_itemisation_crafting.md", include_str!("../../../docs/references/09_itemisation_crafting.md")),
+    ("10_skills_gems_passives_ascendancies.md", include_str!("../../../docs/references/10_skills_gems_passives_ascendancies.md")),
+    ("11_endgame_economy_trade_leagues.md", include_str!("../../../docs/references/11_endgame_economy_trade_leagues.md")),
+    ("12_vocabulary_glossary.md", include_str!("../../../docs/references/12_vocabulary_glossary.md")),
+    ("13_retrieval_playbooks.md", include_str!("../../../docs/references/13_retrieval_playbooks.md")),
+    ("14_validation_and_failure_modes.md", include_str!("../../../docs/references/14_validation_and_failure_modes.md")),
+    ("15_source_registry.md", include_str!("../../../docs/references/15_source_registry.md")),
+    ("16_build_methodology_and_creators.md", include_str!("../../../docs/references/16_build_methodology_and_creators.md")),
+    ("maxroll/00_README.md", include_str!("../../../docs/references/maxroll/00_README.md")),
+    ("maxroll/poe1_bosses.md", include_str!("../../../docs/references/maxroll/poe1_bosses.md")),
+    ("maxroll/poe1_crafting.md", include_str!("../../../docs/references/maxroll/poe1_crafting.md")),
+    ("maxroll/poe1_currency.md", include_str!("../../../docs/references/maxroll/poe1_currency.md")),
+    ("maxroll/poe1_getting_started.md", include_str!("../../../docs/references/maxroll/poe1_getting_started.md")),
+];
+
 /// Per-path mutex so concurrent `prompts_write` calls (autosave races, etc.)
 /// don't tear writes against each other. Granularity is the relative path
 /// inside `prompts_dir()`.
@@ -58,12 +88,20 @@ pub fn prompts_dir() -> Option<PathBuf> {
     Some(dir)
 }
 
-/// Resolve a relative path under `prompts_dir()` while rejecting traversal
-/// and absolute paths. Returned path is canonicalized only when it exists —
-/// callers that want to *create* a file should use `safe_join` and verify
-/// the parent is under `prompts_dir()`.
-fn safe_join(rel: &str) -> Result<PathBuf> {
-    let root = prompts_dir().context("home directory not resolvable")?;
+/// `~/.bestel/prompts/references/` — the reference library root. Subset of
+/// `prompts_dir()` reserved for the agent's fetch-on-demand knowledge base.
+pub fn references_dir() -> Option<PathBuf> {
+    let dir = prompts_dir()?.join("references");
+    if !dir.exists() {
+        let _ = fs::create_dir_all(&dir);
+    }
+    Some(dir)
+}
+
+/// Validate a relative path against traversal / absolute / rooted segments
+/// and join it onto a known-good root. Same rejection rules whether the root
+/// is `prompts_dir()` or `references_dir()`.
+fn safe_join_under(root: &Path, rel: &str) -> Result<PathBuf> {
     let p = PathBuf::from(rel);
     if p.is_absolute() {
         return Err(anyhow!("absolute paths are not allowed: {rel}"));
@@ -79,8 +117,21 @@ fn safe_join(rel: &str) -> Result<PathBuf> {
             _ => {}
         }
     }
-    let joined = root.join(&p);
-    Ok(joined)
+    Ok(root.join(&p))
+}
+
+/// Resolve a relative path under `prompts_dir()`. Returned path is not
+/// canonicalized — callers that want to create a file should ensure the
+/// parent exists.
+fn safe_join(rel: &str) -> Result<PathBuf> {
+    let root = prompts_dir().context("home directory not resolvable")?;
+    safe_join_under(&root, rel)
+}
+
+/// Resolve a relative path under `references_dir()`. Same traversal rules.
+fn safe_join_reference(rel: &str) -> Result<PathBuf> {
+    let root = references_dir().context("home directory not resolvable")?;
+    safe_join_under(&root, rel)
 }
 
 /// Lowercase + replace `/`, `:`, `\\` with `-` so model ids like
@@ -100,7 +151,7 @@ pub fn sanitize_model_id(model_id: &str) -> String {
 
 /// Write the bundled defaults into `~/.bestel/prompts/` only when the
 /// destination file does not exist. Idempotent — running twice has no
-/// effect; never overwrites user edits.
+/// effect; never overwrites user edits. Also seeds the reference library.
 pub fn seed_defaults_if_missing() -> Result<()> {
     let root = prompts_dir().context("home directory not resolvable")?;
     fs::create_dir_all(&root)?;
@@ -118,7 +169,103 @@ pub fn seed_defaults_if_missing() -> Result<()> {
             fs::write(&path, content)?;
         }
     }
+
+    seed_references_if_missing()?;
     Ok(())
+}
+
+/// Write the bundled reference library into `~/.bestel/prompts/references/`
+/// only when each destination file is missing. Creates the `references/`
+/// and `references/maxroll/` subdirectories as needed.
+pub fn seed_references_if_missing() -> Result<()> {
+    let root = references_dir().context("home directory not resolvable")?;
+    fs::create_dir_all(&root)?;
+    fs::create_dir_all(root.join("maxroll"))?;
+    for (rel, content) in BUNDLED_REFERENCES {
+        let path = root.join(rel);
+        if !path.exists() {
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(&path, content)?;
+        }
+    }
+    Ok(())
+}
+
+/// Read a reference file from `~/.bestel/prompts/references/<rel_path>`. Falls
+/// back to the bundled content if the disk read fails. Path is validated to
+/// reject traversal and absolute paths.
+pub fn read_reference(rel_path: &str) -> Result<String> {
+    let path = safe_join_reference(rel_path)?;
+    if let Ok(s) = fs::read_to_string(&path) {
+        return Ok(s);
+    }
+    for (k, v) in BUNDLED_REFERENCES {
+        if *k == rel_path {
+            return Ok((*v).to_string());
+        }
+    }
+    Err(anyhow!("{rel_path} not found in reference library"))
+}
+
+/// Parse the YAML frontmatter (`description:` + `fetch_when:` keys) from a
+/// markdown file's leading `---` block. Returns `None` if the file has no
+/// frontmatter or the keys are absent.
+pub fn parse_frontmatter(content: &str) -> Option<(String, String)> {
+    let body = content.strip_prefix("---\n").or_else(|| content.strip_prefix("---\r\n"))?;
+    let end = body
+        .find("\n---\n")
+        .or_else(|| body.find("\r\n---\r\n"))
+        .or_else(|| body.find("\n---"))?;
+    let yaml = &body[..end];
+    let mut description = String::new();
+    let mut fetch_when = String::new();
+    for raw in yaml.lines() {
+        let line = raw.trim();
+        if let Some(rest) = line.strip_prefix("description:") {
+            description = strip_yaml_quotes(rest.trim()).to_string();
+        } else if let Some(rest) = line.strip_prefix("fetch_when:") {
+            fetch_when = strip_yaml_quotes(rest.trim()).to_string();
+        }
+    }
+    if description.is_empty() && fetch_when.is_empty() {
+        None
+    } else {
+        Some((description, fetch_when))
+    }
+}
+
+fn strip_yaml_quotes(s: &str) -> &str {
+    let s = s.trim();
+    if (s.starts_with('"') && s.ends_with('"')) || (s.starts_with('\'') && s.ends_with('\'')) {
+        if s.len() >= 2 {
+            return &s[1..s.len() - 1];
+        }
+    }
+    s
+}
+
+/// Best-effort one-line description for a file: frontmatter `description:` if
+/// present, else first non-blank, non-heading line under the H1, else empty.
+pub fn extract_description(content: &str) -> String {
+    if let Some((desc, _)) = parse_frontmatter(content) {
+        if !desc.is_empty() {
+            return desc;
+        }
+    }
+    let mut after_h1 = false;
+    for raw in content.lines() {
+        let line = raw.trim();
+        if line.starts_with("# ") {
+            after_h1 = true;
+            continue;
+        }
+        if after_h1 && !line.is_empty() && !line.starts_with('#') && !line.starts_with("---") {
+            return line.chars().take(140).collect();
+        }
+    }
+    String::new()
 }
 
 fn read_or_bundled(name: &str, bundled: &str) -> String {
@@ -200,11 +347,17 @@ pub struct PromptFileMeta {
     pub modified_vs_bundled: bool,
     pub byte_size: u64,
     pub line_count: u32,
+    /// One-line purpose extracted from the file's YAML frontmatter
+    /// (`description:` field) or the first non-blank line under the H1.
+    pub description: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct PromptGroup {
     pub label: String,
+    /// Section header sentence that explains the group's role to the user
+    /// editing prompts. Renders directly in the editor's tree.
+    pub description: String,
     pub items: Vec<PromptFileMeta>,
 }
 
@@ -218,7 +371,14 @@ fn bundled_for(rel_path: &str) -> Option<&'static str> {
         FILE_SYSTEM_PROMPT => Some(BUNDLED_SYSTEM_PROMPT),
         FILE_CORE_KNOWLEDGE => Some(BUNDLED_CORE_KNOWLEDGE),
         FILE_LOCAL_ADDENDUM => Some(BUNDLED_LOCAL_ADDENDUM),
-        _ => None,
+        _ => {
+            for (k, v) in BUNDLED_REFERENCES {
+                if *k == rel_path.trim_start_matches("references/") {
+                    return Some(*v);
+                }
+            }
+            None
+        }
     }
 }
 
@@ -240,12 +400,14 @@ fn meta_for(rel_path: &str, abs: &Path) -> PromptFileMeta {
         Some(b) => b != content,
         None => false,
     };
+    let description = extract_description(&content);
     PromptFileMeta {
         rel_path: rel_path.to_string(),
         kind,
         modified_vs_bundled,
         byte_size: bytes,
         line_count,
+        description,
     }
 }
 
@@ -253,7 +415,9 @@ fn meta_for(rel_path: &str, abs: &Path) -> PromptFileMeta {
 /// tree groups files into Core / Providers / Per-model overrides / Custom.
 pub fn list_files() -> Result<PromptTree> {
     let root = prompts_dir().context("home directory not resolvable")?;
-    let mut core: Vec<PromptFileMeta> = Vec::new();
+    let mut always_loaded: Vec<PromptFileMeta> = Vec::new();
+    let mut references_top: Vec<PromptFileMeta> = Vec::new();
+    let mut references_maxroll: Vec<PromptFileMeta> = Vec::new();
     let mut providers: Vec<PromptFileMeta> = Vec::new();
     let mut models: Vec<PromptFileMeta> = Vec::new();
     let mut custom: Vec<PromptFileMeta> = Vec::new();
@@ -261,7 +425,33 @@ pub fn list_files() -> Result<PromptTree> {
     for name in [FILE_SYSTEM_PROMPT, FILE_CORE_KNOWLEDGE, FILE_LOCAL_ADDENDUM] {
         let p = root.join(name);
         if p.exists() {
-            core.push(meta_for(name, &p));
+            always_loaded.push(meta_for(name, &p));
+        }
+    }
+
+    let refs_root = root.join("references");
+    if let Ok(rd) = fs::read_dir(&refs_root) {
+        for entry in rd.flatten() {
+            let path = entry.path();
+            if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("md") {
+                if let Some(file_name) = path.file_name().and_then(|s| s.to_str()) {
+                    let rel = format!("references/{file_name}");
+                    references_top.push(meta_for(&rel, &path));
+                }
+            }
+        }
+    }
+
+    let maxroll_root = refs_root.join("maxroll");
+    if let Ok(rd) = fs::read_dir(&maxroll_root) {
+        for entry in rd.flatten() {
+            let path = entry.path();
+            if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("md") {
+                if let Some(file_name) = path.file_name().and_then(|s| s.to_str()) {
+                    let rel = format!("references/maxroll/{file_name}");
+                    references_maxroll.push(meta_for(&rel, &path));
+                }
+            }
         }
     }
 
@@ -310,33 +500,53 @@ pub fn list_files() -> Result<PromptTree> {
     let sort_by_name = |v: &mut Vec<PromptFileMeta>| {
         v.sort_by(|a, b| a.rel_path.cmp(&b.rel_path));
     };
-    sort_by_name(&mut core);
+    sort_by_name(&mut always_loaded);
+    sort_by_name(&mut references_top);
+    sort_by_name(&mut references_maxroll);
     sort_by_name(&mut providers);
     sort_by_name(&mut models);
     sort_by_name(&mut custom);
 
     let mut groups = Vec::new();
-    if !core.is_empty() {
+    if !always_loaded.is_empty() {
         groups.push(PromptGroup {
-            label: "Core".to_string(),
-            items: core,
+            label: "Always loaded".to_string(),
+            description: "Sent to the agent on every turn — voice, hard rules, tool inventory.".to_string(),
+            items: always_loaded,
+        });
+    }
+    if !references_top.is_empty() {
+        groups.push(PromptGroup {
+            label: "Reference library".to_string(),
+            description: "Conceptual knowledge base. The agent fetches these on demand via the read_internal_reference tool.".to_string(),
+            items: references_top,
+        });
+    }
+    if !references_maxroll.is_empty() {
+        groups.push(PromptGroup {
+            label: "Reference library — Maxroll catalogue".to_string(),
+            description: "Curated URLs to applied Maxroll articles (bosses, crafting, currency farming, getting started). Fetched the same way.".to_string(),
+            items: references_maxroll,
         });
     }
     if !providers.is_empty() {
         groups.push(PromptGroup {
-            label: "Providers".to_string(),
+            label: "Provider overrides".to_string(),
+            description: "Optional. Append extra rules for one provider (anthropic.md, ollama.md). Loaded only when the matching provider runs.".to_string(),
             items: providers,
         });
     }
     if !models.is_empty() {
         groups.push(PromptGroup {
             label: "Per-model overrides".to_string(),
+            description: "Optional. Narrowest scope — fires only for the exact model id. Filename is the sanitized model id.".to_string(),
             items: models,
         });
     }
     if !custom.is_empty() {
         groups.push(PromptGroup {
             label: "Custom".to_string(),
+            description: "User-added .md files at the prompts root. Not loaded automatically by the agent.".to_string(),
             items: custom,
         });
     }

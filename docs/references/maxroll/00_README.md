@@ -1,3 +1,8 @@
+---
+description: Maxroll subfolder orientation - catalog format, routing heuristics (how-to -> getting_started, bosses -> bosses, etc).
+fetch_when: When you need an applied step-by-step source and aren't sure which Maxroll catalog to consult.
+---
+
 # Maxroll catalogs
 
 This subfolder catalogs the Maxroll.gg articles the agent should consult when it needs **concrete, applied information** beyond the conceptual core in the numbered top-level docs (`01_…` to `16_…`). Every entry lists the URL, what the article covers, and when to route to it.

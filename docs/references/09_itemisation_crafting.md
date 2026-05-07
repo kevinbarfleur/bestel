@@ -1,3 +1,8 @@
+---
+description: Item decomposition, slot pressure, rare-vs-unique, PoE1 + PoE2 crafting routes, upgrade algorithm, trade-vs-craft matrix.
+fetch_when: For item analysis, crafting strategy, "how to craft X", "what to upgrade next", trade-vs-craft decisions.
+---
+
 # 09 — Itemisation, crafting, and upgrade logic
 
 ## Item = base + rarity + item level + affixes + implicits + constraints

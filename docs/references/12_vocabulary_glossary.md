@@ -1,3 +1,8 @@
+---
+description: Cross-game / PoE1-only / PoE2-only vocabulary partitioned to prevent leakage. Acronyms, mechanics, ailments, items, modes.
+fetch_when: When the user uses jargon (CWDT, CoC, MoM, PF, RF, IIQ, Sekhemas, Realmgate, Spirit, Voidstone, Cluster Jewel, etc).
+---
+
 # 12 — Vocabulary glossary (PoE1 + PoE2)
 
 This is the agent's quick lookup for jargon and acronyms. Concept-only: meanings, not current values. Whenever a value (cap, multiplier, level, price) might be relevant, the agent must verify on the wiki for the current patch.

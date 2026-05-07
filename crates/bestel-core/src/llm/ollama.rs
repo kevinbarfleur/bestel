@@ -431,6 +431,7 @@ const LOCAL_TOOL_ALLOWLIST: &[&str] = &[
     "wiki_parse",
     "wiki_synergies",
     "web_fetch",
+    "read_internal_reference",
 ];
 
 /// Drop tools not in [`LOCAL_TOOL_ALLOWLIST`] from the schema list. The

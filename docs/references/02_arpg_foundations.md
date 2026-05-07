@@ -1,3 +1,8 @@
+---
+description: aRPG genre priors — D2 lineage, damage delivery taxonomy, defence layers, scaling axes, action economy.
+fetch_when: When framing a generic aRPG question, comparing PoE to D-family games, or explaining genre conventions.
+---
+
 # 02 — Action RPG foundations
 
 This document explains **the conventions of the action-RPG genre that PoE inherits and bends**. It is not PoE-specific; it is the genre grammar PoE players already know intuitively, and that the agent should hold as background when reasoning about a build.

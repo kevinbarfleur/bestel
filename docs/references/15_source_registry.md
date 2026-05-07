@@ -1,3 +1,8 @@
+---
+description: Concrete URL allowlist by tier (canonical, wikis, datamined, calculators, economy, creator guides) + explicit blocklist.
+fetch_when: When constructing a citation, choosing between sources, or verifying that a domain is on the allowlist before fetching.
+---
+
 # 15 — Source registry
 
 This registry guides the agent toward the right sources. URLs must be re-verified at runtime when the answer depends on current state.

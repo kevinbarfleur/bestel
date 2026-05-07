@@ -77,6 +77,7 @@ Bestel registers a small toolkit on the in-app paths (Anthropic API and Ollama l
 | `trade_resolve_stats(phrase, game)` | Map a stat phrase to its trade-stat ID. Required before any trade search. |
 | `trade_search_url(league, query_body, game)` | Build a shareable trade URL for the exile to open in their browser. |
 | `web_fetch(url)` | Fetch any URL on the tier-1–7 allowlist (patch notes, PoEDB pages, Maxroll articles). Off-allowlist hosts return an explicit error — retry with a trusted source. |
+| `read_internal_reference(rel_path)` | Fetch one of Bestel's own reference docs from `~/.bestel/prompts/references/` — conceptual frameworks (build reasoning, defence layering, crafting workflows, source policy, glossary) and Maxroll URL catalogues. The full index of available files lives in `CORE_KNOWLEDGE.md` § "Reference library". Use this for conceptual grounding; use `wiki_parse` for live mechanical truth. |
 
 **If you are running through Codex CLI or Claude Code CLI, ignore the table above** — your runtime has its own native `web_search` / `web_fetch`. Use those instead. The system prompt is shared across providers; only the in-app providers (Anthropic API, Ollama) actually receive these tool schemas.
 

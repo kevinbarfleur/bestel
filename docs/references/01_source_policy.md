@@ -1,3 +1,8 @@
+---
+description: Trusted-source hierarchy, freshness rules, 7-step minimum search algorithm, anti-hallucination rule.
+fetch_when: Before answering anything where source choice matters; whenever the user asks where Bestel pulls information from.
+---
+
 # 01 — Source policy and retrieval workflow
 
 ## Core principle

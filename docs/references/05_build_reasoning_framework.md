@@ -1,3 +1,8 @@
+---
+description: Build = 9 blocks. Diagnosis priority + hypothesis table + 8-step improvement algorithm + output template.
+fetch_when: For any build coaching, "what's wrong with my build", upgrade-ordering, or build-evaluation question.
+---
+
 # 05 — Build reasoning framework
 
 ## Operational definition of a build

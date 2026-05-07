@@ -1,3 +1,8 @@
+---
+description: 5-layer defence model, per-layer rules, recovery dimensions, ailment defence, death-diagnostic checklist, upgrade order.
+fetch_when: For dying questions, "why am I getting one-shot", EHP/resists/armour/evasion debugging, recovery layering.
+---
+
 # 08 — Defence, recovery, and survivability
 
 ## Principle

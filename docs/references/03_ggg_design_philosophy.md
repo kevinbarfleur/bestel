@@ -1,3 +1,8 @@
+---
+description: GGG design priors — pay-no-advantage, the Vision, trade friction, league cycle, power-creep cadence, PoE2 as sibling.
+fetch_when: When the user asks why GGG made a choice, evaluates monetisation/trade design, or compares PoE2 to PoE1 strategically.
+---
+
 # 03 — GGG design philosophy
 
 This document captures **what makes Grinding Gear Games' design choices coherent**. It is the cultural / philosophical layer that explains *why* PoE looks the way it does. The agent should hold these as priors when interpreting balance changes, league design, monetisation, or community responses.

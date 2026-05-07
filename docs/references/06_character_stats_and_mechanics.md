@@ -1,3 +1,8 @@
+---
+description: 6-axis stat classification, local vs global, more vs increased, source/type/delivery, charges/buffs/uptime, ailments.
+fetch_when: When parsing any unfamiliar mod text, debugging stat interactions, or reasoning about ailments/charges/buffs.
+---
+
 # 06 — Player, character stats, and mechanical vocabulary
 
 ## The stat axes

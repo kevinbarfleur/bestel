@@ -1,3 +1,8 @@
+---
+description: Project orientation, reading order, maintenance contract, source-hierarchy summary.
+fetch_when: When the user asks how the reference library is structured, what's where, or maintenance/contributing rules.
+---
+
 # Path of Exile reference documentation
 
 This folder is the **conceptual knowledge base** that Bestel — and any future maintainer — uses to plan reasoning about Path of Exile 1 / 2.

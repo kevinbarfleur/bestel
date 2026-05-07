@@ -1,3 +1,8 @@
+---
+description: PoE1 currency-farming Maxroll articles - League-Start strategies, Endgame scaling, Mechanic deep-dives.
+fetch_when: For PoE1 currency farming, league-start advice, "how to make currency / juice maps", mechanic-specific farming.
+---
+
 # Maxroll — Currency Catalog (Path of Exile 1)
 
 Source: <https://maxroll.gg/poe/category/currency>

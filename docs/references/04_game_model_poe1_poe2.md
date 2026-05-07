@@ -1,3 +1,8 @@
+---
+description: PoE1 vs PoE2 structural comparison + cross-game traps table + mandatory pre-question framing.
+fetch_when: As soon as a question could apply to either game; when a term collides across games (Chaos Orb, Map, Atlas, Spirit, 6-link).
+---
+
 # 04 — Game model: PoE1 and PoE2
 
 ## Shared model

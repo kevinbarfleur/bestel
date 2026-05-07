@@ -1,3 +1,8 @@
+---
+description: PoE1 boss-fight Maxroll articles by family (Pinnacles, Conquerors, Shaper Guardians, Elder, Breachlords, Synthesis).
+fetch_when: For PoE1 boss strategy, mechanics, voice-line / phase questions, Uber variant deltas, loot tables.
+---
+
 # Maxroll — Bosses Catalog (Path of Exile 1)
 
 Source: <https://maxroll.gg/poe/category/bosses>

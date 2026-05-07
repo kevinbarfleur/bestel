@@ -14,6 +14,7 @@ pub const WIKI_CARGO: &str = "wiki_cargo";
 pub const TRADE_RESOLVE_STATS: &str = "trade_resolve_stats";
 pub const TRADE_SEARCH_URL: &str = "trade_search_url";
 pub const WEB_FETCH: &str = "web_fetch";
+pub const READ_INTERNAL_REFERENCE: &str = "read_internal_reference";
 
 /// Hosts the `web_fetch` tool will accept. Mirrors the tier-1–7 allowlist
 /// in `docs/references/15_source_registry.md`. Subdomains of any entry are
@@ -327,6 +328,21 @@ pub fn tool_schemas() -> Vec<Value> {
                 "additionalProperties": false
             }
         }),
+        json!({
+            "name": READ_INTERNAL_REFERENCE,
+            "description": "Read one of Bestel's internal reference files from `~/.bestel/prompts/references/`. CORE_KNOWLEDGE.md lists the available files and when to fetch each. Pass the relative path under references/ — e.g. '07_offence_damage_scaling.md' or 'maxroll/poe1_bosses.md'. Returns the file's full markdown text (truncated at 25 KB). Use this for conceptual frameworks (build reasoning, defence layering, crafting workflows) and the Maxroll URL catalogues; use wiki_parse for live mechanical truth. Path traversal and absolute paths are rejected.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "rel_path": {
+                        "type": "string",
+                        "description": "Path under references/, e.g. '08_defence_recovery_survivability.md' or 'maxroll/poe1_crafting.md'."
+                    }
+                },
+                "required": ["rel_path"],
+                "additionalProperties": false
+            }
+        }),
     ]
 }
 
@@ -455,6 +471,18 @@ pub async fn dispatch(name: &str, input: &Value, ctx: &ToolCtx) -> Result<String
             let value = json!({
                 "url": url,
                 "content": truncate(&plaintext, 25_000),
+            });
+            Ok(truncate(&serde_json::to_string(&value).unwrap_or_default(), 30_000))
+        }
+        READ_INTERNAL_REFERENCE => {
+            let rel = input
+                .get("rel_path")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| anyhow!("'rel_path' is required and must be a string"))?;
+            let content = crate::prompts::read_reference(rel)?;
+            let value = json!({
+                "rel_path": rel,
+                "content": truncate(&content, 25_000),
             });
             Ok(truncate(&serde_json::to_string(&value).unwrap_or_default(), 30_000))
         }

@@ -1,3 +1,8 @@
+---
+description: 6 trusted creator profiles, build-guide anatomy (Maxroll/Mobalytics), 12-step decision framework, build-quality diagnostic.
+fetch_when: For build evaluation, "is this guide good", creator/leveling-guide questions, or designing a new build from scratch.
+---
+
 # 16 — Build creators and build-crafting methodology
 
 This document is **not a catalog of builds**. Builds are ephemeral — they get nerfed, reworked, replaced from one league to the next. What does *not* change is the **reasoning structure** that good builds share, and the **set of creators** whose work is worth consulting when the agent needs to ground its thinking in current expert practice.

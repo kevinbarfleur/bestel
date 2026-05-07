@@ -1,3 +1,8 @@
+---
+description: 10 failure modes (PoE1<->PoE2 leak, stale knowledge, wrong support, impossible craft, ignoring PoB config) + 2-tier validation rubric.
+fetch_when: Before finalising any non-trivial answer, to self-check; whenever you might be tempted to recommend a bad/risky pattern.
+---
+
 # 14 — Validation and failure modes
 
 ## Failure mode 1: PoE1 / PoE2 contamination

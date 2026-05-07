@@ -1,3 +1,8 @@
+---
+description: PoE1 onboarding Maxroll articles - beginner basics, classes, gem mechanics, leveling, campaign + Atlas onboarding.
+fetch_when: For "I'm new to PoE1", first-character coaching, fundamentals questions, leveling/Atlas onboarding.
+---
+
 # Maxroll — Getting Started Catalog (Path of Exile 1)
 
 Source: <https://maxroll.gg/poe/category/getting-started>

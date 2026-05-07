@@ -1,3 +1,8 @@
+---
+description: Per-question-type retrieval recipes (mechanic, build, DPS gap, survival, mod, item, crafting, trade, patch, guide validation).
+fetch_when: When unsure of the right search strategy for a question; routes you to the matching playbook + relevant reference + Maxroll catalog.
+---
+
 # 13 — Agent retrieval playbooks
 
 ## Universal pre-flight

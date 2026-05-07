@@ -1,3 +1,8 @@
+---
+description: Damage delivery first, scaling axes table, enemy mitigation, conversion warnings, DPS-low diagnosis playbook.
+fetch_when: For DPS issues, "why is my damage low", scaling questions, support gem choice, or conversion mechanics.
+---
+
 # 07 — Offence and damage scaling
 
 ## Principle

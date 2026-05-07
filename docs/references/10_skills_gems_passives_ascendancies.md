@@ -1,3 +1,8 @@
+---
+description: Reasoning order (skill->delivery->supports->tree->ascendancy->items), PoE1 vs PoE2 gem systems, keystone evaluation, synergy sweep.
+fetch_when: For skill choice, gem-link questions, passive-tree planning, ascendancy comparison, keystone/synergy queries.
+---
+
 # 10 — Skills, gems, passives, and ascendancies
 
 ## Skill first, class second

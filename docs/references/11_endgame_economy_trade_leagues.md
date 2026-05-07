@@ -1,3 +1,8 @@
+---
+description: League cycle, PoE1 endgame stages, PoE2 endgame (LEGACY pre-0.5), economy/trade source roles, trade & meta answer patterns.
+fetch_when: For Atlas progression, league cycle, trade strategy, currency farming, meta questions, "what to do at endgame".
+---
+
 # 11 — Endgame, economy, trade, and leagues
 
 ## League cycle

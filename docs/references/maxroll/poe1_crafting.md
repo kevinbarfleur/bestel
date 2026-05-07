@@ -1,3 +1,8 @@
+---
+description: PoE1 crafting Maxroll articles split into Basics (per-method) and Applied Recipes (step-by-step crafts for specific items).
+fetch_when: For PoE1 crafting how-tos, applied recipes, "how to actually craft X" - pairs with reference 09 for the conceptual layer.
+---
+
 # Maxroll — Crafting Catalog (Path of Exile 1)
 
 Source: <https://maxroll.gg/poe/crafting>
