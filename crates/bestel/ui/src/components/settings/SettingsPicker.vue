@@ -16,17 +16,19 @@ import SettingsSegmented from './SettingsSegmented.vue';
 import SettingsToggle from './SettingsToggle.vue';
 import SettingsRadioCard from './SettingsRadioCard.vue';
 import SettingsModelRow from './SettingsModelRow.vue';
+import SettingsPromptsPane from './SettingsPromptsPane.vue';
 
 defineProps<{ modelValue: boolean }>();
 const emit = defineEmits<{ 'update:modelValue': [value: boolean] }>();
 
-type Section = 'appearance' | 'links' | 'model' | 'folders' | 'shortcuts' | 'data';
+type Section = 'appearance' | 'links' | 'model' | 'folders' | 'prompts' | 'shortcuts' | 'data';
 
 const SECTIONS: Array<{ id: Section; label: string; hint: string }> = [
   { id: 'appearance', label: 'Appearance', hint: 'Theme & paper tone' },
   { id: 'links', label: 'Links', hint: 'Wiki & external behavior' },
   { id: 'model', label: 'Default model', hint: 'Boot selection' },
   { id: 'folders', label: 'Watcher folders', hint: 'PoB build sources' },
+  { id: 'prompts', label: 'Prompts & docs', hint: 'Edit system prompt + per-model overrides' },
   { id: 'shortcuts', label: 'Shortcuts', hint: 'Keyboard reference' },
   { id: 'data', label: 'Data & privacy', hint: 'Storage, caches, keys' },
 ];
@@ -352,6 +354,9 @@ const chatCount = computed(() => history.chats.length);
             </div>
           </SettingsField>
         </div>
+
+        <!-- ============== PROMPTS & DOCS ============== -->
+        <SettingsPromptsPane v-else-if="active === 'prompts'" />
 
         <!-- ============== SHORTCUTS ============== -->
         <div v-else-if="active === 'shortcuts'" class="pane">
