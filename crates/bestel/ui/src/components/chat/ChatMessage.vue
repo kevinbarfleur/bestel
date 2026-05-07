@@ -328,24 +328,25 @@ const turns = computed<Turn[]>(() => {
  * the line says "these belong together as the work that produced the
  * answer below". The bestel text turns above and below are NOT
  * indented; the line begins at the first artifact's top and ends at
- * the last one's bottom, never extending into the prose turns. */
+ * the last one's bottom, never extending into the prose turns.
+ *
+ * Between two adjacent artifact turns, the parent flex `gap: 22px` is
+ * canceled with a negative top-margin on the article and replaced by
+ * padding-top inside the body + gutter. The border-left covers the
+ * padding region, so consecutive bodies sit flush and the line is
+ * uninterrupted. The gutter mirrors the padding so the label baseline
+ * stays aligned with the body's first line of content. Keep the 22px
+ * value in sync with `.chat-stream`'s gap (ChatStream.vue). */
 .turn--artifact .turn__body {
   border-left: 1px solid var(--paper-line);
   padding-left: 14px;
-  position: relative;
 }
-/* The chat-stream parent uses `gap: 22px` between flex children, so
- * two consecutive artifact turns would otherwise show a 22px break in
- * the line. This pseudo-element bridges the gap. Keep in sync if the
- * parent gap changes (ChatStream.vue `.chat-stream`). */
-.turn--artifact + .turn--artifact .turn__body::before {
-  content: '';
-  position: absolute;
-  left: -1px;
-  top: -22px;
-  width: 1px;
-  height: 22px;
-  background: var(--paper-line);
+.turn--artifact + .turn--artifact {
+  margin-top: -22px;
+}
+.turn--artifact + .turn--artifact .turn__body,
+.turn--artifact + .turn--artifact .turn__gutter {
+  padding-top: 22px;
 }
 
 /* User text — Kalam italic 17/1.5 */
