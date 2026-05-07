@@ -14,7 +14,6 @@ pub const WIKI_CARGO: &str = "wiki_cargo";
 pub const TRADE_RESOLVE_STATS: &str = "trade_resolve_stats";
 pub const TRADE_SEARCH_URL: &str = "trade_search_url";
 pub const WEB_FETCH: &str = "web_fetch";
-pub const SHOW_IN_PANEL: &str = "show_in_panel";
 
 /// Hosts the `web_fetch` tool will accept. Mirrors the tier-1–7 allowlist
 /// in `docs/references/15_source_registry.md`. Subdomains of any entry are
@@ -328,30 +327,6 @@ pub fn tool_schemas() -> Vec<Value> {
                 "additionalProperties": false
             }
         }),
-        json!({
-            "name": SHOW_IN_PANEL,
-            "description": "Promote a rich artifact to Bestel's right side panel for in-depth display. Use this when you want the exile to study a specific item, gem, or mechanic side-by-side with the chat — the panel keeps the conversation clean while exposing the full structured detail. The same content stays visible inline in the chat (the panel is an *additional* view, not a replacement). Pick the most precise `type`; fall back to `markdown` when the content doesn't fit any structured shape.",
-            "input_schema": {
-                "type": "object",
-                "properties": {
-                    "type": {
-                        "type": "string",
-                        "enum": ["item-card", "gem-detail", "mechanic", "markdown"],
-                        "description": "Artifact shape. `item-card` for a specific (rare/unique) item with mods. `gem-detail` for a skill/support gem breakdown. `mechanic` for an explainer of a game system (resistances, defenses, ailments). `markdown` for any rich content that doesn't fit the above."
-                    },
-                    "title": {
-                        "type": "string",
-                        "description": "Short title shown in the panel header (e.g. item name, gem name, mechanic name)."
-                    },
-                    "payload": {
-                        "type": "object",
-                        "description": "Type-specific payload. `item-card`: { name, base, rarity, ilvl?, slot?, mods: [{kind: 'implicit'|'enchant'|'explicit'|'crafted'|'fractured', text}], comparison?: { replaces, deltas: [{stat, delta, tone: 'good'|'bad'|'note'}] } }. `gem-detail`: { name, level?, quality?, tags: [string], scaling: [{stat, value}], recommended_supports?: [{name, role}] }. `mechanic`: { summary, sections: [{heading, body_md}] }. `markdown`: { body_md }."
-                    }
-                },
-                "required": ["type", "title", "payload"],
-                "additionalProperties": false
-            }
-        }),
     ]
 }
 
@@ -482,37 +457,6 @@ pub async fn dispatch(name: &str, input: &Value, ctx: &ToolCtx) -> Result<String
                 "content": truncate(&plaintext, 25_000),
             });
             Ok(truncate(&serde_json::to_string(&value).unwrap_or_default(), 30_000))
-        }
-        SHOW_IN_PANEL => {
-            // Pure UI signaling — no fetch, no side-effect. Validate the
-            // payload shape minimally and pass it back to the frontend as
-            // JSON so the chat surface can route it to the right panel.
-            let kind = input
-                .get("type")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| anyhow!("'type' is required"))?;
-            const ALLOWED: &[&str] = &["item-card", "gem-detail", "mechanic", "markdown"];
-            if !ALLOWED.contains(&kind) {
-                return Err(anyhow!(
-                    "'type' must be one of {ALLOWED:?}, got '{kind}'"
-                ));
-            }
-            let title = input
-                .get("title")
-                .and_then(|v| v.as_str())
-                .ok_or_else(|| anyhow!("'title' is required"))?;
-            let payload = input
-                .get("payload")
-                .ok_or_else(|| anyhow!("'payload' is required"))?;
-            let value = json!({
-                "type": kind,
-                "title": title,
-                "payload": payload,
-            });
-            Ok(truncate(
-                &serde_json::to_string(&value).unwrap_or_default(),
-                20_000,
-            ))
         }
         other => Err(anyhow!("unknown tool '{other}'")),
     }
