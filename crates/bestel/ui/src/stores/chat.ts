@@ -2,9 +2,11 @@ import { defineStore } from 'pinia';
 import { computed, ref, watch } from 'vue';
 
 import { chatCancel, chatReset, chatStart } from '../api/tauri';
+import { extractPanelSidecar } from '../api/markdown';
 import type { AttachmentDto, UsageStats } from '../api/types';
 import { useChatHistoryStore, type SavedChat } from './chatHistory';
 import { useBuildStore } from './build';
+import type { PanelArtifact } from './ui';
 
 export type ChatRole = 'user' | 'assistant';
 export type MessageStatus = 'streaming' | 'complete' | 'error' | 'cancelled';
@@ -14,6 +16,13 @@ export interface TextSegment {
   kind: 'text';
   id: string;
   text: string;
+  /**
+   * Parsed side-panel sidecar payloads, indexed by marker name. Populated
+   * once at message finalization (or on chat reload) by walking the text
+   * for ⟦panel-data⟧{json}⟦/panel-data⟧, stripping it, and validating the
+   * entries. Click handlers in ChatMessage.vue resolve panel buttons here.
+   */
+  panelMap?: Record<string, PanelArtifact>;
 }
 
 export interface ReasoningSegment {
@@ -186,24 +195,42 @@ export const useChatStore = defineStore('chat', () => {
     if (a) a.usage = stats;
   }
 
+  /**
+   * Strip the ⟦panel-data⟧ sidecar from each text segment of an assistant
+   * message and populate `seg.panelMap`. Idempotent — running on text that
+   * no longer contains a sidecar leaves it unchanged.
+   */
+  function finalizeAssistantMessage(msg: ChatMessageVm | null) {
+    if (!msg) return;
+    for (const seg of msg.segments) {
+      if (seg.kind !== 'text') continue;
+      const { stripped, map } = extractPanelSidecar(seg.text);
+      seg.text = stripped;
+      seg.panelMap = map;
+    }
+  }
+
   function setError(message: string) {
     const a = currentAssistant.value;
     if (a) {
       a.status = 'error';
       a.errorMessage = message;
     }
+    finalizeAssistantMessage(currentAssistant.value);
     activeSessionId.value = null;
   }
 
   function setCompleted() {
     const a = currentAssistant.value;
     if (a) a.status = 'complete';
+    finalizeAssistantMessage(currentAssistant.value);
     activeSessionId.value = null;
   }
 
   function setCancelled() {
     const a = currentAssistant.value;
     if (a) a.status = 'cancelled';
+    finalizeAssistantMessage(currentAssistant.value);
     activeSessionId.value = null;
   }
 
@@ -269,6 +296,12 @@ export const useChatStore = defineStore('chat', () => {
       status: m.status === 'streaming' ? 'complete' : m.status,
       segments: m.segments.map((s) => ({ ...s })),
     }));
+    // Re-extract sidecars on every restored assistant text segment. Saved
+    // chats predate panelMap so the field is missing; running the extractor
+    // is cheap and the result is identical for already-stripped text.
+    for (const m of messages.value) {
+      if (m.role === 'assistant') finalizeAssistantMessage(m);
+    }
     activeSessionId.value = null;
   }
 

@@ -10,7 +10,7 @@ import ArtThinking from './artifacts/ArtThinking.vue';
 import ArtPoBImport from './artifacts/ArtPoBImport.vue';
 import ArtWikiPage from './artifacts/ArtWikiPage.vue';
 import AttachmentChip from './artifacts/AttachmentChip.vue';
-import { useUiStore, type PanelArtifactType } from '../../stores/ui';
+import { useUiStore } from '../../stores/ui';
 
 const props = defineProps<{ message: ChatMessageVm }>();
 
@@ -23,6 +23,26 @@ const renderText = (seg: TextSegment) => renderMarkdown(seg.text, game.value);
 const handleClick = (e: MouseEvent) => {
   const target = e.target as HTMLElement | null;
   if (!target) return;
+  // Side-panel button (loupe icon) — opens the matching artifact from the
+  // segment's panelMap. Resolved by walking the message's text segments
+  // until one carries the data-panel-key.
+  const panelBtn = target.closest('button.panel-btn') as HTMLButtonElement | null;
+  if (panelBtn) {
+    const key = panelBtn.dataset.panelKey;
+    if (!key) return;
+    e.preventDefault();
+    for (const seg of props.message.segments) {
+      if (seg.kind !== 'text') continue;
+      const map = (seg as TextSegment).panelMap;
+      const artifact = map?.[key];
+      if (artifact) {
+        ui.openPanel({ ...artifact, source: 'click' });
+        return;
+      }
+    }
+    return;
+  }
+  // External / wiki link.
   const anchor = target.closest('a') as HTMLAnchorElement | null;
   if (!anchor) return;
   const href = anchor.dataset.wikiUrl ?? anchor.getAttribute('href');
@@ -53,7 +73,6 @@ interface Turn {
     | 'reasoning'
     | 'tool-pob'
     | 'tool-wiki-page'
-    | 'tool-panel'
     | 'tool-generic'
     | 'placeholder';
   segment: TextSegment | ReasoningSegment | ToolSegment | null;
@@ -77,8 +96,10 @@ const TOOL_KIND_LABEL: Record<string, { label: string; color: string }> = {
   // Generic web fetch (allowlisted)
   web_fetch: { label: 'fetch', color: 'var(--ink-soft)' },
   web_search: { label: 'search', color: 'var(--ink-soft)' },
-  // Right adaptive panel promotion
-  show_in_panel: { label: 'highlight', color: 'var(--ink)' },
+  // Legacy show_in_panel calls survive in old saved chats — render as a
+  // faded ToolCallBadge so the timeline doesn't break. New panel buttons
+  // live in assistant text via ⟦panel:…⟧ markers (see api/markdown.ts).
+  show_in_panel: { label: 'highlight (legacy)', color: 'var(--ink-faint)' },
 };
 
 function toolLabel(name: string): { label: string; color: string } {
@@ -87,54 +108,10 @@ function toolLabel(name: string): { label: string; color: string } {
 
 function toolKind(
   name: string,
-): 'tool-pob' | 'tool-wiki-page' | 'tool-panel' | 'tool-generic' {
+): 'tool-pob' | 'tool-wiki-page' | 'tool-generic' {
   if (name === 'get_active_build') return 'tool-pob';
   if (name === 'wiki_parse') return 'tool-wiki-page';
-  if (name === 'show_in_panel') return 'tool-panel';
   return 'tool-generic';
-}
-
-interface PanelHint {
-  type: PanelArtifactType;
-  title: string;
-  payload: unknown;
-}
-
-/** Parse a show_in_panel tool segment's output JSON. Tolerant — returns
- *  null if the output is incomplete (still streaming) or malformed. */
-function parsePanelHint(seg: ToolSegment): PanelHint | null {
-  if (!seg.output) return null;
-  try {
-    const obj = JSON.parse(seg.output);
-    if (
-      obj &&
-      typeof obj === 'object' &&
-      typeof obj.type === 'string' &&
-      typeof obj.title === 'string' &&
-      'payload' in obj
-    ) {
-      return {
-        type: obj.type as PanelArtifactType,
-        title: obj.title,
-        payload: obj.payload,
-      };
-    }
-  } catch {
-    /* incomplete during stream */
-  }
-  return null;
-}
-
-function reopenInPanel(seg: ToolSegment) {
-  const hint = parsePanelHint(seg);
-  if (!hint) return;
-  ui.openPanel({
-    id: seg.id,
-    type: hint.type,
-    title: hint.title,
-    payload: hint.payload,
-    source: 'click',
-  });
 }
 
 const fmtTokens = (n: number): string => {
@@ -278,20 +255,6 @@ const turns = computed<Turn[]>(() => {
           :segment="t.segment as ToolSegment"
         />
 
-        <!-- TOOL show_in_panel → pure pill, no icon. The visual difference
-             with web-link pills (which carry an external-link icon) is the
-             whole UX language: pill + icon = web, pill alone = side panel. -->
-        <button
-          v-else-if="t.kind === 'tool-panel' && t.segment"
-          type="button"
-          class="turn__panel-hint"
-          :title="`Open ${parsePanelHint(t.segment as ToolSegment)?.title ?? 'in side panel'}`"
-          :disabled="!parsePanelHint(t.segment as ToolSegment)"
-          @click="reopenInPanel(t.segment as ToolSegment)"
-        >
-          {{ parsePanelHint(t.segment as ToolSegment)?.title ?? 'highlighted' }}
-        </button>
-
         <!-- Other tools → slim ToolCallBadge -->
         <ToolCallBadge
           v-else-if="t.kind === 'tool-generic' && t.segment"
@@ -360,41 +323,6 @@ const turns = computed<Turn[]>(() => {
 .turn-divider {
   margin: 4px 0;
   border-top: 1px solid var(--paper-line);
-}
-
-/* show_in_panel inline hint — *exactly* the markdown pill style minus the
- * external-link icon. Pill alone = "this opens the right side panel".
- * Hover bumps fill, never shifts layout. */
-.turn__panel-hint {
-  display: inline-flex;
-  align-items: baseline;
-  padding: 0px 7px;
-  border-radius: 3px;
-  background: rgba(0, 0, 0, 0.04);
-  border: 1px solid var(--ink-ghost);
-  color: var(--ink);
-  font-family: var(--hand);
-  font-size: 0.95em;
-  font-weight: 500;
-  line-height: inherit;
-  white-space: nowrap;
-  vertical-align: baseline;
-  cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease;
-}
-.theme-dark .turn__panel-hint {
-  background: rgba(255, 255, 255, 0.04);
-}
-.turn__panel-hint:hover {
-  background: rgba(0, 0, 0, 0.08);
-  border-color: var(--ink-soft);
-}
-.theme-dark .turn__panel-hint:hover {
-  background: rgba(255, 255, 255, 0.08);
-}
-.turn__panel-hint:disabled {
-  cursor: default;
-  opacity: 0.55;
 }
 
 /* Error message */

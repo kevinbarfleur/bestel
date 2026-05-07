@@ -3,6 +3,7 @@ import hljs from 'highlight.js';
 import DOMPurify from 'dompurify';
 
 import type { Game } from './types';
+import type { PanelArtifact, PanelArtifactType } from '../stores/ui';
 
 const escapeHtml = (s: string): string =>
   s
@@ -40,6 +41,81 @@ const EXTERNAL_LINK_SVG =
   '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>' +
   '<path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>' +
   '</svg>';
+
+/**
+ * Loupe glyph prefixed to side-panel buttons (the ⟦panel:…⟧ markers Bestel
+ * embeds in the final answer). Visually distinct from EXTERNAL_LINK_SVG —
+ * chain icon = open in webview, magnifier = open in side panel.
+ */
+const LOUPE_SVG =
+  '<svg class="md-panel-ico" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+  '<circle cx="11" cy="11" r="6"/>' +
+  '<path d="M20 20l-4.5-4.5"/>' +
+  '</svg>';
+
+const ALLOWED_PANEL_TYPES: ReadonlySet<PanelArtifactType> = new Set([
+  'item-card',
+  'gem-detail',
+  'mechanic',
+  'markdown',
+]);
+
+const PANEL_SIDECAR_RE = /⟦panel-data⟧\s*([\s\S]*?)\s*⟦\/panel-data⟧/;
+const PANEL_MARKER_RE = /⟦panel(\*?):([a-z-]+):([^⟧]+?)⟧/g;
+
+/**
+ * Pre-pass over an assistant message text. Locates the optional
+ * ⟦panel-data⟧{json}⟦/panel-data⟧ sidecar, parses the JSON, validates each
+ * entry against the allowed panel-artifact shape, and returns:
+ *   - `stripped`: the text with the sidecar block removed, ready to feed
+ *     `renderMarkdown`. Markers (⟦panel:…⟧) are kept inline.
+ *   - `map`: { name → PanelArtifact } indexed by marker name. Buttons in
+ *     prose look up their payload here on click.
+ *
+ * Tolerant: missing sidecar → empty map + same text. Malformed JSON → warn,
+ * strip the sidecar, empty map. Invalid entries are silently skipped.
+ */
+export function extractPanelSidecar(
+  text: string,
+): { stripped: string; map: Record<string, PanelArtifact> } {
+  const match = PANEL_SIDECAR_RE.exec(text);
+  if (!match) return { stripped: text, map: {} };
+  const stripped = text.replace(PANEL_SIDECAR_RE, '').trimEnd();
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(match[1]);
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.warn('[panel-data] JSON parse failed', err);
+    return { stripped, map: {} };
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return { stripped, map: {} };
+  }
+  const map: Record<string, PanelArtifact> = {};
+  for (const [name, raw] of Object.entries(parsed as Record<string, unknown>)) {
+    if (!raw || typeof raw !== 'object') continue;
+    const obj = raw as Record<string, unknown>;
+    const type = obj.type;
+    const title = obj.title;
+    if (
+      typeof type !== 'string' ||
+      !ALLOWED_PANEL_TYPES.has(type as PanelArtifactType) ||
+      typeof title !== 'string' ||
+      !('payload' in obj)
+    ) {
+      continue;
+    }
+    map[name] = {
+      id: name,
+      type: type as PanelArtifactType,
+      title,
+      payload: obj.payload,
+      source: 'agent',
+    };
+  }
+  return { stripped, map };
+}
 
 // Override the default `link_open` rule to inject the external-link icon
 // right after the opening tag. Plain markdown links `[label](url)` in prose
@@ -130,13 +206,33 @@ function looksLikePoeEntity(raw: string): boolean {
   return true;
 }
 
+/**
+ * Render a marker token into a <button> tag the chat layer can dispatch on.
+ * The button has no payload of its own — the chat store keeps the parsed
+ * sidecar map and ChatMessage.vue resolves the key on click.
+ */
+function renderPanelMarker(_full: string, star: string, _type: string, name: string): string {
+  const safeName = escapeHtml(name);
+  const isPrimary = star === '*';
+  const cls = isPrimary ? 'panel-btn panel-btn--primary' : 'panel-btn';
+  const primaryAttr = isPrimary ? ' data-panel-primary="1"' : '';
+  return (
+    `<button type="button" class="${cls}" data-panel-key="${safeName}"${primaryAttr}>` +
+    `${LOUPE_SVG}<span class="md-link-label">${safeName}</span></button>`
+  );
+}
+
 export const renderMarkdown = (text: string, game: Game): string => {
+  // 1. Strip the optional ⟦panel-data⟧{...}⟦/panel-data⟧ sidecar — its JSON
+  //    is the chat store's responsibility (extractPanelSidecar). Inline
+  //    ⟦panel:…⟧ markers stay; they're converted to buttons in step 3.
+  const stripped = text.replace(PANEL_SIDECAR_RE, '').trimEnd();
   md.renderer.rules.code_inline = (tokens: ReadonlyArray<{ content: string }>, idx: number) => {
     const raw = tokens[idx].content;
-    // 1. Element / status entity tag (`fire:75%`, `good:capped`, …)
+    // 1a. Element / status entity tag (`fire:75%`, `good:capped`, …)
     const tag = tryRenderEntityTag(raw);
     if (tag) return tag;
-    // 2. PoE entity → wiki link pill (MonoChipLink style)
+    // 1b. PoE entity → wiki link pill (MonoChipLink style)
     const safe = escapeHtml(raw);
     if (!looksLikePoeEntity(raw)) {
       // Emphasis without linking — Bestel uses backticks to highlight values
@@ -148,7 +244,20 @@ export const renderMarkdown = (text: string, game: Game): string => {
     const safeUrl = escapeHtml(url);
     return `<a class="link wiki-link" data-wiki-url="${safeUrl}" href="${safeUrl}">${EXTERNAL_LINK_SVG}<span class="md-link-label">${safe}</span></a>`;
   };
-  return DOMPurify.sanitize(md.render(text), {
-    ADD_ATTR: ['target', 'rel', 'data-wiki-url', 'class'],
+  // 2. Markdown render (linkify, code blocks, lists, wiki/entity tags).
+  let html = md.render(stripped);
+  // 3. Post-pass: replace ⟦panel:type:name⟧ markers with <button> HTML.
+  //    Reset the global regex's lastIndex implicitly via .replace().
+  html = html.replace(PANEL_MARKER_RE, renderPanelMarker);
+  return DOMPurify.sanitize(html, {
+    ADD_ATTR: [
+      'target',
+      'rel',
+      'data-wiki-url',
+      'data-panel-key',
+      'data-panel-primary',
+      'class',
+      'type',
+    ],
   });
 };

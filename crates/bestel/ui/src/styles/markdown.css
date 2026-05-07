@@ -234,6 +234,64 @@
   text-decoration: none;
 }
 
+/* Side-panel button — emitted by the ⟦panel:type:name⟧ marker rule in
+ * api/markdown.ts. Same pill geometry as wiki-link so adjacent buttons and
+ * links sit at the same baseline; the loupe icon (.md-panel-ico) is the
+ * single visual cue that distinguishes "open in side panel" from "open in
+ * webview" (chain icon). The .panel-btn--primary variant gets an amber
+ * border to hint that it's the auto-promoted artifact. */
+.markdown-body button.panel-btn {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 0px 7px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.04);
+  border: 1px solid var(--ink-ghost);
+  color: var(--ink);
+  font-family: var(--hand);
+  font-size: 0.95em;
+  font-weight: 500;
+  line-height: inherit;
+  white-space: nowrap;
+  vertical-align: baseline;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.theme-dark .markdown-body button.panel-btn {
+  background: rgba(255, 255, 255, 0.04);
+}
+.markdown-body button.panel-btn:hover {
+  background: rgba(0, 0, 0, 0.08);
+  border-color: var(--ink-soft);
+}
+.theme-dark .markdown-body button.panel-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+.markdown-body button.panel-btn--primary {
+  border-color: var(--amber-soft);
+}
+.markdown-body button.panel-btn--primary:hover {
+  border-color: var(--amber);
+}
+
+/* Loupe glyph — same alignment as md-link-ico so panel buttons and link
+ * pills line up exactly when they sit next to each other in prose. */
+.markdown-body .md-panel-ico {
+  flex: none;
+  display: inline-block;
+  vertical-align: -0.1em;
+  color: var(--ink-soft);
+  margin-right: 2px;
+}
+.markdown-body button.panel-btn:hover .md-panel-ico {
+  color: var(--ink);
+}
+.markdown-body button.panel-btn--primary .md-panel-ico {
+  color: var(--amber);
+}
+
 .markdown-body pre.hljs,
 .markdown-body pre {
   margin: 0.7rem 0;
