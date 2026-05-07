@@ -11,6 +11,32 @@
   word-wrap: break-word;
 }
 
+/* Streaming fade — soft bottom mask while the assistant is mid-reply.
+ * The drain loop in `stores/chat.ts` paces character commits at ~60fps,
+ * so the visual settle is already smooth; the mask softens the trailing
+ * edge so newly-arrived text "lands" instead of popping. Class flips off
+ * the moment the message status leaves 'streaming'. */
+.markdown-body--streaming {
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    black 0%,
+    black calc(100% - 18px),
+    rgba(0, 0, 0, 0.35) 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    black 0%,
+    black calc(100% - 18px),
+    rgba(0, 0, 0, 0.35) 100%
+  );
+}
+@media (prefers-reduced-motion: reduce) {
+  .markdown-body--streaming {
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+}
+
 .markdown-body > :first-child { margin-top: 0; }
 .markdown-body > :last-child { margin-bottom: 0; }
 

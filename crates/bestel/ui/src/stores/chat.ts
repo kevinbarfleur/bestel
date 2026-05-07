@@ -2,11 +2,11 @@ import { defineStore } from 'pinia';
 import { computed, ref, watch } from 'vue';
 
 import { chatCancel, chatReset, chatStart } from '../api/tauri';
-import { extractPanelSidecar } from '../api/markdown';
+import { extractPanelSidecar, tryExtractPanelSidecarPartial } from '../api/markdown';
 import type { AttachmentDto, UsageStats } from '../api/types';
 import { useChatHistoryStore, type SavedChat } from './chatHistory';
 import { useBuildStore } from './build';
-import type { PanelArtifact } from './ui';
+import { useUiStore, type PanelArtifact } from './ui';
 
 export type ChatRole = 'user' | 'assistant';
 export type MessageStatus = 'streaming' | 'complete' | 'error' | 'cancelled';
@@ -60,9 +60,39 @@ export interface ChatMessageVm {
 const segId = () => `s_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 const msgId = () => `m_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
+/**
+ * Detects the primary panel marker (⟦panel*:type:name⟧) so the auto-open
+ * trigger can fire as soon as it arrives in drained text — well before
+ * end-of-message. Captures the marker NAME for sidecar lookup.
+ */
+const PRIMARY_MARKER_RE = /⟦panel\*:[a-z-]+:([^⟧]+?)⟧/;
+
+/**
+ * Adaptive drain factor for the streaming text buffer. Each RAF tick
+ * pulls `ceil(buffer.length * DRAIN_FACTOR)` characters (min 1) from the
+ * queue into the live text. Higher = faster catch-up after a network
+ * burst, lower = smoother typewriter feel. 0.06 yields a ~0.3s settle
+ * time after a dump regardless of burst size (exponential decay).
+ */
+const DRAIN_FACTOR = 0.06;
+
 export const useChatStore = defineStore('chat', () => {
   const messages = ref<ChatMessageVm[]>([]);
   const activeSessionId = ref<number | null>(null);
+
+  // ─── Streaming buffer (RAF drain) ──────────────────────────────────
+  // Raw token deltas from the LLM accumulate here, then a
+  // requestAnimationFrame loop drains a fraction per frame into the
+  // live text segment. Smooths bursty network cadence into a steady
+  // ~60fps render rhythm and decouples the markdown re-parse from
+  // network jitter. Module-local state — never reactive.
+  let streamBuffer = '';
+  let rafHandle: number | null = null;
+
+  // Per-turn flag: ensures the auto-open of the primary panel fires at
+  // most once per assistant message, even though the drain loop scans
+  // text on every tick. Reset in `startAssistant`.
+  let alreadyAutoPromoted = false;
 
   const isStreaming = computed(() => activeSessionId.value !== null);
 
@@ -88,6 +118,15 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function startAssistant(sessionId: number) {
+    // Defensive: any leftover buffer from a prior turn is discarded.
+    // setCompleted/setCancelled/setError already flushed it; this guards
+    // against unexpected paths (provider crash mid-stream, hot reload).
+    streamBuffer = '';
+    if (rafHandle !== null) {
+      cancelAnimationFrame(rafHandle);
+      rafHandle = null;
+    }
+    alreadyAutoPromoted = false;
     activeSessionId.value = sessionId;
     messages.value.push({
       id: msgId(),
@@ -106,15 +145,121 @@ export const useChatStore = defineStore('chat', () => {
     return a.segments[a.segments.length - 1];
   }
 
-  function appendText(text: string) {
+  /**
+   * Append a slice to the assistant's last text segment, creating one
+   * if none exists or the last segment isn't text. Used both by the RAF
+   * drain (regular path) and `flushStreamingText` (cancellation path).
+   */
+  function commitTextSlice(slice: string) {
     const a = currentAssistant.value;
     if (!a) return;
     const last = lastAssistantSegment();
     if (last && last.kind === 'text') {
-      last.text += text;
+      last.text += slice;
     } else {
-      a.segments.push({ kind: 'text', id: segId(), text });
+      a.segments.push({ kind: 'text', id: segId(), text: slice });
     }
+  }
+
+  /**
+   * Scan the assistant's text segments for the side-panel sidecar. As
+   * soon as both ⟦panel-data⟧ tags are present in any segment, parse
+   * the JSON, strip the block from that segment's text, and assign its
+   * `panelMap`. Then scan ALL text segments for a primary marker and
+   * resolve it against ANY segment's panelMap — sidecar and marker may
+   * live in different segments (e.g. start-of-message sidecar followed
+   * by reasoning, then prose with the marker). Idempotent: segments
+   * with `panelMap` already set are skipped. Auto-open is gated by
+   * `alreadyAutoPromoted` so it fires at most once per turn, and by
+   * `panelStack.length === 0` so manual opens win.
+   */
+  function tryIncrementalPanelExtraction() {
+    const a = currentAssistant.value;
+    if (!a) return;
+
+    for (const seg of a.segments) {
+      if (seg.kind !== 'text') continue;
+      if (seg.panelMap) continue;
+      const partial = tryExtractPanelSidecarPartial(seg.text);
+      if (partial) {
+        seg.text = partial.stripped;
+        seg.panelMap = partial.map;
+      }
+    }
+
+    if (alreadyAutoPromoted) return;
+    const ui = useUiStore();
+    if (ui.panelStack.length > 0) return;
+
+    let primaryKey: string | null = null;
+    for (const seg of a.segments) {
+      if (seg.kind !== 'text') continue;
+      const m = PRIMARY_MARKER_RE.exec(seg.text);
+      if (m) {
+        primaryKey = m[1];
+        break;
+      }
+    }
+    if (!primaryKey) return;
+
+    for (const seg of a.segments) {
+      if (seg.kind !== 'text') continue;
+      const artifact = seg.panelMap?.[primaryKey];
+      if (artifact) {
+        ui.openPanel({ ...artifact, source: 'agent' });
+        alreadyAutoPromoted = true;
+        return;
+      }
+    }
+  }
+
+  function drainTick() {
+    rafHandle = null;
+    if (streamBuffer.length === 0) return;
+    const n = Math.min(
+      streamBuffer.length,
+      Math.max(1, Math.ceil(streamBuffer.length * DRAIN_FACTOR)),
+    );
+    const slice = streamBuffer.slice(0, n);
+    streamBuffer = streamBuffer.slice(n);
+    commitTextSlice(slice);
+    tryIncrementalPanelExtraction();
+    if (streamBuffer.length > 0) {
+      rafHandle = requestAnimationFrame(drainTick);
+    }
+  }
+
+  /**
+   * Public entry point for streamed text deltas. Tokens are queued into
+   * `streamBuffer` and an RAF drain is scheduled if not already pending.
+   * Keeps the same public name (`appendText`) so the streaming
+   * composable doesn't need to change.
+   */
+  function appendText(text: string) {
+    if (!currentAssistant.value) return;
+    streamBuffer += text;
+    if (rafHandle === null) {
+      rafHandle = requestAnimationFrame(drainTick);
+    }
+  }
+
+  /**
+   * Empty the buffer immediately (no smoothing) and stop the RAF loop.
+   * Called when the stream terminates so `setCompleted` finalizers see
+   * the full text. Also runs `tryIncrementalPanelExtraction` so the
+   * sidecar is parsed regardless of placement.
+   */
+  function flushStreamingText() {
+    if (rafHandle !== null) {
+      cancelAnimationFrame(rafHandle);
+      rafHandle = null;
+    }
+    if (streamBuffer.length > 0) {
+      const slice = streamBuffer;
+      streamBuffer = '';
+      commitTextSlice(slice);
+    }
+    tryIncrementalPanelExtraction();
   }
 
   function reasoningBegin() {
@@ -197,13 +342,16 @@ export const useChatStore = defineStore('chat', () => {
 
   /**
    * Strip the ⟦panel-data⟧ sidecar from each text segment of an assistant
-   * message and populate `seg.panelMap`. Idempotent — running on text that
-   * no longer contains a sidecar leaves it unchanged.
+   * message and populate `seg.panelMap`. Idempotent — segments that the
+   * RAF drain already populated keep their existing map (running the
+   * extractor on already-stripped text would return an empty map and
+   * clobber the prior result).
    */
   function finalizeAssistantMessage(msg: ChatMessageVm | null) {
     if (!msg) return;
     for (const seg of msg.segments) {
       if (seg.kind !== 'text') continue;
+      if (seg.panelMap !== undefined) continue;
       const { stripped, map } = extractPanelSidecar(seg.text);
       seg.text = stripped;
       seg.panelMap = map;
@@ -211,6 +359,7 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function setError(message: string) {
+    flushStreamingText();
     const a = currentAssistant.value;
     if (a) {
       a.status = 'error';
@@ -221,6 +370,7 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function setCompleted() {
+    flushStreamingText();
     const a = currentAssistant.value;
     if (a) a.status = 'complete';
     finalizeAssistantMessage(currentAssistant.value);
@@ -228,6 +378,7 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function setCancelled() {
+    flushStreamingText();
     const a = currentAssistant.value;
     if (a) a.status = 'cancelled';
     finalizeAssistantMessage(currentAssistant.value);

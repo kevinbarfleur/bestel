@@ -83,6 +83,23 @@ const PANEL_MARKER_RE = /⟦panel(\*?):([a-z-]+):([^⟧]+?)⟧/g;
  * Tolerant: missing sidecar → empty map + same text. Malformed JSON → warn,
  * strip the sidecar, empty map. Invalid entries are silently skipped.
  */
+/**
+ * Streaming-friendly variant. Returns null when either the opening OR
+ * closing sidecar tag is missing — i.e. the sidecar block hasn't fully
+ * arrived yet. Once both tags are seen, delegates to `extractPanelSidecar`
+ * (which handles malformed JSON and validation). Used by the chat store's
+ * RAF drain to populate `panelMap` as soon as the sidecar block lands,
+ * without waiting for end-of-message finalization.
+ */
+export function tryExtractPanelSidecarPartial(
+  text: string,
+): { stripped: string; map: Record<string, PanelArtifact> } | null {
+  if (!text.includes('⟦panel-data⟧') || !text.includes('⟦/panel-data⟧')) {
+    return null;
+  }
+  return extractPanelSidecar(text);
+}
+
 export function extractPanelSidecar(
   text: string,
 ): { stripped: string; map: Record<string, PanelArtifact> } {

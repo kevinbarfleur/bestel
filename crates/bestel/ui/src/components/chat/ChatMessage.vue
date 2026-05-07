@@ -227,6 +227,7 @@ const turns = computed<Turn[]>(() => {
         <template v-if="t.kind === 'text' && t.segment">
           <div
             class="markdown-body"
+            :class="{ 'markdown-body--streaming': isStreaming && t.isLast }"
             v-html="renderText(t.segment as TextSegment)"
             @click="handleClick"
           />
