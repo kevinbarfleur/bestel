@@ -1,10 +1,13 @@
 name: Release
 
 # Triggered by pushing a tag like `v0.1.0` or `v1.2.3`. Builds Bestel on
-# Windows + macOS, bundles the OS-native installers (.msi / .nsis on
-# Windows, .dmg / .app on macOS), and uploads them to a draft GitHub
+# Windows + Linux, bundles the OS-native installers (.msi / .exe on
+# Windows, .deb / .AppImage on Linux), and uploads them to a draft GitHub
 # Release matching the tag. Edit the release notes by hand before
 # publishing — the workflow only fills the artifacts.
+#
+# macOS support is currently out of scope (see docs/TODO.md). Add a
+# matrix entry + .icns icon + titleBarStyle config when we revisit it.
 
 on:
   push:
@@ -21,13 +24,8 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Apple Silicon (arm64) — covers M-series Macs.
-          - platform: macos-latest
-            args: '--target aarch64-apple-darwin'
-          # Intel macOS for older hardware. Comment out to skip.
-          - platform: macos-latest
-            args: '--target x86_64-apple-darwin'
-          # Windows x64.
+          - platform: ubuntu-latest
+            args: ''
           - platform: windows-latest
             args: ''
 
@@ -37,11 +35,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install Linux deps (webkit + appindicator + AppImage tooling)
+        if: matrix.platform == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            patchelf \
+            file
+
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-        with:
-          # Add the apple-darwin targets when building on macos-latest.
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
@@ -73,12 +80,16 @@ jobs:
           releaseBody: |
             Desktop AI companion for Path of Exile.
 
-            **macOS:** unsigned `.dmg` — Gatekeeper will warn on first launch.
-            Right-click the app → Open → confirm to bypass.
+            **Windows:** `.msi` (recommended) or `.exe` (NSIS installer).
 
-            **Windows:** `.msi` (recommended) or `.exe` (NSIS).
+            **Linux:** `.deb` (Debian / Ubuntu) or `.AppImage` (universal,
+            chmod +x then run). webkit2gtk-4.1 must be installed system-wide
+            for the AppImage to launch.
 
             See the README for setup (API keys, model selection).
+
+            macOS support is on the roadmap but not in this build —
+            see [docs/TODO.md](https://github.com/kevinbarfleur/bestel/blob/main/docs/TODO.md).
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
