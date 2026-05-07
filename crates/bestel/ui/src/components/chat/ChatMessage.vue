@@ -86,6 +86,7 @@ interface Turn {
   color: string;
   kind:
     | 'text'
+    | 'narration'
     | 'reasoning'
     | 'tool-pob'
     | 'tool-wiki-page'
@@ -93,6 +94,18 @@ interface Turn {
     | 'placeholder';
   segment: TextSegment | ReasoningSegment | ToolSegment | null;
   isLast: boolean;
+}
+
+/** Strip side-panel marker syntax from a narration text segment so the
+ *  raw `⟦panel*:item-card:Mageblood⟧` literal doesn't leak into the
+ *  rendered prose. Markers are reserved for the final answer; if the
+ *  model emits them mid-narration anyway, they're hidden from the
+ *  narration block (the panelMap on the segment is preserved either
+ *  way, and the marker fires once it shows up in the actual answer
+ *  text). */
+const PANEL_MARKER_LITERAL_RE = /⟦panel\*?:[a-z-]+:[^⟧]+⟧/g;
+function cleanNarration(text: string): string {
+  return text.replace(PANEL_MARKER_LITERAL_RE, '').trim();
 }
 
 const TOOL_KIND_LABEL: Record<string, { label: string; color: string }> = {
@@ -131,10 +144,13 @@ function toolKind(
 }
 
 /** True for any turn that should sit inside the indented artifact stack
- *  (vertical line on the left). Excludes plain text turns from Bestel
- *  and the streaming-cursor placeholder. */
+ *  (vertical line on the left). Includes narration — text fragments the
+ *  model emitted between tool calls, demoted from the bestel prose
+ *  level. Excludes the final answer text and the streaming-cursor
+ *  placeholder. */
 function isArtifactKind(k: Turn['kind']): boolean {
   return (
+    k === 'narration' ||
     k === 'reasoning' ||
     k === 'tool-pob' ||
     k === 'tool-wiki-page' ||
@@ -172,15 +188,36 @@ const usageLine = computed(() => {
 const turns = computed<Turn[]>(() => {
   if (!isAssistant.value) return [];
   const segs = props.message.segments;
+
+  // Find the LAST text segment — only that one gets the bestel-prose
+  // treatment. Anthropic streams text deltas chronologically with
+  // tool_use blocks, so when the model narrates between tool calls,
+  // each fragment becomes its own text segment ("I'll analyze your
+  // current ch" → tool → "est piece and recommend an upgrade…"). All
+  // text segments BEFORE the last one are status updates, not the
+  // answer; demote them to narration so the final prose isn't
+  // diluted by sentence stumps. Evaluated dynamically — during
+  // streaming, the currently-growing text is "answer" until a new
+  // text segment appears after a tool, at which point it becomes
+  // narration retroactively.
+  let lastTextIdx = -1;
+  for (let i = segs.length - 1; i >= 0; i--) {
+    if (segs[i].kind === 'text') {
+      lastTextIdx = i;
+      break;
+    }
+  }
+
   const out: Turn[] = [];
   segs.forEach((seg, idx) => {
     const isLast = idx === segs.length - 1;
     if (seg.kind === 'text') {
+      const isAnswer = idx === lastTextIdx;
       out.push({
         key: seg.id,
-        label: 'bestel',
-        color: 'var(--ink)',
-        kind: 'text',
+        label: isAnswer ? 'bestel' : 'narrating',
+        color: isAnswer ? 'var(--ink)' : 'var(--ink-faint)',
+        kind: isAnswer ? 'text' : 'narration',
         segment: seg,
         isLast,
       });
@@ -271,6 +308,17 @@ const turns = computed<Turn[]>(() => {
             aria-hidden="true"
           />
         </template>
+
+        <!-- NARRATION segment — assistant text emitted between tool
+             calls. Rendered as faded italic prose so it reads as a
+             status update, not part of the final answer. Panel
+             markers are stripped (the panelMap on the segment is
+             still used for click resolution, but the literal marker
+             syntax doesn't leak into the narration view). -->
+        <p
+          v-else-if="t.kind === 'narration' && t.segment"
+          class="turn__narration"
+        >{{ cleanNarration((t.segment as TextSegment).text) }}</p>
 
         <!-- REASONING segment → ArtThinking marginalia -->
         <ArtThinking
@@ -393,6 +441,20 @@ const turns = computed<Turn[]>(() => {
   line-height: 1.5;
   color: var(--ink);
   font-style: italic;
+}
+
+/* Narration — assistant text fragments emitted between tool calls.
+ * Faded italic to read as a status update, not the answer. Sits
+ * inside the artifact stack via .turn--artifact (above) so the
+ * vertical guide line groups it with its surrounding tool calls. */
+.turn__narration {
+  margin: 0;
+  font-family: var(--hand);
+  font-size: 13px;
+  font-style: italic;
+  line-height: 1.55;
+  color: var(--ink-faint);
+  white-space: pre-wrap;
 }
 .turn__attachments {
   display: flex;
