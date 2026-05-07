@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia';
 import { computed, ref, watch } from 'vue';
+import { emitTo } from '@tauri-apps/api/event';
 
 import {
   deleteApiKey as deleteApiKeyIpc,
@@ -108,6 +109,10 @@ export const useSettingsStore = defineStore('settings', () => {
     } catch {
       /* ignore */
     }
+    // Sync the theme to the prompt-editor window when it's open. emitTo
+    // delivers to whatever windows match the label and silently noops
+    // otherwise — safe to fire-and-forget.
+    emitTo('prompt-editor', 'theme:changed', { theme: next }).catch(() => {});
   });
 
   watch(linkBehavior, (next) => {

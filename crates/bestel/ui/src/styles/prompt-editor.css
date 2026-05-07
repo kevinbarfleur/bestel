@@ -16,3 +16,33 @@ body {
   width: 100vw;
   height: 100vh;
 }
+
+/* Match the main window's runic scrollbar everywhere in the editor.
+   Applied globally because every scroll surface in the editor (file tree,
+   editor body, outline, CodeMirror viewport) wants the same look. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--ink-ghost) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--ink-ghost);
+  border-radius: 4px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--ink-faint);
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
