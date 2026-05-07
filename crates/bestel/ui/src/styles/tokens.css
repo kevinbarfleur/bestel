@@ -1,46 +1,49 @@
-/* Bestel — almanach manuscript tokens
- * Direction visuelle : grimoire annoté. Pas de boîtes, pas d'ombres :
- * small caps + leader dots + hairlines. Light = parchment, Dark = tobacco. */
+/* Bestel — monochrome chrome tokens
+ * Direction visuelle : interface neutre, sobre, contraste haut.
+ * "Amber" = graphite (light) / cream (dark) — chrome accent only.
+ * Couleurs sémantiques (résistances élémentaires, statuts good/bad/warn,
+ * couleurs PoB/items) restent vives — elles encodent de l'information. */
 
 :root {
-  /* Paper-ish neutrals (light) */
-  --paper:        #f4f1ea;
-  --paper-shade:  #ece7dc;
-  --paper-line:   #d9d3c4;
-  --ink:          #2a2826;
-  --ink-soft:     #4a4744;
-  --ink-faint:    #8a8682;
-  --ink-ghost:    #b9b4a9;
+  /* Paper-ish neutrals (light, cool-neutral) */
+  --paper:        #f3f3f1;
+  --paper-shade:  #e8e7e3;
+  --paper-line:   #d2d0cb;
+  --ink:          #1d1d1b;
+  --ink-soft:     #45433f;
+  --ink-faint:    #7a7873;   /* AA-safer at 13 px than the warm 8a8682 */
+  --ink-ghost:    #b3b1ab;
 
-  /* PoB / PoE accents */
-  --amber:        #af6025;
-  --amber-soft:   #c9883e;
-  --amber-glow:   rgba(175, 96, 37, 0.15);
-  --amber-bg:     rgba(175, 96, 37, 0.04);
-  --rune:         #8a4d1e;
+  /* Chrome accent — neutralized to graphite (was amber #af6025).
+   * Components that read --amber automatically inherit the new tone. */
+  --amber:        #2f2d2a;
+  --amber-soft:   #5a5751;
+  --amber-glow:   rgba(45, 43, 40, 0.08);
+  --amber-bg:     rgba(45, 43, 40, 0.04);
+  --rune:         #2f2d2a;
 
-  /* Functional hints */
-  --good:         #547c4a;
-  --bad:          #a44848;
-  --note:         #c9883e;
+  /* Functional hints — kept semantic (validations, warnings, errors). */
+  --good:         #2e6b3a;   /* API key set, daemon online, build loaded */
+  --bad:          #a23a3a;   /* invalid key, offline, missing */
+  --note:         #8a6a1a;   /* warning, stale */
 
-  /* Elemental palette — calibrated for parchment (muted, ink-like).
+  /* Elemental palette — kept semantic (information-encoding).
    * Always pair with deep variant for values, bg variant for cell tints. */
-  --el-fire:       #b54a2a;
-  --el-fire-deep:  #7a2c14;
-  --el-fire-bg:    rgba(181, 74, 42, 0.10);
-  --el-cold:       #3a6e8a;
-  --el-cold-deep:  #1f4258;
-  --el-cold-bg:    rgba(58, 110, 138, 0.10);
-  --el-lit:        #b08a1c;
-  --el-lit-deep:   #6e5310;
-  --el-lit-bg:     rgba(176, 138, 28, 0.12);
-  --el-chaos:      #6e3d80;
-  --el-chaos-deep: #421f50;
-  --el-chaos-bg:   rgba(110, 61, 128, 0.10);
-  --el-phys:       #5a544a;
-  --el-phys-deep:  #2a2620;
-  --el-phys-bg:    rgba(90, 84, 74, 0.08);
+  --el-fire:       #b14a2a;
+  --el-fire-deep:  #7d2e16;
+  --el-fire-bg:    rgba(177, 74, 42, 0.10);
+  --el-cold:       #2a6f99;
+  --el-cold-deep:  #18496b;
+  --el-cold-bg:    rgba(42, 111, 153, 0.10);
+  --el-lit:        #a17a1a;
+  --el-lit-deep:   #6e520b;
+  --el-lit-bg:     rgba(161, 122, 26, 0.12);
+  --el-chaos:      #7a3d8a;
+  --el-chaos-deep: #4f1f5d;
+  --el-chaos-bg:   rgba(122, 61, 138, 0.10);
+  --el-phys:       #5a5854;
+  --el-phys-deep:  #2a2826;
+  --el-phys-bg:    rgba(60, 58, 54, 0.08);
 
   /* Type stack — EB Garamond primaire, Kalam pour script, Caveat pour annotations */
   --serif:          'EB Garamond', Georgia, serif;
@@ -49,6 +52,24 @@
   --label:          'EB Garamond', Georgia, serif;
   --script:         'Kalam', 'Caveat', cursive;
   --script-display: 'Caveat', 'Kalam', cursive;
+  --mono:           'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Type scale — v7 readability pass.
+   * Bumped +1 across the board: meta/caps/micro felt too small on 1080p+
+   * monitors. Display headings stay since they were already large enough. */
+  --fs-display:  30px;
+  --fs-h1:       24px;
+  --fs-h2:       19px;
+  --fs-h3:       16px;
+  --fs-body:     15px;   /* was 14 */
+  --fs-meta:     14px;   /* was 13 */
+  --fs-caps:     13px;   /* was 12 */
+  --fs-micro:    12px;   /* was 11 */
+
+  --fw-regular:  400;
+  --fw-medium:   500;
+  --fw-semibold: 600;
+  --fw-bold:     700;
 
   --stroke: 1.5px;
 
@@ -116,43 +137,46 @@
 }
 
 /* ─────────────────────────────────────────────────────────────
-   Dark theme — old-leather / burned-parchment.
-   Same warm character as light, just inverted luminance.
+   Dark theme — deep slate, cream chrome accent.
+   Functional UX colors stay semantic, brighter for the dark bg.
    ───────────────────────────────────────────────────────────── */
 .theme-dark {
-  --paper:        #1d1a17;   /* deep tobacco-black */
-  --paper-shade:  #15120f;
-  --paper-line:   #2d2722;
-  --ink:          #ebe4d3;   /* warm parchment cream */
-  --ink-soft:     #c2b89f;
-  --ink-faint:    #8a8270;
-  --ink-ghost:    #5a544a;
+  --paper:        #161617;
+  --paper-shade:  #0e0e0f;
+  --paper-line:   #2a2a2c;
+  --ink:          #ececea;
+  --ink-soft:     #b8b6b1;
+  --ink-faint:    #828079;
+  --ink-ghost:    #4a4a4c;
 
-  --amber:        #d18a3e;
-  --amber-soft:   #e0a766;
-  --amber-glow:   rgba(209, 138, 62, 0.18);
-  --amber-bg:     rgba(209, 138, 62, 0.08);
-  --rune:         #b86d2a;
+  /* Chrome accent in dark = warm cream (was amber #d18a3e). */
+  --amber:        #ececea;
+  --amber-soft:   #d4d2cc;
+  --amber-glow:   rgba(236, 236, 234, 0.08);
+  --amber-bg:     rgba(236, 236, 234, 0.04);
+  --rune:         #d4d2cc;
 
+  /* Elemental resists — brighter, still semantic */
   --el-fire:       #e07a4a;
-  --el-fire-deep:  #ffa177;
+  --el-fire-deep:  #ff9a6a;
   --el-fire-bg:    rgba(224, 122, 74, 0.14);
-  --el-cold:       #6ea7c4;
-  --el-cold-deep:  #a3cfe5;
-  --el-cold-bg:    rgba(110, 167, 196, 0.14);
-  --el-lit:        #e0c14a;
-  --el-lit-deep:   #f5dc7a;
-  --el-lit-bg:     rgba(224, 193, 74, 0.14);
-  --el-chaos:      #b07cc4;
-  --el-chaos-deep: #d4a8e5;
-  --el-chaos-bg:   rgba(176, 124, 196, 0.14);
-  --el-phys:       #c2b89f;
-  --el-phys-deep:  #ebe4d3;
-  --el-phys-bg:    rgba(194, 184, 159, 0.10);
+  --el-cold:       #5fa8d6;
+  --el-cold-deep:  #8ec5e8;
+  --el-cold-bg:    rgba(95, 168, 214, 0.14);
+  --el-lit:        #d6b248;
+  --el-lit-deep:   #ecc965;
+  --el-lit-bg:     rgba(214, 178, 72, 0.14);
+  --el-chaos:      #b07ec0;
+  --el-chaos-deep: #c89bd8;
+  --el-chaos-bg:   rgba(176, 126, 192, 0.14);
+  --el-phys:       #b0aea9;
+  --el-phys-deep:  #d4d2cc;
+  --el-phys-bg:    rgba(180, 178, 170, 0.10);
 
-  --good:         #8aaf72;
-  --bad:          #d07070;
-  --note:         #d6a25b;
+  /* Status colors — green/red/yellow (stay semantic) */
+  --good:         #6ab773;
+  --bad:          #d77070;
+  --note:         #d6b248;
 }
 
 /* Density data attribute */

@@ -1,6 +1,12 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { RouterLink } from 'vue-router';
+import RunicIcon from './RunicIcon.vue';
+
+type RunicIconName =
+  | 'plus' | 'check' | 'arrow' | 'open' | 'trash' | 'search'
+  | 'close' | 'eye' | 'save' | 'sun' | 'moon'
+  | 'gear' | 'reload' | 'back' | 'forward';
 
 interface Props {
   to?: string;
@@ -8,7 +14,9 @@ interface Props {
   external?: boolean;
   variant?: 'primary' | 'secondary' | 'ghost' | 'twitch' | 'youtube' | 'danger';
   size?: 'xs' | 'sm' | 'md' | 'lg';
+  /** Legacy SVG icon set (twitch/youtube/collection/etc.) — rendered inline. */
   icon?:
+    | RunicIconName
     | 'twitch'
     | 'youtube'
     | 'collection'
@@ -18,15 +26,32 @@ interface Props {
     | 'logout'
     | 'document'
     | 'settings'
-    | 'close'
     | 'record'
     | 'play'
     | 'edit';
+  /** Optional second icon on the right side of the label (v5 set only). */
+  iconRight?: RunicIconName;
   iconOnly?: boolean;
   runeLeft?: string;
   runeRight?: string;
+  noRunes?: boolean;
   disabled?: boolean;
+  /** Mark the primary as destructive (red background instead of ink). */
+  danger?: boolean;
+  /** Optional keyboard shortcut chip rendered at the right edge of the button
+   *  (e.g. "⏎", "⌘N"). When set, the right rune is suppressed automatically. */
+  kbd?: string;
+  /** When the button is disabled, show this label instead of the slot content
+   *  (e.g. "API key required", "Already active"). Lets us reuse a single
+   *  primary CTA component for stateful actions. */
+  disabledReason?: string;
 }
+
+const RUNIC_V5_ICONS: ReadonlySet<string> = new Set([
+  'plus', 'check', 'arrow', 'open', 'trash', 'search',
+  'close', 'eye', 'save', 'sun', 'moon',
+  'gear', 'reload', 'back', 'forward',
+]);
 
 const props = withDefaults(defineProps<Props>(), {
   variant: 'primary',
@@ -35,8 +60,20 @@ const props = withDefaults(defineProps<Props>(), {
   iconOnly: false,
   runeLeft: '◆',
   runeRight: '◆',
+  noRunes: false,
   disabled: false,
+  danger: false,
 });
+
+const showLeftRune = computed(
+  () => !!props.runeLeft && !props.icon && !props.noRunes && !props.kbd,
+);
+const showRightRune = computed(
+  () => !!props.runeRight && !props.icon && !props.noRunes && !props.kbd && !props.iconRight,
+);
+
+const isV5Icon = computed(() => !!props.icon && RUNIC_V5_ICONS.has(props.icon));
+const isLegacyIcon = computed(() => !!props.icon && !RUNIC_V5_ICONS.has(props.icon));
 
 const emit = defineEmits<{
   click: [event: MouseEvent];
@@ -73,12 +110,14 @@ const handleClick = (event: MouseEvent) => {
       `runic-button--${variant}`,
       `runic-button--${size}`,
       { 'runic-button--disabled': disabled },
+      { 'runic-button--danger': danger },
       { 'runic-button--has-icon': icon },
       { 'runic-button--icon-only': iconOnly },
     ]"
     @click="handleClick"
   >
-    <svg v-if="icon === 'twitch'" class="runic-button__icon" viewBox="0 0 24 24" fill="currentColor">
+    <RunicIcon v-if="isV5Icon" :name="(icon as RunicIconName)" :size="size === 'sm' || size === 'xs' ? 14 : 16" class="runic-button__icon" />
+    <svg v-else-if="icon === 'twitch'" class="runic-button__icon" viewBox="0 0 24 24" fill="currentColor">
       <path d="M11.571 4.714h1.715v5.143H11.57zm4.715 0H18v5.143h-1.714zM6 0L1.714 4.286v15.428h5.143V24l4.286-4.286h3.428L22.286 12V0zm14.571 11.143l-3.428 3.428h-3.429l-3 3v-3H6.857V1.714h13.714z" />
     </svg>
     <svg v-else-if="icon === 'youtube'" class="runic-button__icon" viewBox="0 0 24 24" fill="currentColor">
@@ -119,9 +158,14 @@ const handleClick = (event: MouseEvent) => {
       <path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
     </svg>
 
-    <span v-if="runeLeft && !icon" class="runic-button__rune runic-button__rune--left">{{ runeLeft }}</span>
-    <span v-if="!iconOnly" class="runic-button__text"><slot /></span>
-    <span v-if="runeRight && !icon" class="runic-button__rune runic-button__rune--right">{{ runeRight }}</span>
+    <span v-if="showLeftRune" class="runic-button__rune runic-button__rune--left">{{ runeLeft }}</span>
+    <span v-if="!iconOnly" class="runic-button__text">
+      <template v-if="disabled && disabledReason">{{ disabledReason }}</template>
+      <slot v-else />
+    </span>
+    <RunicIcon v-if="iconRight" :name="iconRight" :size="size === 'sm' || size === 'xs' ? 14 : 16" class="runic-button__icon runic-button__icon--right" />
+    <span v-if="kbd" class="runic-button__kbd">{{ kbd }}</span>
+    <span v-if="showRightRune" class="runic-button__rune runic-button__rune--right">{{ runeRight }}</span>
   </component>
 </template>
 
@@ -133,28 +177,29 @@ const handleClick = (event: MouseEvent) => {
   flex-wrap: nowrap;
   align-items: center;
   justify-content: center;
-  gap: 0.6rem;
+  gap: 9px;
   font-family: var(--hand);
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  font-weight: var(--fw-semibold);
+  letter-spacing: 0.01em;
   text-decoration: none;
   white-space: nowrap;
   cursor: pointer;
-  border-radius: 4px 7px 5px 6px / 6px 4px 7px 5px;
-  transition: all 0.18s ease;
+  border-radius: 4px;
+  line-height: 1.2;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
   background: var(--paper);
   color: var(--ink);
-  border: 1.4px solid var(--ink-soft);
+  border: 1px solid var(--ink-soft);
 }
 
 .runic-button::before { content: none; }
 
-.runic-button--xs { padding: 0.3rem 0.7rem; font-size: 12px; gap: 0.3rem; }
+.runic-button--xs { padding: 6px 12px; font-size: 12.5px; gap: 6px; }
 .runic-button--xs .runic-button__rune { display: none; }
 
-.runic-button--sm { padding: 0.4rem 0.9rem; font-size: 13px; gap: 0.4rem; }
-.runic-button--md { padding: 0.55rem 1.2rem; font-size: 14px; gap: 0.5rem; }
-.runic-button--lg { padding: 0.75rem 1.6rem; font-size: 16px; gap: 0.6rem; }
+.runic-button--sm { padding: 8px 16px; font-size: 13.5px; gap: 7px; }
+.runic-button--md { padding: 11px 20px; font-size: 15px; gap: 9px; }
+.runic-button--lg { padding: 13px 24px; font-size: 16px; gap: 10px; }
 
 .runic-button--primary {
   color: var(--paper);
@@ -165,11 +210,27 @@ const handleClick = (event: MouseEvent) => {
   background: var(--amber);
   border-color: var(--amber);
 }
+.runic-button--primary.runic-button--danger {
+  background: var(--bad);
+  border-color: var(--bad);
+}
+.runic-button--primary.runic-button--danger:hover {
+  filter: brightness(1.08);
+}
 
 .runic-button--secondary {
   color: var(--ink);
   background: var(--paper);
   border-color: var(--ink-soft);
+}
+.runic-button--secondary--md,
+.runic-button--secondary {
+  font-size: 14.5px;
+  padding: 10px 19px;
+}
+.runic-button--secondary.runic-button--sm {
+  font-size: 13.5px;
+  padding: 7px 15px;
 }
 .runic-button--secondary:hover {
   border-color: var(--amber);
@@ -184,7 +245,7 @@ const handleClick = (event: MouseEvent) => {
 .runic-button--ghost:hover {
   color: var(--ink);
   border-color: var(--amber);
-  background: rgba(175, 96, 37, 0.06);
+  background: var(--amber-bg);
 }
 
 .runic-button--twitch {
@@ -259,9 +320,46 @@ const handleClick = (event: MouseEvent) => {
 }
 
 .runic-button--disabled {
-  opacity: 0.5;
   cursor: not-allowed;
   pointer-events: none;
+}
+.runic-button--primary.runic-button--disabled {
+  background: var(--paper-shade);
+  color: var(--ink-faint);
+  border-color: var(--paper-line);
+}
+.runic-button--secondary.runic-button--disabled {
+  background: var(--paper);
+  color: var(--ink-faint);
+  border-color: var(--paper-line);
+}
+
+/* Keyboard shortcut chip — rendered to the right of the label.
+ * Picks up paper-tinted background on solid-ink buttons, ink-soft frame
+ * on outlined buttons. */
+.runic-button__kbd {
+  font-family: var(--label);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  font-weight: var(--fw-medium);
+  padding: 1px 5px;
+  border-radius: 3px;
+  border: 1px solid var(--ink-faint);
+  color: var(--ink-soft);
+  background: transparent;
+  line-height: 1.3;
+  flex: none;
+}
+.runic-button--primary .runic-button__kbd {
+  border-color: rgba(244, 241, 234, 0.45);
+  color: rgba(244, 241, 234, 0.85);
+  background: transparent;
+}
+.runic-button--disabled .runic-button__kbd {
+  opacity: 0.55;
+  border-color: var(--paper-line);
+  color: var(--ink-faint);
+  background: transparent;
 }
 
 @media (max-width: 640px) {

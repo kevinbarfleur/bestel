@@ -21,6 +21,8 @@ export interface PobBuildSummaryDto {
 export interface ResistanceDto {
   name: 'fire' | 'cold' | 'lightning' | 'chaos';
   value: number | null;
+  /** Effective cap (75 by default, higher when the build raises the max). */
+  cap: number;
 }
 
 export interface SkillGemDto {
@@ -66,6 +68,10 @@ export interface PobBuildDto {
   life: number | null;
   mana: number | null;
   energy_shield: number | null;
+  /** PoE2 only — Spirit reservation pool. */
+  spirit: number | null;
+  /** PoE1 evasion rating. */
+  evasion: number | null;
   ehp: number | null;
   dps: number | null;
   resistances: ResistanceDto[];
@@ -90,6 +96,13 @@ export interface ModelProfileDto {
   speed: SpeedLabel;
   cost: CostLabel;
   cost_per_mtok: [number, number] | null;
+  api_key_env: string | null;
+  /** Validated official link for model docs / product page. */
+  info_url: string | null;
+  /** Validated official link to obtain or manage the API key. */
+  api_key_url: string | null;
+  /** Whether this model accepts image attachments (vision input). */
+  vision_capable: boolean;
 }
 
 export interface ProbeDto {
@@ -97,6 +110,15 @@ export interface ProbeDto {
   installed: boolean;
   version: string | null;
   note: string | null;
+}
+
+export interface KeyStatusDto {
+  env_name: string;
+  set: boolean;
+  /** Either a masked fingerprint like "sk-ant-...4f2c", the literal
+   * "(from environment)" for OS-env-only keys (no preview echoed),
+   * or null when the key is unset. */
+  masked_preview: string | null;
 }
 
 export interface DetectionDto {
@@ -158,6 +180,14 @@ export interface DebugRunDto {
   error: string | null;
 }
 
+export interface UsageStats {
+  input_tokens: number;
+  cached_input_tokens: number;
+  cache_creation_tokens: number;
+  output_tokens: number;
+  cost_usd: number | null;
+}
+
 export type LlmDeltaEvent =
   | { kind: 'text'; session_id: number; text: string }
   | { kind: 'reasoning_begin'; session_id: number }
@@ -166,6 +196,7 @@ export type LlmDeltaEvent =
   | { kind: 'tool_begin'; session_id: number; id: string; name: string; detail: string | null }
   | { kind: 'tool_output'; session_id: number; id: string; chunk: string }
   | { kind: 'tool_end'; session_id: number; id: string; status: ToolStatus; summary: string | null }
+  | ({ kind: 'usage'; session_id: number } & UsageStats)
   | { kind: 'message_end'; session_id: number }
   | { kind: 'error'; session_id: number; message: string }
   | { kind: 'cancelled'; session_id: number }

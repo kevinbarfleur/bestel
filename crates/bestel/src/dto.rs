@@ -15,6 +15,17 @@ pub struct AttachmentDto {
     pub data_base64: String,
 }
 
+/// Status of one whitelisted API key env var, as exposed to the picker UI.
+/// `masked_preview` is `Some("sk-ant-...4f2c")` when we can safely echo a
+/// short fingerprint, `Some("(from environment)")` for OS-env-only keys
+/// (we never echo the raw OS value), or `None` when the key is unset.
+#[derive(Debug, Clone, Serialize)]
+pub struct KeyStatusDto {
+    pub env_name: String,
+    pub set: bool,
+    pub masked_preview: Option<String>,
+}
+
 impl From<&AttachmentDto> for Attachment {
     fn from(a: &AttachmentDto) -> Self {
         Attachment {
@@ -63,6 +74,10 @@ impl From<&PobBuildSummary> for PobBuildSummaryDto {
 pub struct ResistanceDto {
     pub name: &'static str,
     pub value: Option<f64>,
+    /// Effective cap for this resistance (75 by default, higher when the
+    /// build raises the max via Purity, Aegis Aurora, etc.). Read from the
+    /// PoB `{Element}ResistMax` stat if present, falls back to 75.
+    pub cap: f64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -115,6 +130,11 @@ pub struct PobBuildDto {
     pub life: Option<f64>,
     pub mana: Option<f64>,
     pub energy_shield: Option<f64>,
+    /// PoE2 only — `Spirit` reservation pool. Populated from the parsed
+    /// defenses block.
+    pub spirit: Option<f64>,
+    /// PoE1 evasion rating. Populated from the parsed defenses block.
+    pub evasion: Option<f64>,
     pub ehp: Option<f64>,
     pub dps: Option<f64>,
     pub resistances: Vec<ResistanceDto>,
@@ -134,12 +154,27 @@ impl From<&PobBuild> for PobBuildDto {
             .map(|f| f.to_string_lossy().into_owned())
             .unwrap_or_default();
 
+        // Resolve the per-element cap from PoB stats if present.
+        // PoB exports `{Element}ResistMax` only when the build's max is raised
+        // above the default 75 (Purity of Fire, Aegis Aurora, etc.).
+        let cap_for = |element: &str| -> f64 {
+            let stat_key = match element {
+                "fire" => "FireResistMax",
+                "cold" => "ColdResistMax",
+                "lightning" => "LightningResistMax",
+                "chaos" => "ChaosResistMax",
+                _ => return 75.0,
+            };
+            b.stat(stat_key).unwrap_or(75.0)
+        };
+
         let resistances = b
             .resistances()
             .iter()
             .map(|(name, value)| ResistanceDto {
                 name,
                 value: *value,
+                cap: cap_for(name),
             })
             .collect();
 
@@ -201,6 +236,8 @@ impl From<&PobBuild> for PobBuildDto {
             life: b.life(),
             mana: b.mana(),
             energy_shield: b.energy_shield(),
+            spirit: b.defenses.spirit,
+            evasion: b.defenses.evasion,
             ehp: b.ehp(),
             dps: b.dps(),
             resistances,
@@ -238,6 +275,17 @@ pub struct ModelProfileDto {
     pub speed: &'static str,
     pub cost: &'static str,
     pub cost_per_mtok: Option<(f32, f32)>,
+    /// When set, the picker should check this specific env var probe for
+    /// availability instead of the generic provider probe. Used for
+    /// Anthropic-compatible third-party endpoints (e.g. DeepSeek) that
+    /// require their own API key.
+    pub api_key_env: Option<String>,
+    /// Optional link to the official model documentation page.
+    pub info_url: Option<String>,
+    /// Optional link to where the user can obtain or manage the API key.
+    pub api_key_url: Option<String>,
+    /// Whether the model accepts image attachments.
+    pub vision_capable: bool,
 }
 
 impl From<&ModelProfile> for ModelProfileDto {
@@ -251,6 +299,10 @@ impl From<&ModelProfile> for ModelProfileDto {
             speed: speed_label(p.speed),
             cost: cost_label(p.cost),
             cost_per_mtok: p.cost_per_mtok,
+            api_key_env: p.api_key_env.clone(),
+            info_url: p.info_url.clone(),
+            api_key_url: p.api_key_url.clone(),
+            vision_capable: p.vision_capable,
         }
     }
 }
@@ -323,6 +375,14 @@ pub enum DeltaEvent {
         status: &'static str,
         summary: Option<String>,
     },
+    Usage {
+        session_id: u64,
+        input_tokens: u64,
+        cached_input_tokens: u64,
+        cache_creation_tokens: u64,
+        output_tokens: u64,
+        cost_usd: Option<f64>,
+    },
     MessageEnd {
         session_id: u64,
     },
@@ -361,6 +421,14 @@ impl DeltaEvent {
                 id,
                 status: tool_status_label(status),
                 summary,
+            },
+            LlmDelta::Usage(stats) => DeltaEvent::Usage {
+                session_id,
+                input_tokens: stats.input_tokens,
+                cached_input_tokens: stats.cached_input_tokens,
+                cache_creation_tokens: stats.cache_creation_tokens,
+                output_tokens: stats.output_tokens,
+                cost_usd: stats.cost_usd,
             },
             LlmDelta::MessageEnd => DeltaEvent::MessageEnd { session_id },
             LlmDelta::Error(message) => DeltaEvent::Error {

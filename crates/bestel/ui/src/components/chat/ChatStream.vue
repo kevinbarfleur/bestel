@@ -96,28 +96,28 @@ const turnCount = computed(() => messages.value.length);
 }
 .chat-thread__label {
   font-family: var(--label);
-  font-size: 9px;
+  font-size: var(--fs-caps);
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--ink-faint);
-  font-weight: 500;
+  font-weight: var(--fw-semibold);
 }
 .chat-thread__title {
-  font-family: var(--hand-display);
-  font-size: 13px;
-  font-weight: 500;
+  font-family: var(--hand);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-medium);
   color: var(--ink);
 }
 .chat-thread__meta {
   font-family: var(--hand);
-  font-size: 12px;
-  color: var(--ink-faint);
+  font-size: var(--fs-meta);
+  color: var(--ink-soft);
 }
 .chat-thread__grow { flex: 1; }
 .chat-thread__action {
   font-family: var(--hand);
-  font-size: 11px;
-  color: var(--ink-faint);
+  font-size: var(--fs-meta);
+  color: var(--ink-soft);
   cursor: pointer;
   background: none;
   border: 0;
@@ -129,10 +129,10 @@ const turnCount = computed(() => messages.value.length);
 .chat-stream {
   flex: 1;
   overflow-y: auto;
-  padding: 24px 28px;
+  padding: 24px 32px 20px;
   display: flex;
   flex-direction: column;
-  gap: 18px;
+  gap: 22px;
   min-height: 0;
   width: 100%;
 }

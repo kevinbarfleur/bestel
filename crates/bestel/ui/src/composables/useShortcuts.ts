@@ -3,6 +3,7 @@ import { onBeforeUnmount, onMounted } from 'vue';
 export interface ShortcutHandlers {
   onBuildPicker?: () => void;
   onModelPicker?: () => void;
+  onSettings?: () => void;
   onEscape?: () => void;
   onResetChat?: () => void;
   onOpenDebug?: () => void;
@@ -37,6 +38,9 @@ export function useShortcuts(handlers: ShortcutHandlers) {
     } else if (k === 'd' && e.shiftKey) {
       e.preventDefault();
       handlers.onOpenDebug?.();
+    } else if (k === ',') {
+      e.preventDefault();
+      handlers.onSettings?.();
     }
   };
 

@@ -8,6 +8,7 @@ Cargo.lock
 **/dist-ssr/
 crates/bestel/ui/.vite/
 crates/bestel/gen/
+**/tsconfig.tsbuildinfo
 
 # Tauri build artifacts
 crates/bestel/target/
@@ -28,3 +29,7 @@ Thumbs.db
 # Local scratch
 tmp_*
 *.tmp
+
+# Design handoff bundles — ephemeral exploration artifacts from
+# claude.ai/design. Extracted locally for reference, not versioned.
+.design-bundle-v*/

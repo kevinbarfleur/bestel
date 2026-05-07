@@ -129,6 +129,14 @@ async fn main() -> anyhow::Result<()> {
                 println!("\n[tool← id={id} status={status:?} summary={summary:?}]");
                 writeln!(log, "TOOL_END id={id} status={status:?} summary={summary:?}").ok();
             }
+            LlmDelta::Usage(u) => {
+                writeln!(
+                    log,
+                    "USAGE in={} cache_read={} cache_write={} out={} cost={:?}",
+                    u.input_tokens, u.cached_input_tokens, u.cache_creation_tokens, u.output_tokens, u.cost_usd
+                )
+                .ok();
+            }
             LlmDelta::MessageEnd => {
                 writeln!(log, "MESSAGE_END").ok();
             }

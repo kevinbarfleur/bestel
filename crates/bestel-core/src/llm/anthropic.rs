@@ -17,22 +17,72 @@ fn base64_decode_to_text(s: &str) -> Option<String> {
 
 const API_URL: &str = "https://api.anthropic.com/v1/messages";
 const API_VERSION: &str = "2023-06-01";
+const DEFAULT_API_KEY_ENV: &str = "ANTHROPIC_API_KEY";
+
+/// Hard cap on tool-use iterations within a single agent run. DeepSeek and
+/// other tool-eager models can chain 8-12 wiki lookups before answering;
+/// 16 leaves room for thoroughness without runaway loops. When this is
+/// reached we still run ONE more pass with `tools: []` and a wrap-up nudge
+/// so the user always gets a final answer instead of a bare error.
+const MAX_AGENT_ITERATIONS: usize = 16;
+const WRAP_UP_NUDGE: &str =
+    "[system: tool budget reached. Give your final answer now using what you've already gathered. Do not request more tools.]";
 
 pub struct AnthropicClient {
     api_key: String,
     model: String,
+    api_url: String,
+    /// Optional `(input_rate_usd_per_mtok, output_rate_usd_per_mtok)` used
+    /// to compute live cost telemetry. `None` skips the cost field of the
+    /// emitted `Usage` delta but token counts are still surfaced.
+    cost_per_mtok: Option<(f32, f32)>,
     http: reqwest::Client,
 }
 
 impl AnthropicClient {
     pub fn from_env() -> Result<Self> {
-        let api_key = std::env::var("ANTHROPIC_API_KEY")
+        let api_key = std::env::var(DEFAULT_API_KEY_ENV)
             .context("ANTHROPIC_API_KEY environment variable not set")?;
-        let model = super::models::resolved_model_for(super::models::ProviderKind::Anthropic)
-            .unwrap_or_else(|| "claude-sonnet-4-5-20250929".to_string());
+        let active = super::models::active_profile();
+        let model = if active.provider == super::models::ProviderKind::Anthropic
+            && !active.model_id.is_empty()
+        {
+            active.model_id.clone()
+        } else {
+            "claude-sonnet-4-5-20250929".to_string()
+        };
         Ok(Self {
             api_key,
             model,
+            api_url: API_URL.to_string(),
+            cost_per_mtok: active.cost_per_mtok,
+            http: reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(120))
+                .build()?,
+        })
+    }
+
+    /// Build a client against an Anthropic-compatible endpoint (e.g.
+    /// DeepSeek's `https://api.deepseek.com/anthropic`). `base_url` is the
+    /// prefix without `/v1/messages`. `env_var` names the env variable
+    /// holding the API key. `model` is the model id to send. `cost_per_mtok`
+    /// is the `(input, output)` USD/Mtok pair from the active profile —
+    /// pass `None` to omit cost telemetry.
+    pub fn from_endpoint(
+        base_url: &str,
+        env_var: &str,
+        model: String,
+        cost_per_mtok: Option<(f32, f32)>,
+    ) -> Result<Self> {
+        let api_key = std::env::var(env_var)
+            .with_context(|| format!("{env_var} environment variable not set"))?;
+        let trimmed = base_url.trim_end_matches('/');
+        let api_url = format!("{trimmed}/v1/messages");
+        Ok(Self {
+            api_key,
+            model,
+            api_url,
+            cost_per_mtok,
             http: reqwest::Client::builder()
                 .timeout(std::time::Duration::from_secs(120))
                 .build()?,
@@ -93,33 +143,59 @@ impl AnthropicClient {
 
         let mut full_assistant = String::new();
         let mut iterations = 0;
+        // Build a one-line state hint prefixed to the system prompt so the
+        // LLM can see whether a Path of Building file is currently attached
+        // *before* its first turn. Avoids wasting a `get_active_build` tool
+        // call on generic questions when the user has detached their build.
+        // Convention is documented in SYSTEM_PROMPT.md ("Build awareness").
+        let build_state_line = match ctx.get() {
+            Some(b) => format!(
+                "Build state: loaded — {} {} lvl {}",
+                b.game.label(),
+                b.class,
+                b.level.unwrap_or(0)
+            ),
+            None => "Build state: detached".to_string(),
+        };
+        let system_prompt_with_state =
+            format!("[{}]\n\n{}", build_state_line, SYSTEM_PROMPT_COMPOSED);
         let tool_ctx = ToolCtx::new(ctx).context("build ToolCtx")?;
-        let schemas = tool_schemas();
+        let schemas = cached_tool_schemas();
+        let mut wrap_up_done = false;
+        let mut total_usage = super::UsageStats::default();
 
         loop {
             iterations += 1;
-            if iterations > 8 {
-                let _ = deltas.send(LlmDelta::Error("agent loop limit reached".into()));
-                break;
+            // After MAX_AGENT_ITERATIONS regular passes, run exactly one more
+            // turn with tools disabled and a wrap-up nudge so the model
+            // produces a final answer instead of erroring on the user.
+            let force_finalize = iterations > MAX_AGENT_ITERATIONS;
+            if force_finalize {
+                if wrap_up_done {
+                    break;
+                }
+                wrap_up_done = true;
+                messages.push(json!({
+                    "role": "user",
+                    "content": [{ "type": "text", "text": WRAP_UP_NUDGE }],
+                }));
             }
 
             let body = json!({
                 "model": self.model,
                 "max_tokens": 2048,
-                "system": SYSTEM_PROMPT_COMPOSED,
-                "tools": schemas,
+                "system": [{
+                    "type": "text",
+                    "text": system_prompt_with_state,
+                    "cache_control": { "type": "ephemeral" }
+                }],
+                "tools": if force_finalize { json!([]) } else { json!(schemas) },
                 "stream": true,
                 "messages": messages,
             });
 
             let resp = self
-                .http
-                .post(API_URL)
-                .header("x-api-key", &self.api_key)
-                .header("anthropic-version", API_VERSION)
-                .header("content-type", "application/json")
-                .json(&body)
-                .send()
+                .post_with_retry(&body, &deltas)
                 .await?;
 
             if !resp.status().is_success() {
@@ -295,6 +371,14 @@ impl AnthropicClient {
                                 thinking_open = false;
                             }
                         }
+                        "message_start" => {
+                            // Initial usage block: input + cache stats are
+                            // settled by the time this fires; only output
+                            // tokens grow during the stream.
+                            if let Some(usage) = v.pointer("/message/usage") {
+                                accumulate_usage(&mut total_usage, usage);
+                            }
+                        }
                         "message_delta" => {
                             if let Some(reason) = v
                                 .get("delta")
@@ -302,6 +386,13 @@ impl AnthropicClient {
                                 .and_then(|s| s.as_str())
                             {
                                 stop_reason = Some(reason.to_string());
+                            }
+                            // Final output token count for this iteration.
+                            // Anthropic only re-reports `output_tokens` here,
+                            // not the cache fields — but DeepSeek may include
+                            // them so we accumulate defensively.
+                            if let Some(usage) = v.get("usage") {
+                                accumulate_usage(&mut total_usage, usage);
                             }
                         }
                         "message_stop" => {}
@@ -383,6 +474,14 @@ impl AnthropicClient {
                             "result_bytes": result.len(),
                         }),
                     );
+                    // Forward the full result as a single ToolOutput chunk so
+                    // the frontend can populate `seg.output` and parse rich
+                    // payloads (show_in_panel, future structured tools).
+                    // Aligned with the Ollama provider's behavior.
+                    let _ = deltas.send(LlmDelta::ToolOutput {
+                        id: tu.id.clone(),
+                        chunk: result.clone(),
+                    });
                     let _ = deltas.send(LlmDelta::ToolEnd {
                         id: tu.id.clone(),
                         status,
@@ -404,9 +503,123 @@ impl AnthropicClient {
             break;
         }
 
+        if total_usage.input_tokens
+            + total_usage.cached_input_tokens
+            + total_usage.cache_creation_tokens
+            + total_usage.output_tokens
+            > 0
+        {
+            total_usage.cost_usd = compute_cost(self.cost_per_mtok, &total_usage);
+            let _ = deltas.send(LlmDelta::Usage(total_usage));
+        }
         let _ = deltas.send(LlmDelta::MessageEnd);
         Ok(full_assistant)
     }
+}
+
+impl AnthropicClient {
+    /// POST with automatic retry on 429 / 5xx. Parses `retry-after` header
+    /// (seconds) when present, falls back to an exponential schedule. Caps
+    /// total attempts at 4 (1 initial + 3 retries) so a permanently-down
+    /// endpoint still surfaces the error eventually.
+    async fn post_with_retry(
+        &self,
+        body: &Value,
+        deltas: &mpsc::UnboundedSender<LlmDelta>,
+    ) -> Result<reqwest::Response> {
+        const MAX_ATTEMPTS: u32 = 4;
+        const FALLBACK_5XX_BASE: u64 = 5;
+        let mut attempt: u32 = 0;
+        loop {
+            attempt += 1;
+            let resp = self
+                .http
+                .post(&self.api_url)
+                .header("x-api-key", &self.api_key)
+                .header("anthropic-version", API_VERSION)
+                .header("content-type", "application/json")
+                .json(body)
+                .send()
+                .await?;
+            let status = resp.status();
+            let retryable = status == reqwest::StatusCode::TOO_MANY_REQUESTS
+                || status.is_server_error();
+            if !retryable || attempt >= MAX_ATTEMPTS {
+                return Ok(resp);
+            }
+            let header_wait = resp
+                .headers()
+                .get(reqwest::header::RETRY_AFTER)
+                .and_then(|v| v.to_str().ok())
+                .and_then(|s| s.trim().parse::<u64>().ok());
+            let wait = header_wait.unwrap_or_else(|| {
+                if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                    30
+                } else {
+                    FALLBACK_5XX_BASE * (1u64 << (attempt - 1))
+                }
+            });
+            // Drop the response body so the connection can be reused.
+            let _ = resp.text().await;
+            crate::devlog::log_value(
+                "anthropic_retry",
+                json!({
+                    "status": status.as_u16(),
+                    "attempt": attempt,
+                    "max_attempts": MAX_ATTEMPTS,
+                    "wait_secs": wait,
+                    "header_wait": header_wait,
+                }),
+            );
+            let _ = deltas.send(LlmDelta::TextDelta(String::new()));
+            tokio::time::sleep(std::time::Duration::from_secs(wait)).await;
+        }
+    }
+}
+
+/// Read the `usage` JSON object Anthropic sends in `message_start` /
+/// `message_delta` events and add its counters into our running total.
+/// Anthropic returns these as cumulative-since-start, so we replace
+/// instead of summing — except for `output_tokens` which is reported
+/// per iteration in `message_delta` (each iteration starts at 0 again).
+///
+/// Across multiple agent loop iterations, totals are summed.
+fn accumulate_usage(total: &mut super::UsageStats, usage: &Value) {
+    if let Some(v) = usage.get("input_tokens").and_then(|x| x.as_u64()) {
+        total.input_tokens += v;
+    }
+    if let Some(v) = usage
+        .get("cache_read_input_tokens")
+        .and_then(|x| x.as_u64())
+    {
+        total.cached_input_tokens += v;
+    }
+    if let Some(v) = usage
+        .get("cache_creation_input_tokens")
+        .and_then(|x| x.as_u64())
+    {
+        total.cache_creation_tokens += v;
+    }
+    if let Some(v) = usage.get("output_tokens").and_then(|x| x.as_u64()) {
+        total.output_tokens += v;
+    }
+}
+
+/// Compute USD cost using Anthropic's standard 5m-cache pricing recipe.
+/// Cache reads ≈ 10% of base input rate; cache writes ≈ 125%. Rates passed
+/// in are USD per million tokens. DeepSeek doesn't actually cache via the
+/// `/anthropic` endpoint — `cached_input_tokens` and `cache_creation_tokens`
+/// will be zero there, so the formula collapses to plain input × output.
+fn compute_cost(rates: Option<(f32, f32)>, u: &super::UsageStats) -> Option<f64> {
+    let (input_rate, output_rate) = rates?;
+    let input_rate = input_rate as f64;
+    let output_rate = output_rate as f64;
+    let cost = (u.input_tokens as f64 * input_rate
+        + u.cached_input_tokens as f64 * input_rate * 0.10
+        + u.cache_creation_tokens as f64 * input_rate * 1.25
+        + u.output_tokens as f64 * output_rate)
+        / 1_000_000.0;
+    Some(cost)
 }
 
 #[derive(Debug, Clone)]
@@ -414,4 +627,17 @@ struct ToolUse {
     id: String,
     name: String,
     input_json: String,
+}
+
+fn cached_tool_schemas() -> Vec<Value> {
+    let mut schemas = tool_schemas();
+    if let Some(last) = schemas.last_mut() {
+        if let Some(obj) = last.as_object_mut() {
+            obj.insert(
+                "cache_control".to_string(),
+                json!({ "type": "ephemeral" }),
+            );
+        }
+    }
+    schemas
 }

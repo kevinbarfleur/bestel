@@ -10,7 +10,7 @@ import type {
   ItemSummaryDto,
   PassiveNodeDto,
 } from '../../api/types';
-import { openExternal } from '../../api/tauri';
+import { openLink } from '../../api/tauri';
 
 const emit = defineEmits<{ openPicker: [] }>();
 
@@ -51,8 +51,13 @@ interface ResVm {
   name: ResistanceDto['name'];
   short: 'fire' | 'cold' | 'lit' | 'chaos';
   value: number | null;
+  cap: number;
   status: 'good' | 'ok' | 'bad' | 'neg';
   display: string;
+  /** 0..1 — fill width of the mini bar. */
+  fillPct: number;
+  /** 0..1 — position of the cap marker on the mini bar. */
+  capMarkerPct: number;
 }
 const RES_LABELS: Record<ResistanceDto['name'], ResVm['short']> = {
   fire: 'fire',
@@ -65,13 +70,25 @@ const resistances = computed<ResVm[]>(() => {
   const list = current.value?.resistances ?? [];
   return list.map((r) => {
     const v = r.value;
+    const cap = r.cap ?? 75;
     let status: ResVm['status'] = 'ok';
     if (v == null) status = 'ok';
     else if (v < 0) status = 'neg';
-    else if (v >= 75) status = 'good';
+    else if (v >= cap) status = 'good';
     else status = 'bad';
     const display = v == null ? '—' : `${v.toFixed(0)}`;
-    return { name: r.name, short: RES_LABELS[r.name], value: v, status, display };
+    const fillPct = v == null ? 0 : Math.max(0, Math.min(1, v / 100));
+    const capMarkerPct = Math.max(0, Math.min(1, cap / 100));
+    return {
+      name: r.name,
+      short: RES_LABELS[r.name],
+      value: v,
+      cap,
+      status,
+      display,
+      fillPct,
+      capMarkerPct,
+    };
   });
 });
 
@@ -181,18 +198,17 @@ const tipVital = (label: string, raw: number | null | undefined): string => {
 };
 
 const tipResistance = (r: ResVm): string => {
-  const cap = 75;
   if (r.value == null) return `${r.short.toUpperCase()} resistance: not parsed.`;
   if (r.status === 'good') {
-    const over = r.value - cap;
-    return `${r.short.toUpperCase()} ${r.value.toFixed(0)}% / ${cap}% cap${over > 0 ? ` · overcapped +${over.toFixed(0)}` : ''}`;
+    const over = r.value - r.cap;
+    return `${r.short.toUpperCase()} ${r.value.toFixed(0)}% / ${r.cap}% cap${over > 0 ? ` · overcapped +${over.toFixed(0)}` : ''}`;
   }
   if (r.status === 'neg') {
-    return `${r.short.toUpperCase()} ${r.value.toFixed(0)}% / ${cap}% cap · negative resistance — chaos damage will hurt badly.`;
+    return `${r.short.toUpperCase()} ${r.value.toFixed(0)}% / ${r.cap}% cap · negative resistance — chaos damage will hurt badly.`;
   }
   if (r.status === 'bad') {
-    const under = cap - r.value;
-    return `${r.short.toUpperCase()} ${r.value.toFixed(0)}% / ${cap}% cap · ${under.toFixed(0)} under cap. Map mods reducing max res will hurt.`;
+    const under = r.cap - r.value;
+    return `${r.short.toUpperCase()} ${r.value.toFixed(0)}% / ${r.cap}% cap · ${under.toFixed(0)} under cap. Map mods reducing max res will hurt.`;
   }
   return `${r.short.toUpperCase()} ${r.value.toFixed(0)}%`;
 };
@@ -322,87 +338,131 @@ const tipMainDps = (): string => {
 <template>
   <aside class="bp" data-density="compact">
     <template v-if="current">
-      <!-- Header — pure typography, no avatar -->
+      <!-- Header — class / ascendancy in display size + meta line -->
       <header
         class="bp-head"
         :data-tooltip-title="current.ascendancy ?? current.class"
         :data-tooltip-text="`Class: ${current.class}\nAscendancy: ${current.ascendancy ?? '—'}\nLevel: ${current.level ?? '—'}\nGame: ${(current.game ?? '').toUpperCase()}\nFile: ${current.file_name}`"
       >
-        <div class="bp-head__title">{{ current.main_skill ?? current.class }}</div>
+        <div class="bp-head__title">{{ current.ascendancy ?? current.class }}</div>
         <div class="bp-head__meta">{{ buildLevelLine }}</div>
       </header>
 
       <!-- Scrollable body — every section in leader-dot grammar -->
       <div class="bp-body runic-scrollbar">
 
-        <!-- Main skill — almanach style, no box -->
-        <section v-if="mainGroup" class="bp-section" :data-tooltip-title="'Main skill'" :data-tooltip-text="tipMainDps()">
-          <div class="bp-h">
-            <span class="bp-h__title">main skill</span>
-            <span class="bp-h__grow" />
-            <span v-if="ehpLabel" class="bp-h__meta">t16 boss</span>
-          </div>
-          <div class="bp-mainskill__row">
-            <span class="bp-mainskill__dps" :style="`color: var(--el-${mainGroup.element})`">
-              {{ fmtBig(current.dps) }}
-            </span>
-            <span class="bp-h__grow" />
-          </div>
-          <div class="bp-mainskill__sub">
-            {{ mainGroup.active[0]?.name ?? mainGroup.label }}
-            <span v-if="mainGroup.supports.length"> · {{ mainGroup.supports.length }}-link</span>
-          </div>
-        </section>
-
-        <!-- Vitals -->
+        <!-- Vitals — 2×2 BIG numbers (life, es, mana, spirit/evasion) -->
         <section class="bp-section">
           <div class="bp-h">
             <span class="bp-h__title">vitals</span>
             <span class="bp-h__grow" />
             <span v-if="ehpLabel" class="bp-h__meta">{{ ehpLabel }}</span>
           </div>
-          <div class="bp-rows">
-            <div class="leader" :data-tooltip-title="'Life'" :data-tooltip-text="tipVital('Life', current.life)">
-              <span class="leader__k">life</span><span class="leader__dots" /><span class="leader__v">{{ fmtInt(current.life) }}</span>
+          <div class="bp-big-grid">
+            <div class="bp-big-tile" :data-tooltip-title="'Life'" :data-tooltip-text="tipVital('Life', current.life)">
+              <div class="bp-big-label">life</div>
+              <div class="bp-big-value">{{ fmtBig(current.life) }}</div>
             </div>
-            <div class="leader" :data-tooltip-title="'Energy Shield'" :data-tooltip-text="tipVital('Energy Shield', current.energy_shield)">
-              <span class="leader__k">es</span><span class="leader__dots" /><span class="leader__v">{{ fmtInt(current.energy_shield) }}</span>
+            <div
+              class="bp-big-tile"
+              :class="{ 'bp-big-tile--muted': !current.energy_shield }"
+              :data-tooltip-title="'Energy Shield'"
+              :data-tooltip-text="tipVital('Energy Shield', current.energy_shield)"
+            >
+              <div class="bp-big-label">energy shield</div>
+              <div class="bp-big-value">
+                {{ current.energy_shield ? fmtBig(current.energy_shield) : '—' }}
+              </div>
             </div>
-            <div class="leader" :data-tooltip-title="'Mana'" :data-tooltip-text="tipVital('Mana', current.mana)">
-              <span class="leader__k">mana</span><span class="leader__dots" /><span class="leader__v">{{ fmtInt(current.mana) }}</span>
+            <div class="bp-big-tile" :data-tooltip-title="'Mana'" :data-tooltip-text="tipVital('Mana', current.mana)">
+              <div class="bp-big-label">mana</div>
+              <div class="bp-big-value">{{ fmtBig(current.mana) }}</div>
             </div>
-            <div class="leader leader--dim" data-tooltip-title="Armour" data-tooltip-text="Armour: not exposed by the parser yet.">
-              <span class="leader__k">armour</span><span class="leader__dots" /><span class="leader__v">—</span>
+            <div
+              v-if="current.game === 'poe2'"
+              class="bp-big-tile"
+              :class="{ 'bp-big-tile--muted': current.spirit == null }"
+              :data-tooltip-title="'Spirit'"
+              :data-tooltip-text="tipVital('Spirit', current.spirit)"
+            >
+              <div class="bp-big-label">spirit</div>
+              <div class="bp-big-value">{{ fmtBig(current.spirit) }}</div>
             </div>
-            <div class="leader leader--dim" data-tooltip-title="Evade chance" data-tooltip-text="Evade %: not exposed by the parser yet.">
-              <span class="leader__k">evade</span><span class="leader__dots" /><span class="leader__v">—</span>
+            <div
+              v-else
+              class="bp-big-tile"
+              :class="{ 'bp-big-tile--muted': current.evasion == null }"
+              :data-tooltip-title="'Evasion'"
+              :data-tooltip-text="tipVital('Evasion', current.evasion)"
+            >
+              <div class="bp-big-label">evasion</div>
+              <div class="bp-big-value">{{ fmtBig(current.evasion) }}</div>
             </div>
           </div>
         </section>
 
-        <!-- Resistances — 2x2 elemental pills, dashed -->
+        <!-- Resistances — 2×2 BIG numbers + mini bar with dynamic cap marker -->
         <section v-if="resistances.length" class="bp-section">
           <div class="bp-h">
             <span class="bp-h__title">resistances</span>
             <span class="bp-h__grow" />
           </div>
-          <div class="bp-resists">
+          <div class="bp-big-grid">
             <div
               v-for="r in resistances"
               :key="r.name"
-              class="resist"
-              :class="`resist--${r.short}`"
+              class="bp-resist-tile"
               :data-tooltip-title="r.short.toUpperCase() + ' resistance'"
               :data-tooltip-text="tipResistance(r)"
             >
-              <span class="resist__el">{{ r.short }}</span>
-              <span class="resist__grow" />
-              <span
-                class="resist__v"
-                :class="{ 'resist__v--neg': r.status === 'neg' }"
-              >{{ r.display }}</span>
-              <span class="resist__cap">/75</span>
+              <div class="bp-big-label" :style="{ color: `var(--el-${r.short})` }">{{ r.short }}</div>
+              <div class="bp-resist-value-row">
+                <span
+                  class="bp-big-value"
+                  :style="{
+                    color:
+                      r.status === 'neg' ? 'var(--bad)' :
+                      r.status === 'bad' ? 'var(--note)' :
+                      `var(--el-${r.short}-deep)`,
+                  }"
+                >
+                  {{ r.value == null ? '—' : `${r.display}%` }}
+                </span>
+                <span class="bp-resist-cap">/ {{ Math.round(r.cap) }}</span>
+              </div>
+              <div class="bp-bar">
+                <div
+                  class="bp-bar-fill"
+                  :style="{
+                    width: `${r.fillPct * 100}%`,
+                    background:
+                      r.status === 'neg' ? 'var(--bad)' :
+                      r.status === 'bad' ? 'var(--note)' :
+                      `var(--el-${r.short})`,
+                  }"
+                />
+                <div class="bp-bar-cap" :style="{ left: `${r.capMarkerPct * 100}%` }" />
+              </div>
             </div>
+          </div>
+        </section>
+
+        <!-- Main skill — name + DPS, no big DPS hero -->
+        <section v-if="mainGroup" class="bp-section" :data-tooltip-title="'Main skill'" :data-tooltip-text="tipMainDps()">
+          <div class="bp-h">
+            <span class="bp-h__title">main skill</span>
+            <span class="bp-h__grow" />
+            <span v-if="current.dps != null" class="bp-h__meta">{{ fmtBig(current.dps) }} dps</span>
+          </div>
+          <div class="bp-mainskill__name">
+            {{ mainGroup.active[0]?.name ?? mainGroup.label }}
+          </div>
+          <div class="bp-mainskill__sub">
+            <span v-if="mainGroup.supports.length">{{ mainGroup.supports.length + 1 }}-link</span>
+            <span v-if="mainGroup.element !== 'phys'"
+              :style="`color: var(--el-${mainGroup.element}-deep); margin-left: 6px;`">
+              · {{ mainGroup.element }}
+            </span>
           </div>
         </section>
 
@@ -527,7 +587,7 @@ const tipMainDps = (): string => {
             <span class="bp-h__meta">official viewer</span>
           </div>
           <div class="bp-tree-actions">
-            <a class="link bp-tree-link" @click.prevent="openExternal(current.passive_tree_url!)">
+            <a class="link bp-tree-link" @click.prevent="openLink(current.passive_tree_url!)">
               ◆ Open in browser
             </a>
             <p class="bp-tree-hint">
@@ -600,29 +660,27 @@ const tipMainDps = (): string => {
   overflow: hidden;
 }
 
-/* Header — small caps + Garamond title, no avatar */
+/* Header — class / ascendancy in display size + meta line */
 .bp-head {
   flex: none;
-  padding: 14px 18px 8px;
+  padding: 18px 22px 14px;
 }
 .bp-head__title {
-  font-family: var(--hand-display);
-  font-size: 22px;
-  font-weight: 700;
+  font-family: var(--hand);
+  font-size: 28px;
+  font-weight: var(--fw-bold);
   line-height: 1.1;
-  letter-spacing: 0.01em;
   color: var(--ink);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .bp-head__meta {
-  margin-top: 3px;
-  font-family: var(--label);
-  font-size: 10px;
-  letter-spacing: 0.10em;
-  text-transform: lowercase;
-  color: var(--ink-faint);
+  margin-top: 6px;
+  font-family: var(--hand);
+  font-size: 16px;
+  color: var(--ink-soft);
+  font-weight: var(--fw-regular);
 }
 
 /* Scrollable body */
@@ -630,39 +688,116 @@ const tipMainDps = (): string => {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
-  padding: 8px 18px 16px;
+  padding: 10px 22px 18px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 22px;
 }
 
 .bp-section { display: flex; flex-direction: column; }
 
-/* Section header — small caps + grow + right meta italic */
+/* Section header — small caps + grow + right meta regular */
 .bp-h {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  padding-bottom: 4px;
-  margin-bottom: 8px;
+  padding-bottom: 6px;
+  margin-bottom: 10px;
   border-bottom: 1px solid var(--paper-line);
   white-space: nowrap;
 }
 .bp-h__title {
   font-family: var(--label);
-  font-size: 10px;
+  font-size: var(--fs-caps);
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--ink-soft);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   white-space: nowrap;
 }
 .bp-h__grow { flex: 1; }
 .bp-h__meta {
   font-family: var(--hand);
-  font-size: 11px;
-  color: var(--ink-faint);
+  font-size: var(--fs-meta);
+  color: var(--ink-soft);
+  font-weight: var(--fw-regular);
   white-space: nowrap;
+}
+
+/* BIG-numbers grid — 2×2, used for vitals + resists */
+.bp-big-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px 18px;
+}
+.bp-big-tile,
+.bp-resist-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.bp-big-label {
+  font-family: var(--label);
+  font-size: var(--fs-caps);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  font-weight: var(--fw-semibold);
+}
+.bp-big-value {
+  font-family: var(--hand);
+  font-size: 26px;
+  font-weight: var(--fw-bold);
+  color: var(--ink);
+  line-height: 1;
+}
+.bp-big-tile--muted .bp-big-value {
+  color: var(--ink-faint);
+}
+.bp-resist-value-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.bp-resist-cap {
+  font-family: var(--hand);
+  font-size: var(--fs-body);
+  color: var(--ink-soft);
+}
+.bp-bar {
+  margin-top: 4px;
+  position: relative;
+  height: 3px;
+  background: var(--paper-shade);
+  border: 1px solid var(--paper-line);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.bp-bar-fill {
+  height: 100%;
+}
+.bp-bar-cap {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 1px;
+  background: var(--ink-soft);
+  opacity: 0.5;
+}
+
+/* Main skill — name 22px + meta 15px ink-soft */
+.bp-mainskill__name {
+  font-family: var(--hand);
+  font-size: 22px;
+  font-weight: var(--fw-semibold);
+  color: var(--ink);
+  line-height: 1.2;
+}
+.bp-mainskill__sub {
+  margin-top: 4px;
+  font-family: var(--hand);
+  font-size: 15px;
+  color: var(--ink-soft);
 }
 
 /* Leader-dot rows */

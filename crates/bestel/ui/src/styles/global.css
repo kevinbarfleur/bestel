@@ -66,44 +66,61 @@
   color: var(--amber);
 }
 
+/* Danger variant — for destructive tertiary actions (remove key, delete chat). */
+.link--danger {
+  color: var(--bad);
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-decoration-color: rgba(164, 72, 72, 0.55);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  transition: color var(--transition-fast);
+}
+.link--danger:hover {
+  text-decoration-style: solid;
+  color: var(--bad);
+  filter: brightness(1.15);
+}
+
 /* Small caps category label — used in margins, section heads, footer meta. */
 .label-caps {
   font-family: var(--label);
-  font-size: 10px;
+  font-size: var(--fs-caps);
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--ink-faint);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   white-space: nowrap;
 }
 
-/* Section header — small caps title + flex grow hairline + right meta italic */
+/* Section header — small caps title + flex grow hairline + right meta regular */
 .h-section {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  padding-bottom: 4px;
-  margin-bottom: 8px;
+  padding-bottom: 6px;
+  margin-bottom: 10px;
   border-bottom: 1px solid var(--paper-line);
   white-space: nowrap;
 }
 .h-section__title {
   font-family: var(--label);
-  font-size: 10px;
+  font-size: var(--fs-caps);
   letter-spacing: 0.18em;
   text-transform: uppercase;
   color: var(--ink-soft);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   white-space: nowrap;
 }
 .h-section__grow {
   flex: 1;
 }
 .h-section__meta {
-  font-family: var(--script);
-  font-size: 11px;
-  color: var(--ink-faint);
-  font-style: italic;
+  font-family: var(--hand);
+  font-size: var(--fs-meta);
+  color: var(--ink-soft);
+  font-weight: var(--fw-regular);
   white-space: nowrap;
 }
 
@@ -115,12 +132,10 @@
   gap: 6px;
 }
 .leader-row__k {
-  font-family: var(--label);
-  font-size: 10px;
-  letter-spacing: 0.10em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
-  font-weight: 500;
+  font-family: var(--hand);
+  font-size: var(--fs-meta);
+  color: var(--ink-soft);
+  font-weight: var(--fw-regular);
   flex-shrink: 0;
   white-space: nowrap;
 }
@@ -131,9 +146,9 @@
   transform: translateY(-3px);
 }
 .leader-row__v {
-  font-family: var(--hand-display);
-  font-size: 14px;
-  font-weight: 600;
+  font-family: var(--hand);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-semibold);
   color: var(--ink);
   flex: 0 0 auto;
   white-space: nowrap;
@@ -153,19 +168,19 @@
   opacity: 0.7;
 }
 
-/* Sketchy paper background — subtle grain + warm gradient pools */
+/* Subtle paper background — neutral grain pools (no warm tint). */
 .sketch-bg {
   background:
-    radial-gradient(circle at 20% 15%, rgba(175, 96, 37, 0.04), transparent 50%),
-    radial-gradient(circle at 80% 85%, rgba(120, 90, 60, 0.04), transparent 50%),
-    repeating-linear-gradient(0deg, transparent 0 31px, rgba(180, 170, 140, 0.06) 31px 32px),
+    radial-gradient(circle at 20% 15%, rgba(45, 43, 40, 0.03), transparent 50%),
+    radial-gradient(circle at 80% 85%, rgba(45, 43, 40, 0.03), transparent 50%),
+    repeating-linear-gradient(0deg, transparent 0 31px, rgba(60, 58, 54, 0.07) 31px 32px),
     var(--paper);
 }
 .theme-dark .sketch-bg {
   background:
-    radial-gradient(circle at 20% 15%, rgba(209, 138, 62, 0.05), transparent 50%),
-    radial-gradient(circle at 80% 85%, rgba(180, 140, 90, 0.05), transparent 50%),
-    repeating-linear-gradient(0deg, transparent 0 31px, rgba(120, 100, 70, 0.06) 31px 32px),
+    radial-gradient(circle at 20% 15%, rgba(236, 236, 234, 0.03), transparent 50%),
+    radial-gradient(circle at 80% 85%, rgba(236, 236, 234, 0.03), transparent 50%),
+    repeating-linear-gradient(0deg, transparent 0 31px, rgba(180, 180, 180, 0.05) 31px 32px),
     var(--paper);
 }
 

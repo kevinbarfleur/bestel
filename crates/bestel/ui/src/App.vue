@@ -12,6 +12,8 @@ import GemTooltip from './components/runic/GemTooltip.vue';
 import BuildPicker from './components/build/BuildPicker.vue';
 import ModelPicker from './components/build/ModelPicker.vue';
 import ChatPicker from './components/chat/ChatPicker.vue';
+import SettingsPicker from './components/settings/SettingsPicker.vue';
+import LinkViewerModal from './components/link-viewer/LinkViewerModal.vue';
 import { useTooltip } from './composables/useTooltip';
 import { useToastsStore } from './stores/toasts';
 import { useUiStore } from './stores/ui';
@@ -51,6 +53,14 @@ const chatOpen = computed({
     else ui.openChat();
   },
 });
+
+const settingsOpen = computed({
+  get: () => picker.value === 'settings',
+  set: (v: boolean) => {
+    if (!v) ui.close();
+    else ui.openSettings();
+  },
+});
 </script>
 
 <template>
@@ -63,6 +73,8 @@ const chatOpen = computed({
     <BuildPicker v-model="buildOpen" />
     <ModelPicker v-model="modelOpen" />
     <ChatPicker v-model="chatOpen" />
+    <SettingsPicker v-model="settingsOpen" />
+    <LinkViewerModal />
 
     <RunicTooltip
       :visible="tooltipState.visible"

@@ -7,6 +7,7 @@ import type {
   BuildEvent,
   DebugRunDto,
   DetectionDto,
+  KeyStatusDto,
   LlmDeltaEvent,
   ModelProfileDto,
   PobBuildDto,
@@ -33,6 +34,8 @@ export const getActiveBuild = (): Promise<PobBuildDto | null> => invoke('get_act
 export const setActiveBuild = (path: string): Promise<PobBuildDto> =>
   invoke('set_active_build', { path });
 export const clearActiveBuild = (): Promise<void> => invoke('clear_active_build');
+export const previewBuild = (path: string): Promise<PobBuildDto> =>
+  invoke('preview_build', { path });
 
 export const chatStart = (
   prompt: string,
@@ -47,12 +50,60 @@ export const chatReset = (): Promise<void> => invoke('chat_reset');
 
 export const openExternal = (url: string): Promise<void> => invoke('open_external', { url });
 
+/** Mount or refresh the in-app link viewer sub-webview at the given logical bounds. */
+export const openLinkModal = (
+  url: string,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+): Promise<void> => invoke('open_link_modal', { url, x, y, w, h });
+
+/** Re-position / resize the in-app link viewer (e.g. on window resize). */
+export const updateLinkModalBounds = (
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+): Promise<void> => invoke('update_link_modal_bounds', { x, y, w, h });
+
+/** Tear down the in-app link viewer. */
+export const closeLinkModal = (): Promise<void> => invoke('close_link_modal');
+
+/**
+ * Single entry-point for clicking a link in the chat / pickers.
+ * Consults `useSettingsStore.linkBehavior` and either opens the URL in the
+ * in-app overlay (default) or hands it to the OS's default browser.
+ *
+ * Lazy-imports the store so this module remains usable from anywhere in the
+ * app without circular deps.
+ */
+export async function openLink(url: string): Promise<void> {
+  if (!url) return;
+  // Lazy require to avoid circular imports between api/tauri and stores/.
+  const { useSettingsStore } = await import('../stores/settings');
+  const { useUiStore } = await import('../stores/ui');
+  const settings = useSettingsStore();
+  if (settings.linkBehavior === 'browser') {
+    await openExternal(url);
+    return;
+  }
+  // 'modal' — let the LinkViewerModal mount, it forwards bounds to backend.
+  useUiStore().openLinkViewer(url);
+}
+
 export const listDebugRuns = (): Promise<DebugRunDto[]> => invoke('list_debug_runs');
 export const getDebugRun = (id: string): Promise<DebugRunDto | null> =>
   invoke('get_debug_run', { id });
 export const deleteDebugRun = (id: string): Promise<void> =>
   invoke('delete_debug_run', { id });
 export const deleteAllDebugRuns = (): Promise<number> => invoke('delete_all_debug_runs');
+
+export const listApiKeys = (): Promise<KeyStatusDto[]> => invoke('list_api_keys');
+export const setApiKey = (envName: string, value: string): Promise<void> =>
+  invoke('set_api_key', { envName, value });
+export const deleteApiKey = (envName: string): Promise<void> =>
+  invoke('delete_api_key', { envName });
 
 export const onLlmDelta = (cb: (e: LlmDeltaEvent) => void): Promise<UnlistenFn> =>
   listen<LlmDeltaEvent>('llm:delta', (ev) => cb(ev.payload));

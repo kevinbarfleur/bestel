@@ -1,3 +1,5 @@
-/* Almanach typography — EB Garamond (primary), Kalam (script accent), Caveat (annotations) */
+/* Almanach typography — EB Garamond (primary), Kalam (script accent), Caveat (annotations),
+ * JetBrains Mono (technical values: API keys, prices, model IDs).
+ */
 
-@import url('https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Kalam:wght@300;400;700&family=Caveat:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500&family=Kalam:wght@300;400;700&family=Caveat:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');

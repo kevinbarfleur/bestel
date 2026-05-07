@@ -69,24 +69,60 @@ pub struct ModelProfile {
     /// Approximate cost in USD per million tokens (input, output) — for
     /// API providers only. `None` for subscription / CLI / local flows.
     pub cost_per_mtok: Option<(f32, f32)>,
+    /// Override base URL for the underlying client. Set for Anthropic-compatible
+    /// endpoints like DeepSeek's `https://api.deepseek.com/anthropic`. `None`
+    /// means use the provider's canonical endpoint.
+    pub base_url: Option<String>,
+    /// Override env-var name for the API key. Set for non-Anthropic endpoints
+    /// (e.g. `DEEPSEEK_API_KEY`). `None` means use the provider's default
+    /// (`ANTHROPIC_API_KEY` for the Anthropic client).
+    pub api_key_env: Option<String>,
+    /// Optional link to the official model / product info page. Surfaced in
+    /// the picker as a "learn more" hyperlink. Validated by hand at
+    /// authoring time; consumers should still treat as untrusted user-facing
+    /// data.
+    pub info_url: Option<String>,
+    /// Optional link to where the user can obtain or manage the API key for
+    /// this profile. `None` for subscription / CLI / local profiles where
+    /// no key is required.
+    pub api_key_url: Option<String>,
+    /// Whether the model accepts image content blocks. Set to `false` for
+    /// text-only providers (DeepSeek V3.2, most Ollama models) so the
+    /// composer can warn before the user attaches a screenshot.
+    pub vision_capable: bool,
 }
 
 const DYNAMIC_OLLAMA_PREFIX: &str = "ollama:";
+
+// Validated 2026-05-06 — fetched live before pinning. Anthropic's old
+// console.anthropic.com host now 301/302-redirects to platform.claude.com.
+const ANTHROPIC_MODELS_URL: &str = "https://platform.claude.com/docs/en/docs/about-claude/models";
+const ANTHROPIC_KEYS_URL: &str = "https://platform.claude.com/settings/keys";
+const DEEPSEEK_DOCS_URL: &str = "https://api-docs.deepseek.com/";
+const DEEPSEEK_KEYS_URL: &str = "https://platform.deepseek.com/apikeys";
+const CODEX_CLI_DOCS_URL: &str = "https://developers.openai.com/codex/cli";
+const CLAUDE_CLI_DOCS_URL: &str = "https://code.claude.com/docs/en/overview";
+const OLLAMA_LIBRARY_URL: &str = "https://ollama.com/library";
 
 /// All cloud profiles (Anthropic + Codex + Claude CLI). Pure data, sync.
 /// Ollama profiles are NOT here — they come from [`list_profiles_with_local`].
 pub fn cloud_profiles() -> Vec<ModelProfile> {
     vec![
         ModelProfile {
-            id: "anthropic-sonnet-4-5".into(),
+            id: "deepseek-v3-2".into(),
             provider: ProviderKind::Anthropic,
-            model_id: "claude-sonnet-4-5-20250929".into(),
-            display_name: "Claude Sonnet 4.5".into(),
+            model_id: "deepseek-chat".into(),
+            display_name: "DeepSeek V3.2".into(),
             description:
-                "Anthropic API, balanced research model. Strong tool-calling and synthesis. Default for the Anthropic path.".into(),
+                "DeepSeek V3.2 via Anthropic-compatible endpoint. ~10x cheaper than Haiku, strong reasoning and tool-calling. Requires DEEPSEEK_API_KEY.".into(),
             speed: SpeedTier::Balanced,
-            cost: CostTier::Mid,
-            cost_per_mtok: Some((3.0, 15.0)),
+            cost: CostTier::Cheap,
+            cost_per_mtok: Some((0.28, 0.42)),
+            base_url: Some("https://api.deepseek.com/anthropic".into()),
+            api_key_env: Some("DEEPSEEK_API_KEY".into()),
+            info_url: Some(DEEPSEEK_DOCS_URL.into()),
+            api_key_url: Some(DEEPSEEK_KEYS_URL.into()),
+            vision_capable: false,
         },
         ModelProfile {
             id: "anthropic-haiku-4-5".into(),
@@ -94,10 +130,31 @@ pub fn cloud_profiles() -> Vec<ModelProfile> {
             model_id: "claude-haiku-4-5-20251001".into(),
             display_name: "Claude Haiku 4.5".into(),
             description:
-                "Cheapest Anthropic option, ~3x faster than Sonnet. Lower task completion on multi-step research; good for follow-ups, weak on cold synthesis.".into(),
+                "Cheapest Anthropic option, ~3x faster than Sonnet. ~90% Sonnet quality at 1/3 the price. Default for most chats.".into(),
             speed: SpeedTier::Fast,
             cost: CostTier::Cheap,
             cost_per_mtok: Some((1.0, 5.0)),
+            base_url: None,
+            api_key_env: Some("ANTHROPIC_API_KEY".into()),
+            info_url: Some(ANTHROPIC_MODELS_URL.into()),
+            api_key_url: Some(ANTHROPIC_KEYS_URL.into()),
+            vision_capable: true,
+        },
+        ModelProfile {
+            id: "anthropic-sonnet-4-5".into(),
+            provider: ProviderKind::Anthropic,
+            model_id: "claude-sonnet-4-5-20250929".into(),
+            display_name: "Claude Sonnet 4.5".into(),
+            description:
+                "Anthropic API, balanced research model. Strong tool-calling and synthesis. Use for deeper questions where Haiku falls short.".into(),
+            speed: SpeedTier::Balanced,
+            cost: CostTier::Mid,
+            cost_per_mtok: Some((3.0, 15.0)),
+            base_url: None,
+            api_key_env: Some("ANTHROPIC_API_KEY".into()),
+            info_url: Some(ANTHROPIC_MODELS_URL.into()),
+            api_key_url: Some(ANTHROPIC_KEYS_URL.into()),
+            vision_capable: true,
         },
         ModelProfile {
             id: "anthropic-opus-4-7".into(),
@@ -109,6 +166,11 @@ pub fn cloud_profiles() -> Vec<ModelProfile> {
             speed: SpeedTier::Heavy,
             cost: CostTier::Premium,
             cost_per_mtok: Some((5.0, 25.0)),
+            base_url: None,
+            api_key_env: Some("ANTHROPIC_API_KEY".into()),
+            info_url: Some(ANTHROPIC_MODELS_URL.into()),
+            api_key_url: Some(ANTHROPIC_KEYS_URL.into()),
+            vision_capable: true,
         },
         ModelProfile {
             id: "codex-default".into(),
@@ -120,6 +182,11 @@ pub fn cloud_profiles() -> Vec<ModelProfile> {
             speed: SpeedTier::Balanced,
             cost: CostTier::Subscription,
             cost_per_mtok: None,
+            base_url: None,
+            api_key_env: None,
+            info_url: Some(CODEX_CLI_DOCS_URL.into()),
+            api_key_url: None,
+            vision_capable: true,
         },
         ModelProfile {
             id: "codex-gpt-5-codex".into(),
@@ -131,6 +198,11 @@ pub fn cloud_profiles() -> Vec<ModelProfile> {
             speed: SpeedTier::Balanced,
             cost: CostTier::Subscription,
             cost_per_mtok: None,
+            base_url: None,
+            api_key_env: None,
+            info_url: Some(CODEX_CLI_DOCS_URL.into()),
+            api_key_url: None,
+            vision_capable: true,
         },
         ModelProfile {
             id: "claude-cli".into(),
@@ -142,14 +214,24 @@ pub fn cloud_profiles() -> Vec<ModelProfile> {
             speed: SpeedTier::Balanced,
             cost: CostTier::Subscription,
             cost_per_mtok: None,
+            base_url: None,
+            api_key_env: None,
+            info_url: Some(CLAUDE_CLI_DOCS_URL.into()),
+            api_key_url: None,
+            vision_capable: true,
         },
     ]
 }
 
-/// Returns the first cloud profile (Anthropic Sonnet 4.5). Used as a sane
-/// fallback when the persisted profile id can't be resolved.
+/// Returns Anthropic Haiku 4.5 — cheap (~$1/$5 per Mtok), fast, ~90% of
+/// Sonnet quality. The safe default that works as long as ANTHROPIC_API_KEY
+/// is set. DeepSeek would be cheaper but requires a separate key that
+/// most users won't have on first launch.
 pub fn default_profile() -> ModelProfile {
-    cloud_profiles().into_iter().next().expect("cloud profiles non-empty")
+    cloud_profiles()
+        .into_iter()
+        .find(|p| p.id == "anthropic-haiku-4-5")
+        .expect("haiku profile present")
 }
 
 /// Lookup a profile by id without probing Ollama. For dynamic Ollama ids
@@ -180,6 +262,11 @@ fn stub_ollama_profile(tag: &str) -> ModelProfile {
         speed: SpeedTier::Balanced,
         cost: CostTier::Free,
         cost_per_mtok: None,
+        base_url: None,
+        api_key_env: None,
+        info_url: Some(ollama_family_url(tag)),
+        api_key_url: None,
+        vision_capable: ollama_tag_is_visual(tag),
     }
 }
 
@@ -191,6 +278,8 @@ pub fn build_ollama_profile(info: &OllamaModelInfo) -> ModelProfile {
     let display_name = humanize_ollama_tag(&tag, Some(info));
     let description = describe_ollama_info(info);
     let speed = classify_ollama_speed(info);
+    let info_url = ollama_family_url(&tag);
+    let vision_capable = ollama_tag_is_visual(&tag);
     ModelProfile {
         id: format!("{DYNAMIC_OLLAMA_PREFIX}{tag}"),
         provider: ProviderKind::Ollama,
@@ -200,7 +289,38 @@ pub fn build_ollama_profile(info: &OllamaModelInfo) -> ModelProfile {
         speed,
         cost: CostTier::Free,
         cost_per_mtok: None,
+        base_url: None,
+        api_key_env: None,
+        info_url: Some(info_url),
+        api_key_url: None,
+        vision_capable,
     }
+}
+
+/// Detects vision-capable Ollama tags by family naming convention. Names
+/// containing `vl` (vision-language), `vision`, or `llava` are flagged.
+/// Heuristic — we don't fetch the full manifest. Defaults to `false` so
+/// the composer warns rather than silently sending an unsupported image.
+fn ollama_tag_is_visual(tag: &str) -> bool {
+    let lower = tag.to_ascii_lowercase();
+    lower.contains("-vl")
+        || lower.contains("vl:")
+        || lower.contains("-vision")
+        || lower.contains("llava")
+        || lower.contains("bakllava")
+        || lower.contains("moondream")
+}
+
+/// Builds the canonical Ollama library URL for a model tag. The Ollama
+/// library shows pages by family, not by tag, so `qwen3:8b` maps to
+/// `https://ollama.com/library/qwen3`. Falls back to the library root if
+/// the tag has no family separator.
+fn ollama_family_url(tag: &str) -> String {
+    let family = tag.split(':').next().unwrap_or("").trim();
+    if family.is_empty() {
+        return OLLAMA_LIBRARY_URL.to_string();
+    }
+    format!("{OLLAMA_LIBRARY_URL}/{family}")
 }
 
 fn humanize_ollama_tag(tag: &str, info: Option<&OllamaModelInfo>) -> String {
@@ -376,8 +496,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_is_first_cloud_profile() {
-        assert_eq!(default_profile().id, cloud_profiles()[0].id);
+    fn default_is_haiku() {
+        assert_eq!(default_profile().id, "anthropic-haiku-4-5");
+    }
+
+    #[test]
+    fn deepseek_profile_has_endpoint_override() {
+        let p = find_profile("deepseek-v3-2").expect("deepseek profile present");
+        assert_eq!(p.api_key_env.as_deref(), Some("DEEPSEEK_API_KEY"));
+        assert_eq!(
+            p.base_url.as_deref(),
+            Some("https://api.deepseek.com/anthropic")
+        );
     }
 
     #[test]

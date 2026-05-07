@@ -8,6 +8,7 @@ import { useSettingsStore } from '../../stores/settings';
 import { useToastsStore } from '../../stores/toasts';
 import type { AttachmentDto } from '../../api/types';
 import AttachmentChip from './artifacts/AttachmentChip.vue';
+import RunicButton from '../runic/RunicButton.vue';
 
 const chat = useChatStore();
 const buildStore = useBuildStore();
@@ -59,6 +60,18 @@ watch(isStreaming, async (s) => {
 
 const send = async () => {
   if (!canSend.value) return;
+  if (
+    activeModel.value &&
+    !activeModel.value.vision_capable &&
+    attachments.value.some((a) => a.mime.startsWith('image/'))
+  ) {
+    toasts.push({
+      variant: 'error',
+      title: 'Image attached on text-only model',
+      body: `Remove the image or switch to a vision-capable model (Sonnet, Haiku, Opus, Claude Code, Codex).`,
+    });
+    return;
+  }
   const text = draft.value;
   const atts = attachments.value;
   draft.value = '';
@@ -114,10 +127,13 @@ const guessMime = (file: File): string => {
   return 'application/octet-stream';
 };
 
+const isImageMime = (mime: string) => mime.startsWith('image/');
+
 const onFileChange = async (e: Event) => {
   const input = e.target as HTMLInputElement;
   if (!input.files || input.files.length === 0) return;
   const incoming = Array.from(input.files);
+  let blockedImages = 0;
   for (const f of incoming) {
     if (attachments.value.length >= MAX_FILES) {
       toasts.push({
@@ -135,11 +151,16 @@ const onFileChange = async (e: Event) => {
       });
       continue;
     }
+    const mime = guessMime(f);
+    if (isImageMime(mime) && activeModel.value && !activeModel.value.vision_capable) {
+      blockedImages += 1;
+      continue;
+    }
     try {
       const data_base64 = await fileToBase64(f);
       attachments.value.push({
         name: f.name,
-        mime: guessMime(f),
+        mime,
         data_base64,
       });
     } catch {
@@ -147,6 +168,13 @@ const onFileChange = async (e: Event) => {
     }
   }
   input.value = '';
+  if (blockedImages > 0 && activeModel.value) {
+    toasts.push({
+      variant: 'warning',
+      title: 'Model is text-only',
+      body: `${activeModel.value.display_name} can't read images. Switch to Sonnet, Haiku or Opus to attach screenshots.`,
+    });
+  }
 };
 
 const removeAttachment = (idx: number) => {
@@ -217,27 +245,30 @@ onMounted(() => {
         <span class="composer__grow" />
         <span class="composer__hint">⌘↵</span>
 
-        <button
+        <RunicButton
           v-if="isStreaming"
-          type="button"
-          class="composer__send composer__send--stop"
-          aria-label="Stop"
+          variant="primary"
+          no-runes
+          size="sm"
+          danger
+          icon="close"
+          kbd="esc"
           @click="cancel"
         >
-          stop
-          <span class="composer__send-kbd">esc</span>
-        </button>
-        <button
+          Stop
+        </RunicButton>
+        <RunicButton
           v-else
-          type="button"
-          class="composer__send"
+          variant="primary"
+          no-runes
+          size="sm"
+          icon="arrow"
+          kbd="⏎"
           :disabled="!canSend"
-          aria-label="Send"
           @click="send"
         >
-          send
-          <span class="composer__send-kbd">↵</span>
-        </button>
+          Send
+        </RunicButton>
       </div>
     </div>
   </div>
@@ -252,13 +283,17 @@ onMounted(() => {
 }
 
 .composer {
-  background: var(--paper-shade);
-  border: 1px solid var(--paper-line);
-  border-radius: 10px;
-  padding: 12px 14px;
+  background: var(--paper);
+  border: 1px solid var(--ink-soft);
+  border-radius: 6px;
+  padding: 14px 16px;
   display: flex;
   flex-direction: column;
   gap: 10px;
+  transition: border-color 0.15s ease;
+}
+.composer:focus-within {
+  border-color: var(--amber);
 }
 
 .composer__chips {
@@ -268,7 +303,20 @@ onMounted(() => {
   flex-wrap: wrap;
 }
 
-.composer__chip-build { cursor: default; }
+/* Build chip — amber dashed border, amber glow background */
+.composer__chip-build {
+  cursor: default;
+  border: 1px dashed var(--amber);
+  background: var(--amber-glow);
+  color: var(--ink-soft);
+  font-family: var(--hand);
+  font-size: var(--fs-caps);
+  padding: 4px 10px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
 .composer__chip-rune {
   color: var(--amber);
   margin-right: 2px;
@@ -309,17 +357,20 @@ onMounted(() => {
   outline: none;
   resize: none;
   font-family: var(--hand);
-  font-size: 14px;
+  font-size: 17px;
   color: var(--ink);
   line-height: 1.5;
   padding: 0;
-  min-height: 28px;
-  max-height: 220px;
+  min-height: 30px;
+  max-height: 240px;
   overflow-y: auto;
+  font-weight: var(--fw-regular);
 }
 .composer__textarea::placeholder {
   color: var(--ink-faint);
+  font-family: var(--hand);
   font-style: normal;
+  font-weight: var(--fw-regular);
 }
 .composer__textarea:disabled { color: var(--ink-faint); cursor: not-allowed; }
 
@@ -332,48 +383,71 @@ onMounted(() => {
 }
 .composer__model {
   font-family: var(--label);
-  font-size: 9px;
-  letter-spacing: 0.10em;
+  font-size: var(--fs-caps);
+  letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--ink-faint);
+  color: var(--ink-soft);
+  font-weight: var(--fw-semibold);
 }
 .composer__grow { flex: 1; }
 .composer__hint {
-  font-family: var(--script);
-  font-size: 11px;
-  color: var(--ink-ghost);
+  font-family: var(--label);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  color: var(--ink-faint);
+  padding: 1px 5px;
+  border: 1px solid var(--ink-faint);
+  border-radius: 3px;
 }
 
+/* Send / stop buttons — solid-ink primary, irregular radius. */
 .composer__send {
-  border: 0;
+  border: 1.5px solid var(--ink);
   background: var(--ink);
   color: var(--paper);
-  padding: 6px 14px;
-  border-radius: 6px;
+  padding: 8px 16px;
+  border-radius: 4px 6px 5px 7px / 6px 5px 7px 4px;
   font-family: var(--hand);
-  font-size: 13px;
-  font-weight: 500;
+  font-size: var(--fs-body);
+  font-weight: var(--fw-semibold);
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  transition: opacity 0.15s ease, background 0.15s ease;
+  gap: 8px;
+  transition: opacity 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+  letter-spacing: 0.02em;
 }
 .composer__send:disabled {
-  opacity: 0.4;
+  opacity: 0.5;
   cursor: not-allowed;
+  background: transparent;
+  color: var(--ink-faint);
+  border-color: var(--ink-ghost);
 }
 .composer__send:not(:disabled):hover {
-  background: #1a1a18;
+  background: var(--amber);
+  border-color: var(--amber);
 }
 
 .composer__send--stop {
   background: var(--bad);
+  border-color: var(--bad);
 }
-.composer__send--stop:hover { background: #8a3434; }
+.composer__send--stop:hover { background: #8a3434; border-color: #8a3434; }
 
 .composer__send-kbd {
-  font-size: 11px;
-  opacity: 0.6;
+  font-family: var(--label);
+  font-size: var(--fs-micro);
+  padding: 1px 5px;
+  border: 1px solid rgba(244, 241, 234, 0.32);
+  border-radius: 3px;
+  background: rgba(244, 241, 234, 0.10);
+  opacity: 0.85;
+  letter-spacing: 0.04em;
+}
+.composer__send:disabled .composer__send-kbd {
+  opacity: 0.5;
+  border-color: var(--ink-ghost);
+  background: transparent;
 }
 </style>

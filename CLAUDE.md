@@ -36,6 +36,10 @@ Desktop AI companion for Path of Exile 1 and 2. Persona: **Bestel**, chronicler 
 
 `crates/bestel-core/CORE_KNOWLEDGE.md` is a distilled always-loaded subset of the references; it is concatenated to `SYSTEM_PROMPT.md` at compile time and shipped to every LLM call.
 
+## Test prompts (real user voice)
+
+`docs/test_prompts/real_user_prompts.toml` is the **single source of truth** for evaluation prompts. ~30 prompts mined from real Reddit / official forum / Maxroll comments, voice-preserved (typos, slang, missing punctuation). Schema and methodology in `docs/test_prompts/README.md`. Every battery runner (current and future) loads from this file — don't hard-code prompts in Rust source.
+
 ## Build / dev workflow
 
 - `cargo build --release -p bestel -j 1` for release.

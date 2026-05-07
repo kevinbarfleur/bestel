@@ -15,8 +15,8 @@ use bestel_core::pob::parser::{parse_file, parse_summary};
 use std::sync::Mutex;
 
 use crate::dto::{
-    summary_dto_from_build, AttachmentDto, BuildEvent, DeltaEvent, DetectionDto, ModelProfileDto,
-    PobBuildDto, PobBuildSummaryDto, ProviderStatusEvent,
+    summary_dto_from_build, AttachmentDto, BuildEvent, DeltaEvent, DetectionDto, KeyStatusDto,
+    ModelProfileDto, PobBuildDto, PobBuildSummaryDto, ProviderStatusEvent,
 };
 use crate::events::{pump_deltas, LLM_DELTA, POB_BUILD, POB_CLEARED, PROVIDER_STATUS};
 use crate::state::AppState;
@@ -118,6 +118,16 @@ pub async fn clear_active_build(
     state.build_ctx.clear();
     let _ = window.emit(POB_CLEARED, ());
     Ok(())
+}
+
+/// Parse a PoB XML for the picker's detail pane *without* changing the
+/// active build context. Used to render vitals/resists for hovered/selected
+/// items in the build picker before the user commits.
+#[tauri::command]
+pub async fn preview_build(path: String) -> Result<PobBuildDto, String> {
+    let pb = PathBuf::from(&path);
+    let build = parse_file(&pb).map_err(|e| format!("parse {}: {e}", pb.display()))?;
+    Ok(PobBuildDto::from(&build))
 }
 
 #[tauri::command]
@@ -320,5 +330,131 @@ pub async fn open_external(url: String, app: AppHandle) -> Result<(), String> {
     app.opener()
         .open_url(url, None::<&str>)
         .map_err(|e| e.to_string())
+}
+
+/// Label of the in-app link viewer sub-webview. Single instance — opening a
+/// new URL while one is already mounted reuses the slot.
+const LINK_MODAL_LABEL: &str = "link-modal";
+
+/// Spawn (or refresh) a child webview overlay positioned over the main
+/// window at the given logical bounds. The frontend measures the modal
+/// frame and sends `(x, y, w, h)` so the native webview slots into the
+/// reserved viewport.
+#[tauri::command]
+pub async fn open_link_modal(
+    url: String,
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+    app: AppHandle,
+) -> Result<(), String> {
+    let parsed = url::Url::parse(&url).map_err(|e| format!("invalid url: {e}"))?;
+
+    // If a previous viewer is still mounted, just steer it to the new URL +
+    // bounds — keeps focus, avoids the WebView2 boot flash.
+    if let Some(existing) = app.get_webview(LINK_MODAL_LABEL) {
+        existing
+            .navigate(parsed)
+            .map_err(|e| format!("navigate: {e}"))?;
+        existing
+            .set_position(tauri::LogicalPosition::new(x, y))
+            .map_err(|e| format!("position: {e}"))?;
+        existing
+            .set_size(tauri::LogicalSize::new(w, h))
+            .map_err(|e| format!("size: {e}"))?;
+        return Ok(());
+    }
+
+    let main = app
+        .get_window("main")
+        .ok_or_else(|| "main window not found".to_string())?;
+
+    let builder =
+        tauri::webview::WebviewBuilder::new(LINK_MODAL_LABEL, tauri::WebviewUrl::External(parsed));
+
+    main.add_child(
+        builder,
+        tauri::LogicalPosition::new(x, y),
+        tauri::LogicalSize::new(w, h),
+    )
+    .map_err(|e| format!("create webview: {e}"))?;
+
+    Ok(())
+}
+
+/// Move/resize the running viewer (called by the frontend on window resize
+/// or when the modal frame's bounding rect changes).
+#[tauri::command]
+pub async fn update_link_modal_bounds(
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+    app: AppHandle,
+) -> Result<(), String> {
+    if let Some(wv) = app.get_webview(LINK_MODAL_LABEL) {
+        wv.set_position(tauri::LogicalPosition::new(x, y))
+            .map_err(|e| format!("position: {e}"))?;
+        wv.set_size(tauri::LogicalSize::new(w, h))
+            .map_err(|e| format!("size: {e}"))?;
+    }
+    Ok(())
+}
+
+/// Tear down the link viewer.
+#[tauri::command]
+pub async fn close_link_modal(app: AppHandle) -> Result<(), String> {
+    if let Some(wv) = app.get_webview(LINK_MODAL_LABEL) {
+        wv.close().map_err(|e| format!("close: {e}"))?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn list_api_keys() -> Vec<KeyStatusDto> {
+    let keys = bestel_core::llm::keys::load_keys();
+    bestel_core::llm::keys::ALLOWED_KEYS
+        .iter()
+        .map(|name| {
+            // Disk wins for the picker preview; env-only keys (set externally,
+            // not via the UI) still show as `set` because the probe in
+            // `detect.rs` already covers that case via std::env::var.
+            let stored = keys.get(*name);
+            let env_set = std::env::var(name).is_ok();
+            let set = stored.is_some() || env_set;
+            let masked_preview = stored
+                .and_then(|v| bestel_core::llm::keys::mask_preview(v))
+                .or_else(|| {
+                    if env_set {
+                        // Don't echo OS-environment values into the UI; we
+                        // mark them set without preview, so the user can't
+                        // accidentally lift them via DevTools / IPC logs.
+                        Some("(from environment)".to_string())
+                    } else {
+                        None
+                    }
+                });
+            KeyStatusDto {
+                env_name: (*name).to_string(),
+                set,
+                masked_preview,
+            }
+        })
+        .collect()
+}
+
+#[tauri::command]
+pub async fn set_api_key(env_name: String, value: String) -> Result<(), String> {
+    bestel_core::llm::keys::save_key(&env_name, &value).map_err(|e| e.to_string())?;
+    std::env::set_var(&env_name, value.trim());
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn delete_api_key(env_name: String) -> Result<(), String> {
+    bestel_core::llm::keys::delete_key(&env_name).map_err(|e| e.to_string())?;
+    std::env::remove_var(&env_name);
+    Ok(())
 }
 

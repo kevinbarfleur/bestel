@@ -2,7 +2,7 @@ import { defineStore } from 'pinia';
 import { computed, ref, watch } from 'vue';
 
 import { chatCancel, chatReset, chatStart } from '../api/tauri';
-import type { AttachmentDto } from '../api/types';
+import type { AttachmentDto, UsageStats } from '../api/types';
 import { useChatHistoryStore, type SavedChat } from './chatHistory';
 import { useBuildStore } from './build';
 
@@ -43,6 +43,9 @@ export interface ChatMessageVm {
   status: MessageStatus;
   sessionId: number | null;
   errorMessage: string | null;
+  /** Token / cost telemetry for this assistant turn. Populated when the
+   * provider emits an `LlmDelta::Usage` (Anthropic + DeepSeek today). */
+  usage?: UsageStats;
 }
 
 const segId = () => `s_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -167,6 +170,22 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  /** Lookup helper used by useStreaming to read a completed tool's output
+   *  (e.g. to promote `show_in_panel` results to the right adaptive panel). */
+  function findToolSegment(id: string): ToolSegment | null {
+    const a = currentAssistant.value;
+    if (!a) return null;
+    return (
+      a.segments.find((s): s is ToolSegment => s.kind === 'tool' && s.id === id) ??
+      null
+    );
+  }
+
+  function setUsage(stats: UsageStats) {
+    const a = currentAssistant.value;
+    if (a) a.usage = stats;
+  }
+
   function setError(message: string) {
     const a = currentAssistant.value;
     if (a) {
@@ -278,6 +297,8 @@ export const useChatStore = defineStore('chat', () => {
     toolBegin,
     toolOutput,
     toolEnd,
+    findToolSegment,
+    setUsage,
     setError,
     setCompleted,
     setCancelled,

@@ -8,6 +8,7 @@ import { useBuildStore } from '../../stores/build';
 import { useChatHistoryStore } from '../../stores/chatHistory';
 import { useSettingsStore } from '../../stores/settings';
 import { useUiStore } from '../../stores/ui';
+import RunicIcon from '../runic/RunicIcon.vue';
 
 const buildStore = useBuildStore();
 const chatHistory = useChatHistoryStore();
@@ -15,7 +16,7 @@ const settings = useSettingsStore();
 const ui = useUiStore();
 
 const { current: currentBuild } = storeToRefs(buildStore);
-const { activeModel, theme } = storeToRefs(settings);
+const { activeModel } = storeToRefs(settings);
 const { activeId: activeChatId } = storeToRefs(chatHistory);
 
 const isMaximized = ref(false);
@@ -40,19 +41,19 @@ const onClose = () => windowClose();
 const buildName = computed(() => {
   const c = currentBuild.value;
   if (!c) return null;
-  const cls = c.class ?? '';
-  const asc = c.ascendancy ?? '';
-  return asc ? `${cls} · ${asc}` : cls || 'Build';
+  return c.class ?? 'Build';
 });
 
-const buildLevel = computed(() => {
+const buildSub = computed(() => {
   const c = currentBuild.value;
-  if (!c?.level) return null;
-  return `lvl ${c.level}`;
+  if (!c) return null;
+  const parts: string[] = [];
+  if (c.ascendancy) parts.push(c.ascendancy);
+  if (c.level) parts.push(`${c.level}`);
+  return parts.length ? parts.join(' · ') : null;
 });
 
-const modelLabel = computed(() => activeModel.value?.display_name ?? 'model');
-const themeLabel = computed(() => (theme.value === 'dark' ? 'dark' : 'light'));
+const modelLabel = computed(() => activeModel.value?.display_name ?? 'pick a model');
 const isDev = import.meta.env.DEV;
 
 const chatLabel = computed(() => {
@@ -60,17 +61,16 @@ const chatLabel = computed(() => {
   const c = chatHistory.findActive();
   if (!c) return 'New chat';
   const t = c.title;
-  return t.length > 28 ? `${t.slice(0, 27)}…` : t;
+  return t.length > 32 ? `${t.slice(0, 31)}…` : t;
 });
 
-const onToggleTheme = () => settings.toggleTheme();
 </script>
 
 <template>
   <header class="topbar">
     <!-- Logo -->
     <div class="topbar__logo">
-      <div class="topbar__brand">
+      <div class="topbar__brand" aria-hidden="true">
         <span class="topbar__brand-mark">B</span>
       </div>
       <span class="topbar__brand-name">Bestel</span>
@@ -78,69 +78,70 @@ const onToggleTheme = () => settings.toggleTheme();
 
     <span class="topbar__hairline" aria-hidden="true" />
 
-    <!-- Build picker — pure typography, opens BuildPicker -->
+    <!-- BUILD pill — amber bordered, opens BuildPicker -->
     <button
       type="button"
-      class="topbar__picker"
+      class="topbar__pill topbar__pill--amber"
+      :class="{ 'topbar__pill--empty': !currentBuild }"
       :title="currentBuild?.file_name ?? 'Load build'"
       @click="ui.openBuild()"
     >
-      <span class="topbar__picker-label">build</span>
+      <span class="topbar__pill-label">build</span>
       <template v-if="buildName">
-        <span class="topbar__picker-value">{{ buildName }}</span>
-        <span v-if="buildLevel" class="topbar__picker-meta">· {{ buildLevel }}</span>
+        <span class="topbar__pill-value">{{ buildName }}</span>
+        <span v-if="buildSub" class="topbar__pill-sub">· {{ buildSub }}</span>
       </template>
-      <span v-else class="topbar__picker-value topbar__picker-value--empty">Load build</span>
-      <span class="topbar__picker-caret">▾</span>
+      <span v-else class="topbar__pill-value topbar__pill-value--empty">Load build</span>
+      <span class="topbar__pill-caret">▾</span>
     </button>
 
-    <!-- Drag region -->
+    <!-- Drag region — window move -->
     <div class="topbar__drag" data-tauri-drag-region />
 
-    <!-- Chat history picker -->
+    <!-- CHAT pill -->
     <button
       type="button"
-      class="topbar__picker"
+      class="topbar__pill"
       title="Browse saved chats"
       @click="ui.openChat()"
     >
-      <span class="topbar__picker-label">chat</span>
-      <span class="topbar__picker-value topbar__picker-value--sm">{{ chatLabel }}</span>
-      <span class="topbar__picker-caret">▾</span>
+      <span class="topbar__pill-label">chat</span>
+      <span class="topbar__pill-value">{{ chatLabel }}</span>
+      <span class="topbar__pill-caret">▾</span>
     </button>
 
-    <!-- Model picker -->
+    <!-- MODEL pill -->
     <button
       type="button"
-      class="topbar__picker"
+      class="topbar__pill"
       :title="`Model: ${modelLabel}`"
       @click="ui.openModel()"
     >
-      <span class="topbar__picker-label">model</span>
-      <span class="topbar__picker-value topbar__picker-value--sm">{{ modelLabel }}</span>
-      <span class="topbar__picker-caret">▾</span>
+      <span class="topbar__pill-label">model</span>
+      <span class="topbar__pill-value">{{ modelLabel }}</span>
+      <span class="topbar__pill-caret">▾</span>
     </button>
 
-    <!-- Theme toggle -->
+    <!-- Settings — opens the SettingsPicker (theme is now managed there) -->
     <button
       type="button"
-      class="topbar__picker topbar__theme"
-      :title="`Theme: ${themeLabel}`"
-      @click="onToggleTheme"
+      class="topbar__theme-chip"
+      title="Settings"
+      aria-label="Open settings"
+      @click="ui.openSettings()"
     >
-      <span class="topbar__picker-label">theme</span>
-      <span class="topbar__picker-value topbar__picker-value--sm">{{ themeLabel }}</span>
+      <RunicIcon name="gear" :size="16" />
     </button>
 
     <!-- Debug entry (dev mode only) -->
     <router-link
       v-if="isDev"
       to="/debug"
-      class="topbar__picker topbar__debug"
+      class="topbar__pill topbar__pill--ghost"
       title="Debug · chat history (dev only)"
     >
-      <span class="topbar__picker-label">debug</span>
-      <span class="topbar__picker-value topbar__picker-value--sm">runs</span>
+      <span class="topbar__pill-label">debug</span>
+      <span class="topbar__pill-value">runs</span>
     </router-link>
 
     <!-- Window controls -->
@@ -161,10 +162,10 @@ const onToggleTheme = () => settings.toggleTheme();
 
 <style scoped>
 .topbar {
-  height: 46px;
+  height: 52px;
   display: flex;
   align-items: center;
-  gap: 18px;
+  gap: 14px;
   padding: 0 0 0 18px;
   border-bottom: 1px solid var(--paper-line);
   background: var(--paper);
@@ -176,89 +177,120 @@ const onToggleTheme = () => settings.toggleTheme();
 .topbar__logo {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   -webkit-app-region: no-drag;
   flex-shrink: 0;
 }
 .topbar__brand {
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   transform: rotate(45deg);
-  border: 1.2px solid var(--amber);
+  border: 1.4px solid var(--amber);
   display: flex;
   align-items: center;
   justify-content: center;
 }
 .topbar__brand-mark {
   transform: rotate(-45deg);
-  font-family: var(--hand-display);
-  font-size: 11px;
-  font-weight: 700;
+  font-family: var(--hand);
+  font-size: 12px;
+  font-weight: var(--fw-bold);
   color: var(--amber);
 }
 .topbar__brand-name {
-  font-family: var(--hand-display);
-  font-size: 16px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
+  font-family: var(--hand);
+  font-size: 20px;
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.02em;
   color: var(--ink);
 }
 
-/* Hairline divider between logo and pickers */
+/* Hairline divider between logo and pills */
 .topbar__hairline {
   width: 1px;
-  height: 18px;
+  height: 20px;
   background: var(--paper-line);
   flex-shrink: 0;
 }
 
-/* Pure-typography picker (build / model / theme) */
-.topbar__picker {
-  display: flex;
+/* Pill — bordered button with small caps label + value + caret */
+.topbar__pill {
+  display: inline-flex;
   align-items: baseline;
-  gap: 6px;
-  padding: 0;
+  gap: 8px;
+  padding: 5px 12px;
   background: transparent;
-  border: none;
+  border: 1px solid var(--ink-faint);
+  border-radius: 16px;
   cursor: pointer;
   white-space: nowrap;
   flex-shrink: 0;
+  font-family: var(--hand);
   -webkit-app-region: no-drag;
+  transition: border-color 0.15s ease, background 0.15s ease;
 }
-.topbar__picker:hover .topbar__picker-value { color: var(--amber); }
-.topbar__picker:focus { outline: none; }
-.topbar__picker:focus-visible .topbar__picker-value { color: var(--amber); }
+.topbar__pill:hover {
+  border-color: var(--ink-soft);
+  background: var(--paper-shade);
+}
+.topbar__pill:focus { outline: none; }
+.topbar__pill:focus-visible {
+  border-color: var(--amber);
+}
 
-.topbar__picker-label {
-  font-family: var(--label);
-  font-size: 9px;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--ink-faint);
-  font-weight: 500;
+.topbar__pill--amber {
+  border-color: var(--amber);
+  background: var(--amber-glow);
 }
-.topbar__picker-value {
-  font-family: var(--hand-display);
-  font-size: 14px;
-  font-weight: 600;
+.topbar__pill--amber:hover {
+  background: var(--amber-bg);
+  filter: brightness(0.97);
+}
+.theme-dark .topbar__pill--amber:hover {
+  filter: brightness(1.1);
+}
+.topbar__pill--amber.topbar__pill--empty {
+  background: transparent;
+  border-style: dashed;
+}
+
+.topbar__pill--ghost {
+  border-style: dashed;
+  border-color: var(--ink-ghost);
+  text-decoration: none;
+}
+
+.topbar__pill-label {
+  font-family: var(--label);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  font-weight: var(--fw-semibold);
+}
+.topbar__pill--amber .topbar__pill-label {
+  color: var(--amber);
+}
+
+.topbar__pill-value {
+  font-family: var(--hand);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-medium);
   color: var(--ink);
   white-space: nowrap;
-  transition: color 0.15s ease;
 }
-.topbar__picker-value--sm {
-  font-size: 13px;
-  font-weight: 500;
-}
-.topbar__picker-value--empty {
+.topbar__pill-value--empty {
   color: var(--ink-faint);
 }
-.topbar__picker-meta {
+
+.topbar__pill-sub {
   font-family: var(--hand);
-  font-size: 12px;
-  color: var(--ink-faint);
+  font-size: var(--fs-meta);
+  color: var(--ink-soft);
   white-space: nowrap;
 }
-.topbar__picker-caret {
+
+.topbar__pill-caret {
   font-size: 10px;
   color: var(--ink-faint);
   margin-left: 2px;
@@ -271,6 +303,28 @@ const onToggleTheme = () => settings.toggleTheme();
   -webkit-app-region: drag;
   app-region: drag;
   min-width: 24px;
+}
+
+/* Theme chip — ghost icon button, hover paper-shade. */
+.topbar__theme-chip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--ink-soft);
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.topbar__theme-chip:hover {
+  color: var(--ink);
+  background: var(--paper-shade);
 }
 
 /* Window controls */

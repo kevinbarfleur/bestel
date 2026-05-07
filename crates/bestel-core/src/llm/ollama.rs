@@ -118,18 +118,30 @@ impl OllamaClient {
 
         let mut full_assistant = String::new();
         let mut iterations = 0;
+        let mut wrap_up_done = false;
 
         loop {
             iterations += 1;
-            if iterations > 8 {
-                let _ = deltas.send(LlmDelta::Error("agent loop limit reached".into()));
-                break;
+            // Same wrap-up policy as Anthropic: 16 tool rounds, then one
+            // final pass with tools empty + a nudge so the local model has
+            // to produce a final answer from what it gathered. See
+            // anthropic.rs::MAX_AGENT_ITERATIONS for rationale.
+            let force_finalize = iterations > 16;
+            if force_finalize {
+                if wrap_up_done {
+                    break;
+                }
+                wrap_up_done = true;
+                messages.push(json!({
+                    "role": "user",
+                    "content": "[system: tool budget reached. Give your final answer now using what you've already gathered. Do not request more tools.]",
+                }));
             }
 
             let body = json!({
                 "model": self.model,
                 "messages": messages,
-                "tools": tools,
+                "tools": if force_finalize { json!([]) } else { json!(tools) },
                 "stream": true,
                 "options": {
                     // 8K context: balance between fitting SYSTEM_PROMPT +

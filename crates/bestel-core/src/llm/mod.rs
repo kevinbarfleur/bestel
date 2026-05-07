@@ -14,6 +14,7 @@ pub mod anthropic;
 pub mod claude_cli;
 pub mod codex_cli;
 pub mod detect;
+pub mod keys;
 pub mod mcp_config;
 pub mod models;
 pub mod ollama;
@@ -100,8 +101,29 @@ pub enum LlmDelta {
         status: ToolStatus,
         summary: Option<String>,
     },
+    /// Token accounting for the full agent run, emitted once before
+    /// `MessageEnd`. Subscription / local providers may skip this entirely.
+    Usage(UsageStats),
     MessageEnd,
     Error(String),
+}
+
+/// Per-run token accounting, summed across all loop iterations. Cache
+/// fields are populated only by providers that report them (Anthropic /
+/// DeepSeek via Anthropic-compat).
+#[derive(Debug, Clone, Default)]
+pub struct UsageStats {
+    /// Fresh input tokens billed at the base rate.
+    pub input_tokens: u64,
+    /// Cached input tokens billed at the cache-read rate (~10% of base).
+    pub cached_input_tokens: u64,
+    /// Cache-creation tokens billed at the cache-write rate (~125% of base).
+    pub cache_creation_tokens: u64,
+    /// Output tokens billed at the output rate.
+    pub output_tokens: u64,
+    /// Computed cost in USD when the active profile has `cost_per_mtok`
+    /// set; `None` for subscription / local profiles where billing is opaque.
+    pub cost_usd: Option<f64>,
 }
 
 pub enum Provider {

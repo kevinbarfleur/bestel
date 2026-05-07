@@ -11,9 +11,11 @@
 //! TTL strategy: 12h cache for parse + cargo, 6h for search. Wikis update
 //! a few times a day; this matches the slowest reasonable refresh.
 
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use anyhow::{anyhow, Context, Result};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -246,21 +248,89 @@ impl WikiClient {
     }
 }
 
+/// Patterns that match whole boilerplate containers in MediaWiki HTML
+/// output. Stripped BEFORE generic tag-removal so the inner text of a
+/// navbox / catlinks / references list never reaches the LLM.
+///
+/// Compiled once per process via `OnceLock`.
+fn boilerplate_patterns() -> &'static [Regex] {
+    static RE: OnceLock<Vec<Regex>> = OnceLock::new();
+    RE.get_or_init(|| {
+        vec![
+            // Inline style/script blocks (rare but possible in templates)
+            Regex::new(r#"(?is)<style[^>]*>.*?</style>"#).unwrap(),
+            Regex::new(r#"(?is)<script[^>]*>.*?</script>"#).unwrap(),
+            // "[edit]" / "[edit source]" links rendered as spans
+            Regex::new(r#"(?is)<span[^>]*class="[^"]*\bmw-editsection\b[^"]*"[^>]*>.*?</span>"#)
+                .unwrap(),
+            // Reference superscripts: <sup class="reference">[1]</sup>
+            Regex::new(r#"(?is)<sup[^>]*class="[^"]*\breference\b[^"]*"[^>]*>.*?</sup>"#).unwrap(),
+            // Reference list section at the bottom of pages
+            Regex::new(r#"(?is)<ol[^>]*class="[^"]*\breferences\b[^"]*"[^>]*>.*?</ol>"#).unwrap(),
+            // Navboxes — large nav tables with no factual content
+            Regex::new(r#"(?is)<table[^>]*class="[^"]*\bnavbox\b[^"]*"[^>]*>.*?</table>"#).unwrap(),
+            // "Categories" footer
+            Regex::new(r#"(?is)<div[^>]*class="[^"]*\bcatlinks\b[^"]*"[^>]*>.*?</div>"#).unwrap(),
+            // Image thumbnails — captions occasionally carry info but
+            // usually duplicate the prose; dropping them is a reasonable
+            // tradeoff for a multi-KB token saving on item / unique pages.
+            Regex::new(r#"(?is)<div[^>]*class="[^"]*\bthumb\b[^"]*"[^>]*>.*?</div>"#).unwrap(),
+            // Stub / cleanup banners
+            Regex::new(r#"(?is)<table[^>]*class="[^"]*\b(?:stub|ambox)\b[^"]*"[^>]*>.*?</table>"#)
+                .unwrap(),
+        ]
+    })
+}
+
+/// Text-level cleanups applied AFTER tags are stripped — catch the
+/// leftover artefacts that survive both the boilerplate and tag passes.
+fn post_strip_patterns() -> &'static [Regex] {
+    static RE: OnceLock<Vec<Regex>> = OnceLock::new();
+    RE.get_or_init(|| {
+        vec![
+            // "[edit]" / "[edit | edit source]" residuals
+            Regex::new(r"\[\s*edit(?:\s*\|\s*edit source)?\s*\]").unwrap(),
+            // Bracketed reference markers like "[1]", "[12]"
+            Regex::new(r"\[\d+\]").unwrap(),
+        ]
+    })
+}
+
 fn strip_html(html: &str) -> String {
-    let mut out = String::with_capacity(html.len());
+    // Pre-strip whole boilerplate containers (uses the original HTML so
+    // class-based selectors still work).
+    let mut pre = std::borrow::Cow::Borrowed(html);
+    for re in boilerplate_patterns() {
+        if re.is_match(&pre) {
+            pre = std::borrow::Cow::Owned(re.replace_all(&pre, "").into_owned());
+        }
+    }
+
+    // Now drop every remaining tag. Replace each tag with a single space
+    // so adjacent block elements (`</h2><p>`) don't glue their content
+    // together when stripped. The `split_whitespace` collapse below
+    // re-flattens the result.
+    let mut out = String::with_capacity(pre.len());
     let mut in_tag = false;
-    for ch in html.chars() {
+    for ch in pre.chars() {
         match ch {
             '<' => in_tag = true,
-            '>' => in_tag = false,
+            '>' => {
+                in_tag = false;
+                out.push(' ');
+            }
             _ if !in_tag => out.push(ch),
             _ => {}
         }
     }
-    let collapsed = out
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ");
+
+    // Final text-level scrubs.
+    let mut s = out;
+    for re in post_strip_patterns() {
+        s = re.replace_all(&s, "").into_owned();
+    }
+
+    let collapsed = s.split_whitespace().collect::<Vec<_>>().join(" ");
     decode_entities(&collapsed)
 }
 
@@ -283,6 +353,50 @@ mod tests {
         let input = "<p>Hello <b>brave</b> &amp; <i>doomed</i> exile.</p>\n<p>Wraeclast.</p>";
         let out = strip_html(input);
         assert_eq!(out, "Hello brave & doomed exile. Wraeclast.");
+    }
+
+    #[test]
+    fn strip_html_drops_navbox_table() {
+        let input = r#"<p>Real content here.</p>
+<table class="navbox" style="..."><tr><td>Nav garbage we never want</td></tr></table>
+<p>More real content.</p>"#;
+        let out = strip_html(input);
+        assert_eq!(out, "Real content here. More real content.");
+    }
+
+    #[test]
+    fn strip_html_drops_reference_superscripts() {
+        let input = r#"<p>The damage is doubled<sup class="reference">[1]</sup> at low life.</p>"#;
+        let out = strip_html(input);
+        assert_eq!(out, "The damage is doubled at low life.");
+    }
+
+    #[test]
+    fn strip_html_drops_edit_markers_text() {
+        let input = "<h2>Mechanics<span class=\"mw-editsection\">[edit]</span></h2><p>Body.</p>";
+        let out = strip_html(input);
+        assert_eq!(out, "Mechanics Body.");
+    }
+
+    #[test]
+    fn strip_html_drops_catlinks_footer() {
+        let input = r#"<p>Lore.</p><div class="catlinks">Categories: Spells | Lightning</div>"#;
+        let out = strip_html(input);
+        assert_eq!(out, "Lore.");
+    }
+
+    #[test]
+    fn strip_html_drops_inline_references_brackets() {
+        let input = "<p>Cited fact.[1] More fact.[42]</p>";
+        let out = strip_html(input);
+        assert_eq!(out, "Cited fact. More fact.");
+    }
+
+    #[test]
+    fn strip_html_keeps_real_content_intact() {
+        let input = "<p>Penance Brand of Dissipation deals lightning damage.</p>";
+        let out = strip_html(input);
+        assert_eq!(out, "Penance Brand of Dissipation deals lightning damage.");
     }
 
     #[test]

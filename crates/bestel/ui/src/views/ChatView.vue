@@ -15,6 +15,7 @@ import { useUiStore } from '../stores/ui';
 import BuildPanel from '../components/build/BuildPanel.vue';
 import ChatStream from '../components/chat/ChatStream.vue';
 import ChatComposer from '../components/chat/ChatComposer.vue';
+import PanelView from '../components/panel/PanelView.vue';
 
 const chat = useChatStore();
 const chatHistory = useChatHistoryStore();
@@ -24,8 +25,10 @@ const ui = useUiStore();
 const router = useRouter();
 
 const { current } = storeToRefs(buildStore);
+const { panelArtifact } = storeToRefs(ui);
 
 const sidebarCollapsed = computed(() => current.value === null);
+const panelOpen = computed(() => panelArtifact.value !== null);
 
 useStreaming();
 useBuildWatcher();
@@ -33,8 +36,11 @@ useBuildWatcher();
 useShortcuts({
   onBuildPicker: () => ui.openBuild(),
   onModelPicker: () => ui.openModel(),
+  onSettings: () => ui.openSettings(),
   onEscape: () => {
-    if (ui.picker) ui.close();
+    if (ui.linkViewerUrl) ui.closeLinkViewer();
+    else if (ui.picker) ui.close();
+    else if (panelArtifact.value) ui.closePanel();
     else if (chat.isStreaming) void chat.cancel();
   },
   onResetChat: () => {
@@ -50,6 +56,7 @@ onMounted(async () => {
     buildStore.refreshActive(),
     settings.refreshModels(),
     settings.refreshDetection(),
+    settings.refreshKeys(),
   ]);
   // Restore the last active chat if any. The associated build is loaded
   // best-effort; if the file is gone we silently keep the current one.
@@ -66,7 +73,10 @@ onMounted(async () => {
 <template>
   <div
     class="chat-view sketch-bg"
-    :class="{ 'chat-view--collapsed': sidebarCollapsed }"
+    :class="{
+      'chat-view--collapsed': sidebarCollapsed,
+      'chat-view--panel-open': panelOpen,
+    }"
   >
     <div class="chat-view__sidebar">
       <BuildPanel @open-picker="ui.openBuild()" />
@@ -76,12 +86,17 @@ onMounted(async () => {
       <ChatStream class="chat-view__stream" />
       <ChatComposer />
     </div>
+
+    <div v-if="panelOpen" class="chat-view__panel">
+      <PanelView />
+    </div>
   </div>
 </template>
 
 <style scoped>
 .chat-view {
   --sidebar-w: 360px;
+  --panel-w: 0px;
   flex: 1;
   display: flex;
   min-height: 0;
@@ -89,6 +104,9 @@ onMounted(async () => {
 }
 .chat-view--collapsed {
   --sidebar-w: 0px;
+}
+.chat-view--panel-open {
+  --panel-w: 380px;
 }
 
 .chat-view__sidebar {
@@ -117,5 +135,16 @@ onMounted(async () => {
 .chat-view__stream {
   flex: 1;
   min-height: 0;
+}
+
+.chat-view__panel {
+  width: var(--panel-w);
+  flex: none;
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+  border-left: 1px solid var(--paper-line);
+  background: var(--paper-shade);
+  transition: width 0.28s ease;
 }
 </style>

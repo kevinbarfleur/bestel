@@ -5,7 +5,7 @@
 
 .markdown-body {
   font-family: var(--hand);
-  font-size: 14px;
+  font-size: 16.5px;
   line-height: 1.65;
   color: var(--ink);
   word-wrap: break-word;
@@ -61,15 +61,18 @@
   padding-left: 1.4rem;
   margin: 0.15rem 0;
 }
+/* Bullet ◆ aligned to the first text line (not the visual center of the
+ * whole li). Same line-height as the parent so the ◆ sits on the first
+ * line baseline regardless of how many lines the li wraps to. */
 .markdown-body ul > li::before {
   content: '◆';
   position: absolute;
-  left: 0.2rem;
-  top: 0.05em;
+  left: 0.4rem;
+  top: 0;
   color: var(--amber);
-  font-size: 0.65em;
+  font-size: 0.7em;
+  line-height: inherit;
   opacity: 0.85;
-  line-height: 1.65;
 }
 .markdown-body ol {
   padding-left: 1.6rem;
@@ -92,41 +95,121 @@
   background: transparent;
 }
 
-/* Default link — uses .link grammar (amber dotted) */
-.markdown-body a {
-  color: var(--amber);
-  text-decoration: underline;
-  text-decoration-style: dotted;
-  text-decoration-color: var(--amber-soft);
-  text-decoration-thickness: 1px;
-  text-underline-offset: 3px;
-  transition: color 0.15s ease;
+/* Pill style — applied to ALL web-bound links in the chat body:
+ *   - .wiki-link  → backticked PoE entities (wiki destination)
+ *   - plain <a>   → markdown [text](url) links in prose (any URL)
+ * The leading SVG `.md-link-ico` makes the destination obvious (web).
+ * Tight vertical padding so consecutive lines of pills don't touch.
+ * Subtle background contrast — the icon already signals "clickable". */
+.markdown-body a,
+.markdown-body .wiki-link {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 0px 7px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.04);
+  border: 1px solid var(--ink-ghost);
+  color: var(--ink);
+  font-family: var(--hand);
+  font-size: 0.95em;
+  font-weight: 500;
+  line-height: inherit;
+  white-space: nowrap;
+  vertical-align: baseline;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.15s ease, border-color 0.15s ease;
 }
-.markdown-body a:hover {
-  color: var(--amber-soft);
-  text-decoration-style: solid;
+.theme-dark .markdown-body a,
+.theme-dark .markdown-body .wiki-link {
+  background: rgba(255, 255, 255, 0.04);
 }
 
-/* Wiki link (PoE entity in backticks) — extra: combined .link .wiki-link.
- * Inherits .link colors but keeps the same Garamond face for inline integration. */
-.markdown-body .wiki-link {
-  color: var(--amber);
-  font-family: var(--hand);
-  font-weight: 600;
-  font-size: 1em;
+.markdown-body a:hover,
+.markdown-body .wiki-link:hover {
+  background: rgba(0, 0, 0, 0.08);
+  border-color: var(--ink-soft);
+  color: var(--ink);
+  text-decoration: none;
+}
+.theme-dark .markdown-body a:hover,
+.theme-dark .markdown-body .wiki-link:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* External-link icon — sits before the label, inherits text color, sits on
+ * baseline (relative-positioned tweak so the SVG glyph aligns optically). */
+.markdown-body .md-link-ico {
+  flex: none;
+  display: inline-block;
+  vertical-align: -0.1em;
+  color: var(--ink-soft);
+  margin-right: 2px;
+}
+.markdown-body a:hover .md-link-ico,
+.markdown-body .wiki-link:hover .md-link-ico {
+  color: var(--ink);
+}
+
+/* Sources convention — *plain* markdown links (`[label](url)`) inside a
+ * list revert to classic text style: no pill, no icon, dashed underline on
+ * hover. Wiki-link entities (.wiki-link) keep their pill in every context,
+ * including Synergies bullet lists, since they're typed PoE entities, not
+ * source citations. */
+.markdown-body ul a:not(.wiki-link),
+.markdown-body ol a:not(.wiki-link) {
+  display: inline;
   padding: 0;
+  border: 0;
+  background: transparent;
+  font-family: var(--hand);
+  font-size: 1em;
+  font-weight: inherit;
+  white-space: normal;
+  vertical-align: baseline;
+  color: var(--ink);
+}
+.markdown-body ul a:not(.wiki-link):hover,
+.markdown-body ol a:not(.wiki-link):hover {
   background: transparent;
   border: 0;
   text-decoration: underline;
-  text-decoration-style: dotted;
-  text-decoration-color: var(--amber-soft);
+  text-decoration-style: dashed;
+  text-decoration-color: var(--ink-soft);
   text-decoration-thickness: 1px;
   text-underline-offset: 3px;
+  color: var(--ink);
 }
-.markdown-body .wiki-link:hover {
-  color: var(--amber-soft);
-  text-decoration-style: solid;
+.markdown-body ul a:not(.wiki-link) .md-link-ico,
+.markdown-body ol a:not(.wiki-link) .md-link-ico {
+  display: none;
 }
+
+/* Element / status entity tag — non-clickable, semantic color chip. */
+.markdown-body .entity-tag {
+  display: inline-flex;
+  align-items: baseline;
+  padding: 1px 7px;
+  border-radius: 3px;
+  font-family: var(--hand);
+  font-size: 0.95em;
+  font-weight: 600;
+  line-height: inherit;
+  white-space: nowrap;
+  vertical-align: baseline;
+}
+.markdown-body .entity-tag--fire  { color: var(--el-fire-deep);  background: var(--el-fire-bg); }
+.markdown-body .entity-tag--cold  { color: var(--el-cold-deep);  background: var(--el-cold-bg); }
+.markdown-body .entity-tag--lit   { color: var(--el-lit-deep);   background: var(--el-lit-bg); }
+.markdown-body .entity-tag--chaos { color: var(--el-chaos-deep); background: var(--el-chaos-bg); }
+.markdown-body .entity-tag--phys  { color: var(--el-phys-deep);  background: var(--el-phys-bg); }
+.markdown-body .entity-tag--good  { color: var(--good); background: rgba(46, 107, 58, 0.10); }
+.markdown-body .entity-tag--bad   { color: var(--bad);  background: rgba(162, 58, 58, 0.10); }
+.markdown-body .entity-tag--note  { color: var(--note); background: rgba(138, 106, 26, 0.12); }
+.theme-dark .markdown-body .entity-tag--good { background: rgba(106, 183, 115, 0.14); }
+.theme-dark .markdown-body .entity-tag--bad  { background: rgba(215, 112, 112, 0.14); }
+.theme-dark .markdown-body .entity-tag--note { background: rgba(214, 178, 72, 0.14); }
 
 .markdown-body code {
   font-family: 'Consolas', 'Menlo', monospace;
@@ -139,9 +222,9 @@
 
 /* Inline emphasis used by markdown-it code_inline when the content is NOT
  * a PoE entity (numbers, percentages, generic labels). Visible accent but
- * NOT clickable — pure typographic emphasis. */
+ * NOT clickable — pure typographic emphasis. Monochrome-friendly. */
 .markdown-body .md-emph {
-  color: var(--amber);
+  color: var(--ink);
   font-weight: 600;
   font-family: inherit;
   font-size: inherit;

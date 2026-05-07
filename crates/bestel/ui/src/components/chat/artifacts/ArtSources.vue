@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { openExternal } from '../../../api/tauri';
+import { openLink } from '../../../api/tauri';
 
 interface Source {
   site: string;
@@ -12,7 +12,7 @@ withDefaults(defineProps<{ sources?: Source[] }>(), { sources: () => [] });
 
 const open = (url?: string) => {
   if (!url) return;
-  void openExternal(url);
+  void openLink(url);
 };
 </script>
 

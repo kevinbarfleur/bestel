@@ -193,6 +193,7 @@ impl Recorder {
                 }
             }
             LlmDelta::MessageEnd => {}
+            LlmDelta::Usage(_) => {}
             LlmDelta::Error(msg) => {
                 self.error = Some(msg.clone());
             }

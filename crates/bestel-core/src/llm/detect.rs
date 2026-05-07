@@ -60,6 +60,18 @@ pub async fn detect_provider() -> Detection {
         }
     }
 
+    let deepseek_key_set = std::env::var("DEEPSEEK_API_KEY").is_ok();
+    probes.push(Probe {
+        name: "deepseek api key",
+        installed: deepseek_key_set,
+        version: None,
+        note: if deepseek_key_set {
+            Some("DeepSeek V3.2 available via Anthropic-compat endpoint".into())
+        } else {
+            Some("DEEPSEEK_API_KEY not set — pick DeepSeek profile to enable".into())
+        },
+    });
+
     // Ollama is the free / local fallback. We surface it as a probe even when
     // a paid provider is already chosen so the user can see local mode is
     // available and switch to it via the model picker. If nothing else
@@ -190,9 +202,26 @@ pub async fn build_provider_for_profile(
 ) -> Result<Provider> {
     match profile.provider {
         ProviderKind::Anthropic => {
-            // Honors the persisted profile via models::resolved_model_for.
-            let c = AnthropicClient::from_env()
-                .map_err(|e| anyhow!("ANTHROPIC_API_KEY missing or unreadable: {e}"))?;
+            // Always build via `from_endpoint` so the profile's `model_id`
+            // is honored — `from_env` falls back to whatever the persisted
+            // active_profile() says, which races with the actual profile we
+            // were asked to build (e.g. battery runner switching between
+            // DeepSeek and Haiku without changing model.json).
+            let base_url = profile
+                .base_url
+                .as_deref()
+                .unwrap_or("https://api.anthropic.com");
+            let env_var = profile
+                .api_key_env
+                .as_deref()
+                .unwrap_or("ANTHROPIC_API_KEY");
+            let c = AnthropicClient::from_endpoint(
+                base_url,
+                env_var,
+                profile.model_id.clone(),
+                profile.cost_per_mtok,
+            )
+            .map_err(|e| anyhow!("{env_var} missing or endpoint unreachable: {e}"))?;
             Ok(Provider::Anthropic(c))
         }
         ProviderKind::CodexCli => {

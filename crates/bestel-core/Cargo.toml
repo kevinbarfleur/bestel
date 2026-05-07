@@ -23,8 +23,13 @@ path = "examples/sources_smoke.rs"
 name = "synergies_smoke"
 path = "examples/synergies_smoke.rs"
 
+[[example]]
+name = "real_battery"
+path = "examples/real_battery.rs"
+
 [dev-dependencies]
 tokio = { workspace = true }
+toml = "0.8"
 
 [dependencies]
 tokio = { workspace = true }
@@ -43,3 +48,4 @@ chrono = { version = "0.4", features = ["clock", "serde"] }
 sha2 = { workspace = true }
 urlencoding = { workspace = true }
 base64 = { workspace = true }
+regex = "1"

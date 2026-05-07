@@ -22,6 +22,11 @@ use crate::state::AppState;
 fn main() {
     init_tracing();
 
+    // Load user-saved API keys from disk into the process env BEFORE any
+    // subcommand runs (mcp-serve included), so AnthropicClient::from_env()
+    // and friends see the keys without per-launch user setup.
+    bestel_core::llm::keys::apply_to_env();
+
     let mut args = std::env::args().skip(1);
     if let Some(cmd) = args.next() {
         match cmd.as_str() {
@@ -104,14 +109,21 @@ fn run_tauri() {
                 commands::get_active_build,
                 commands::set_active_build,
                 commands::clear_active_build,
+                commands::preview_build,
                 commands::chat_start,
                 commands::chat_cancel,
                 commands::chat_reset,
                 commands::open_external,
+                commands::open_link_modal,
+                commands::update_link_modal_bounds,
+                commands::close_link_modal,
                 commands::list_debug_runs,
                 commands::get_debug_run,
                 commands::delete_debug_run,
                 commands::delete_all_debug_runs,
+                commands::list_api_keys,
+                commands::set_api_key,
+                commands::delete_api_key,
                 titlebar::window_minimize,
                 titlebar::window_toggle_maximize,
                 titlebar::window_close,

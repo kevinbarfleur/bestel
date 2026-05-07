@@ -2,7 +2,10 @@
 import { computed, ref } from 'vue';
 
 import type { ToolSegment } from '../../../stores/chat';
-import { openExternal } from '../../../api/tauri';
+import { openLink } from '../../../api/tauri';
+import { useUiStore } from '../../../stores/ui';
+
+const ui = useUiStore();
 
 const props = defineProps<{ segment: ToolSegment }>();
 
@@ -60,7 +63,31 @@ const statusTone = computed(() => {
 });
 
 const open = () => {
-  if (parsed.value?.url) void openExternal(parsed.value.url);
+  if (parsed.value?.url) void openLink(parsed.value.url);
+};
+
+/** Promote the wiki page to the right adaptive panel. We render it as a
+ *  `markdown` artifact (the payload only carries plain text + headings, no
+ *  structured stats), which is the most faithful 1:1 mapping. */
+const openInPanel = () => {
+  const p = parsed.value;
+  if (!p) return;
+  const headingsLines = (p.sections ?? [])
+    .filter((s) => s.heading)
+    .map((s) => `- ${s.heading}`)
+    .join('\n');
+  const headingsBlock = headingsLines
+    ? `**Sections**\n${headingsLines}\n\n---\n\n`
+    : '';
+  const urlBlock = p.url ? `[Open on the wiki ↗](${p.url})\n\n` : '';
+  const body = `${headingsBlock}${urlBlock}${p.plain_text ?? ''}`;
+  ui.openPanel({
+    id: `wiki:${p.title ?? props.segment.id}`,
+    type: 'markdown',
+    title: p.title ?? props.segment.detail ?? 'Wiki page',
+    payload: { body_md: body },
+    source: 'click',
+  });
 };
 </script>
 
@@ -82,6 +109,13 @@ const open = () => {
         <span class="art-wiki__spinner-dot" />
       </span>
       <span class="art-wiki__status" :style="{ color: statusTone }">{{ statusLabel }}</span>
+      <button
+        v-if="parsed"
+        type="button"
+        class="art-wiki__panel-btn"
+        title="Open in side panel"
+        @click="openInPanel"
+      >see in panel ⇗</button>
       <button
         v-if="parsed"
         type="button"
@@ -154,6 +188,23 @@ const open = () => {
   font-size: 11px;
   color: var(--ink-faint);
   padding: 0 4px;
+}
+.art-wiki__panel-btn {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font-family: var(--label);
+  font-size: var(--fs-micro);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  padding: 2px 6px;
+  border-radius: 3px;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+.art-wiki__panel-btn:hover {
+  background: var(--paper-shade);
+  color: var(--ink);
 }
 
 .art-wiki__spinner {

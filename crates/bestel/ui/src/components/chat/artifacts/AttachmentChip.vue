@@ -40,14 +40,14 @@ const docExt = computed(() => {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 3px 6px 3px 4px;
-  border: 1.2px solid var(--ink-soft);
+  padding: 4px 8px 4px 5px;
+  border: 1px solid var(--amber);
   border-radius: 12px;
   background: var(--paper);
   font-family: var(--hand);
-  font-size: 11px;
+  font-size: var(--fs-caps);
   color: var(--ink);
-  max-width: 200px;
+  max-width: 220px;
 }
 
 .att-chip__thumb {

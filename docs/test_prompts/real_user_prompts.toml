@@ -1,0 +1,274 @@
+# Real-user prompt fixtures for Bestel test batteries.
+#
+# Schema and methodology: docs/test_prompts/README.md
+#
+# Voice rules (DO NOT "fix" these prompts):
+#   - lowercase starts and missing punctuation are intentional
+#   - slang, typos, abbreviations stay verbatim
+#   - bare URLs pasted mid-sentence stay
+#   - frustrated tones stay
+
+# ─── A. VAGUE / FRUSTRATION ────────────────────────────────────────────
+# Naked cri-de-coeur. Model should ask 1-2 focused questions before
+# searching anything. "Save your build in PoB" is a fail.
+
+[[prompt]]
+id = "vague_squishy_build"
+category = "vague"
+text = "my build feels like ass, what am i doing wrong"
+intent = "User is unhappy with build performance, scope unclear (defense? damage? clear? boss?)"
+expected = "Ask which axis is bad: dying, low DPS, or just feels slow. Don't dump generic advice."
+
+[[prompt]]
+id = "vague_red_map_oneshot"
+category = "vague"
+text = "keep getting one shot in red maps no idea why"
+intent = "User dies suddenly to bursts; needs to identify damage type and current EHP."
+expected = "Ask what type of hit (phys / ele slam / chaos DoT) is killing them, and check EHP via build context if available."
+
+[[prompt]]
+id = "vague_30div_upgrade"
+category = "vague"
+text = "i have like 30 div what should i upgrade"
+intent = "Budget allocation question with no information about current gear, build, or bottleneck."
+expected = "Ask current bottleneck (defense / DPS / atlas) and current build. Don't propose items blindly."
+
+[[prompt]]
+id = "vague_dps_t16"
+category = "vague"
+text = "is my dps fine for t16 idk how to tell"
+intent = "User wants a benchmark, doesn't know how to read PoB DPS numbers."
+expected = "Either: ask for the build (get_active_build) and quote the actual DPS, or explain rough thresholds (M-pdps for clear vs single-target). Concrete numbers."
+
+# ─── B. BEGINNER / NEW PLAYER ──────────────────────────────────────────
+# First-week framing. Patient, no jargon dump, no "go read the wiki".
+
+[[prompt]]
+id = "beginner_ranger_lost"
+category = "beginner"
+text = "started poe last week and i picked ranger but i have no idea what im doing tbh"
+intent = "Brand-new player, ranger class, wants direction without being overwhelmed."
+expected = "Ask if it's PoE1 or PoE2, then suggest a forgiving starter skill (LA / TR for PoE1, Lightning Arrow Deadeye for PoE2). One concrete next step, not a wall of text."
+source = "https://www.reddit.com/r/PathOfExileBuilds/comments/1iz5bug/"
+
+[[prompt]]
+id = "beginner_life_vs_es"
+category = "beginner"
+text = "first time playing, what's the difference between life build and ES build"
+intent = "Conceptual mechanic question from a new player."
+expected = "Plain explanation: life regens passively + cheap, ES depends on EB / Discipline / hybrid setups. Mention the recovery delay caveat for ES. Cite a wiki source."
+
+[[prompt]]
+id = "beginner_returning_4_leagues"
+category = "beginner"
+text = "coming back after like 4 leagues whats the meta now"
+intent = "Returning player wants high-level orientation, not a deep dive."
+expected = "Acknowledge that meta shifts every league. Either: ask current patch (PoE1 latest? PoE2 0.X?) and use wiki_search for patch notes, or list 2-3 archetypes that have been resilient across leagues."
+
+# ─── C. MECHANICS — courtes questions précises ─────────────────────────
+# Two-line answer + wiki cite. No pavé.
+
+[[prompt]]
+id = "mechanics_rt_accuracy"
+category = "mechanics"
+text = "do i need accuracy if i have resolute technique"
+intent = "Pure mechanics question, expects a straight no with reasoning."
+expected = "No — RT sets your hit chance to 100%. Cite poewiki Resolute Technique."
+source = "https://www.pathofexile.com/forum/view-thread/3760985"
+
+[[prompt]]
+id = "mechanics_spell_supp_cap"
+category = "mechanics"
+text = "how does spell suppression actually work, is 100% the cap"
+intent = "Explain the mechanic and confirm the cap (100% chance, halves spell hit damage)."
+expected = "Explain: chance to suppress, halves spell damage on suppressed hits, cap is 100%. Mention spell suppress mastery doubles the reduction. Wiki source."
+
+[[prompt]]
+id = "mechanics_rt_ailments"
+category = "mechanics"
+text = "can i still ignite with RT or no"
+intent = "Subtle interaction: RT removes crit-based ailments but %chance-to-ignite sources still work."
+expected = "Yes if you have %chance to ignite from gear, supports, or passives — RT only removes the crit-based path. Wiki cite."
+source = "https://www.pathofexile.com/forum/view-thread/234395"
+
+[[prompt]]
+id = "mechanics_more_vs_increased"
+category = "mechanics"
+text = "whats the difference between more and increased damage"
+intent = "Multiplicative vs additive. Most asked PoE mechanics question of all time."
+expected = "Increased = additive in one bucket, More = multiplicative (each separately). Show with a tiny example. No wiki needed but link is fine."
+
+# ─── D. DIAGNOSTIC BUILD ───────────────────────────────────────────────
+# These need the user's PoB attached. Battery runner sets needs_build=true.
+
+[[prompt]]
+id = "diag_ele_oneshot"
+category = "diagnosis"
+text = "can you look at my char and tell me why i die so much to elemental hits"
+intent = "Concrete defense diagnosis on the user's actual build."
+expected = "Call get_active_build, check ele max hits + resists + suppression, name the weakest layer with numbers, propose 2-3 prioritised fixes."
+needs_build = true
+
+[[prompt]]
+id = "diag_low_single_target"
+category = "diagnosis"
+text = "my single target is so weak compared to clear, how do i fix"
+intent = "DPS imbalance diagnosis."
+expected = "Call get_active_build, look for AoE-skewed supports / no damage-on-full-life style sources / missing concentrated effect. Propose specific support swaps."
+needs_build = true
+
+[[prompt]]
+id = "diag_flasks_off"
+category = "diagnosis"
+text = "feels like my flasks are off, can you check"
+intent = "Open-ended flask audit."
+expected = "Call get_active_build, look at flask suffixes (immunity coverage), prefixes (recovery vs effect), instilled triggers if Mageblood. Concrete suggestions."
+needs_build = true
+
+# ─── E. BUILD CHOICE / STARTER ─────────────────────────────────────────
+# Comparative reasoning. No "it depends". Pick one with trade-offs.
+
+[[prompt]]
+id = "choice_bv_vs_pconc_starter"
+category = "build_choice"
+text = "between BV trickster and pconc PF for league start which is comfier"
+intent = "Two viable starters; user wants comfort/safety bias."
+expected = "Pick one (PConc PF likely, lower budget gear, more layers). Name the trade-off (BV scales harder late). Wiki / poe.ninja sources."
+
+[[prompt]]
+id = "choice_tanky_uber_capable"
+category = "build_choice"
+text = "i wanna play something tanky that can do ubers eventually, ideas"
+intent = "Vague-ish but with two clear constraints: tanky + uber-capable."
+expected = "Suggest 2-3 archetypes (jugg, occultist, pathfinder mageblood) with brief why-each. Don't list 10."
+
+[[prompt]]
+id = "choice_rf_still_viable"
+category = "build_choice"
+text = "is RF still viable in current patch or did it get gutted"
+intent = "Patch-current question; needs verification."
+expected = "Verify via wiki_search for recent patch notes on Righteous Fire / Inquisitor. Don't guess from memory."
+
+# ─── F. EXTERNAL BUILD LINK ────────────────────────────────────────────
+# Bare URL pasted in prose. Triggers web_fetch on the allowlist.
+
+[[prompt]]
+id = "ext_maxroll_la_deadeye"
+category = "external_link"
+text = "https://maxroll.gg/poe/build-guides/lightning-arrow-deadeye is this still good with the recent nerfs"
+intent = "Fetch maxroll guide, compare to current patch."
+expected = "Call web_fetch on the URL (maxroll is allowlisted), then check for patch-relevant changes via wiki_search. Don't summarize from memory."
+
+[[prompt]]
+id = "ext_pobbin_tree_mismatch"
+category = "external_link"
+text = "following this guide https://pobb.in/abc123 but the tree is different from what poe.ninja shows for this build, which is right"
+intent = "Compare two sources of truth for the same build."
+expected = "Either: web_fetch both (pobb.in is allowlisted, poe.ninja is too) and call out the divergence, or explain that poe.ninja shows actual played trees while a guide is the author's idealised version."
+
+# ─── G. CRAFTING ───────────────────────────────────────────────────────
+# Step-by-step. Use current currency names. Don't skip basics.
+
+[[prompt]]
+id = "craft_plus1_cold_wand"
+category = "crafting"
+text = "how do i actually craft a +1 to cold gems wand i watched videos but im still lost"
+intent = "Walk through the craft process from base to final item."
+expected = "Either: use wiki_parse on '+1 to Level of all Cold Spell Skill Gems' to confirm the modifier exists + ilvl, then walk through alt-spam → regal → multimod or fossil-spam alternative. Mention i85+ base."
+
+[[prompt]]
+id = "craft_fractured_t1_life"
+category = "crafting"
+text = "got a fractured base with t1 life what now, do i essence spam or fossils"
+intent = "Specific in-progress craft, user has a starting point."
+expected = "Ask what suffix mods they want (deterministic via essence vs random via fossils). Mention bench-craft suppression first if applicable. Don't dump every option."
+
+# ─── H. CURRENCY / CHASE ITEMS ─────────────────────────────────────────
+# Cost-benefit framing. Always check build context before saying yes/no.
+
+[[prompt]]
+id = "currency_mageblood_2mirror"
+category = "currency_chase"
+text = "is mageblood worth 2 mirrors for this build or am i tripping"
+intent = "Value question that depends on build, but also smells like a price-check."
+expected = "Mageblood doesn't cost 2 mirrors — it's much cheaper (sub-mirror in most leagues). Either gently correct, or ask if they meant 2 mirror-shards. Then check the build for flask-effect synergies."
+needs_build = true
+
+[[prompt]]
+id = "currency_hh_vs_progenesis"
+category = "currency_chase"
+text = "headhunter or progenesis first, mapping league"
+intent = "HH and Progenesis solve different problems; user has stated context (mapping)."
+expected = "For mapping: HH wins (rare-mod buffs from packs). Progenesis is bossing/survival. Concrete reasoning, no wishy-washy."
+
+# ─── I. BOSS STRATEGY ──────────────────────────────────────────────────
+# Concrete mechanic + a dodge tip. Not a wiki dump.
+
+[[prompt]]
+id = "boss_sirus_die_beam"
+category = "boss"
+text = "how do i dodge sirus die beam i keep eating it"
+intent = "Specific mechanic, audio cue + movement pattern."
+expected = "Explain: 'DIE!' voice cue triggers it, you have ~1.5s to break-stop and side-strafe. Quicksilver flask helps. Mention the 6-beam Uber variant difference."
+source = "http://www.poewiki.net/wiki/Uber_Sirus"
+
+[[prompt]]
+id = "boss_uber_elder_dual_phase"
+category = "boss"
+text = "any tips for uber elder, the dual phase confuses me"
+intent = "Phase-by-phase boss explanation."
+expected = "Explain: only one boss vulnerable at a time, switch markers (silver glow / purple shield), kill Shaper first always. wiki_parse on Uber Elder for the phase breakdown if needed."
+source = "https://maxroll.gg/poe/bosses/the-uber-elder-boss-guide"
+
+# ─── J. POE2 SPECIFIC ──────────────────────────────────────────────────
+# Verification reflex — training data is stale on PoE2. wiki_parse before
+# claiming anything mechanical.
+
+[[prompt]]
+id = "poe2_deadeye_or_invoker"
+category = "poe2"
+text = "poe2 deadeye or invoker for my first char"
+intent = "PoE2 ascendancy choice for a new player."
+expected = "Both are S-tier for beginners (per most guides). Brief contrast: Deadeye = ranged projectile zoom, Invoker = ES tank elemental staff. wiki_parse / web_fetch on poe2db before quoting specifics."
+
+[[prompt]]
+id = "poe2_act2_ascent_to_power"
+category = "poe2"
+text = "stuck in act 2 cruel, ascent to power quest wont complete what do"
+intent = "Known PoE2 quest bug; user is blocked."
+expected = "This is a documented bug — quest marker is misleading, the user can ignore it and start their first map from Ziggurat Refuge directly. Verify via wiki_search or forum post."
+source = "https://www.pathofexile.com/forum/view-thread/3779104"
+
+# ─── K. COMPARISON / LORE ──────────────────────────────────────────────
+# Honest "let me verify" before quoting.
+
+[[prompt]]
+id = "compare_poe2_trade"
+category = "comparison_lore"
+text = "is trade in poe2 still that whisper-based thing or did they finally fix it"
+intent = "PoE2-specific change check."
+expected = "wiki_parse / web_fetch on the official PoE2 trade page before answering. Don't guess from memory."
+
+[[prompt]]
+id = "lore_corrupted_soul"
+category = "comparison_lore"
+text = "what's a corrupted soul keystone for, lore wise"
+intent = "Mechanical + flavour question. Most users mean 'what does it do', some want lore."
+expected = "Lead with mechanics (50/50 split between life and ES), then the lore note (Doryani Glorious Vanity timeless jewel). wiki_parse Corrupted Soul."
+
+# ─── L. OFF-TOPIC REFUSAL ──────────────────────────────────────────────
+# Refuse in character. NEVER recommend another game.
+
+[[prompt]]
+id = "refuse_other_arpg"
+category = "off_topic_refusal"
+text = "whats a good aRPG to play while i wait for the new league"
+intent = "Off-topic, the model should refuse without recommending Diablo / Last Epoch / Grim Dawn."
+expected = "Refuse in voice: 'That tale is not mine to tell, exile.' Do NOT name other games. Redirect to PoE topics."
+
+[[prompt]]
+id = "refuse_diablo4_help"
+category = "off_topic_refusal"
+text = "can you help me with my diablo 4 sorc build instead"
+intent = "Direct off-topic request with explicit other-game framing."
+expected = "Hard refuse in character. No D4 advice, not even general. Offer to help with PoE if they want."

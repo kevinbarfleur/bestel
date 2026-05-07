@@ -1,12 +1,20 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, watch } from 'vue';
 
+import RunicIcon from './RunicIcon.vue';
+
 const props = withDefaults(
   defineProps<{
     modelValue: boolean;
     title?: string;
+    /** Optional 13px ink-soft sub-line under the title. */
+    subtitle?: string;
+    /** Optional keyboard-shortcut chip rendered top-right (e.g. "Ctrl+P"). */
+    kbd?: string;
+    /** Legacy ornament — flanking ◆ around the title. Not rendered in v2
+     *  pane modals (use subtitle + kbd instead). */
     icon?: string;
-    maxWidth?: 'sm' | 'md' | 'lg' | 'xl';
+    maxWidth?: 'sm' | 'md' | 'lg' | 'xl' | 'panes';
     showCloseButton?: boolean;
     closeOnOverlay?: boolean;
     closeOnEscape?: boolean;
@@ -65,12 +73,15 @@ watch(
         >
           <div v-if="title || $slots.header" class="runic-modal__header">
             <slot name="header">
-              <h2 class="runic-modal__title">
-                <span v-if="icon" class="runic-modal__icon">{{ icon }}</span>
-                {{ title }}
-                <span v-if="icon" class="runic-modal__icon">{{ icon }}</span>
-              </h2>
+              <div class="runic-modal__title-block">
+                <h2 class="runic-modal__title">
+                  <span v-if="icon" class="runic-modal__icon">{{ icon }}</span>
+                  {{ title }}
+                </h2>
+                <p v-if="subtitle" class="runic-modal__subtitle">{{ subtitle }}</p>
+              </div>
             </slot>
+            <span v-if="kbd" class="runic-modal__kbd">{{ kbd }}</span>
             <button
               v-if="showCloseButton"
               type="button"
@@ -78,9 +89,7 @@ watch(
               aria-label="Close"
               @click="closeModal"
             >
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14">
-                <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
-              </svg>
+              <RunicIcon name="close" :size="16" />
             </button>
           </div>
 
@@ -133,50 +142,101 @@ watch(
 .runic-modal__content--md { max-width: 32rem; }
 .runic-modal__content--lg { max-width: 42rem; }
 .runic-modal__content--xl { max-width: 56rem; }
+.runic-modal__content--panes {
+  width: 92vw;
+  max-width: 1280px;
+  min-width: 720px;
+  height: 88vh;
+  max-height: 820px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  border-radius: 6px;
+  border: none;
+  box-shadow: 0 18px 40px rgba(60, 40, 20, 0.22);
+}
+.theme-dark .runic-modal__content--panes {
+  box-shadow: 0 22px 50px rgba(0, 0, 0, 0.55);
+}
+.runic-modal__content--panes .runic-modal__body {
+  flex: 1;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+}
 
 .runic-modal__header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 0.85rem 1.25rem;
+  gap: 16px;
+  padding: 16px 24px 14px;
   border-bottom: 1px solid var(--paper-line);
   background: var(--paper);
+}
+
+.runic-modal__title-block {
+  flex: 1;
+  min-width: 0;
 }
 
 .runic-modal__title {
   display: flex;
   align-items: baseline;
-  gap: 0.6rem;
+  gap: 8px;
   margin: 0;
-  font-family: var(--label);
-  font-size: 11px;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  font-weight: 600;
+  font-family: var(--hand);
+  font-size: var(--fs-h2);
+  font-weight: var(--fw-semibold);
+  color: var(--ink);
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.runic-modal__subtitle {
+  margin: 2px 0 0;
+  font-family: var(--hand);
+  font-size: var(--fs-meta);
+  font-weight: var(--fw-regular);
   color: var(--ink-soft);
+  line-height: 1.45;
 }
 
 .runic-modal__icon {
-  font-size: 0.8rem;
+  font-size: var(--fs-meta);
   color: var(--amber);
-  opacity: 0.55;
+  opacity: 0.65;
+}
+
+.runic-modal__kbd {
+  flex: none;
+  font-family: var(--label);
+  font-size: var(--fs-caps);
+  padding: 3px 8px;
+  border: 1px solid var(--ink-faint);
+  border-radius: 3px;
+  color: var(--ink-soft);
+  background: transparent;
+  letter-spacing: 0.06em;
 }
 
 .runic-modal__close {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 32px;
+  height: 32px;
   padding: 0;
   background: transparent;
-  border: 0;
-  color: var(--ink-faint);
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: var(--ink-soft);
   cursor: pointer;
-  transition: color 0.15s ease;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  flex: none;
 }
 .runic-modal__close:hover {
-  color: var(--bad);
+  color: var(--ink);
+  background: var(--paper-shade);
 }
 
 .runic-modal__body { padding: 1.1rem 1.25rem; }
