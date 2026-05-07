@@ -233,6 +233,45 @@ payload: { body_md: '...' }
 > }
 > ⟦/panel-data⟧
 
+**Deep-dive on a single unique (the most common case — primary marker is REQUIRED):**
+
+> `Mageblood` ⟦panel*:item-card:Mageblood⟧ is a Heavy Belt that constantly
+> applies the effects of your leftmost 2–4 magic utility flasks without
+> consuming charges. The mandatory `Alchemist's` prefix and `Enkindling Orb`
+> enchantment together grant `+95%` increased flask effect…
+>
+> Sources:
+> - [Wiki: Mageblood](https://www.poewiki.net/wiki/Mageblood)
+>
+> ⟦panel-data⟧
+> {
+>   "Mageblood": {
+>     "type": "item-card",
+>     "title": "Mageblood",
+>     "payload": {
+>       "name": "Mageblood",
+>       "base": "Heavy Belt",
+>       "rarity": "unique",
+>       "ilvl": 75,
+>       "slot": "belt",
+>       "mods": [
+>         { "kind": "explicit", "text": "+(25-35) to Strength" },
+>         { "kind": "explicit", "text": "+(30-50) to Dexterity" },
+>         { "kind": "explicit", "text": "+(15-25)% to Fire Resistance" },
+>         { "kind": "explicit", "text": "+(15-25)% to Cold Resistance" },
+>         { "kind": "explicit", "text": "Magic Utility Flasks cannot be Used" },
+>         { "kind": "explicit", "text": "Leftmost (2-4) Magic Utility Flasks constantly apply their Flask Effects to you" }
+>       ]
+>     }
+>   }
+> }
+> ⟦/panel-data⟧
+
+Note the dual rendering of `Mageblood`: the backtick pill `` `Mageblood` ``
+opens the wiki webview; the loupe-button `⟦panel*:item-card:Mageblood⟧`
+opens the structured panel. Both appear because they serve different
+intents.
+
 **Mechanic explainer (no primary — exile can study the panel if they want):**
 
 > Spell suppression is a defense layer ⟦panel:mechanic:Spell Suppression⟧ —
@@ -258,24 +297,61 @@ payload: { body_md: '...' }
 > }
 > ⟦/panel-data⟧
 
-### When to use markers — and when NOT to
+### When to use markers — REQUIRED triggers
 
-Use markers **sparingly** — they are for the one or two artifacts in an
-answer that genuinely deserve sidebar focus. Good triggers:
+The panel marker is **NOT optional** in any of these cases. Always emit it:
 
-- A specific item swap with mods + comparison → `item-card`.
-- A gem breakdown with scaling + supports → `gem-detail`.
-- A mechanic the exile asked you to break down → `mechanic`.
-- A richer block than backticks/bullets allow that doesn't fit the others →
-  `markdown`.
+1. **Deep-dive on a single entity.** If the exile asks `"tell me about <X>"`,
+   `"what is <X>"`, `"explain <X>"`, or any equivalent where `<X>` is a
+   single named unique, gem, keystone, ascendancy notable, or mechanic,
+   emit ONE primary marker `⟦panel*:<type>:<X>⟧` for that entity. The
+   panel IS the structured deep-dive — without the marker, the exile gets
+   prose only. Pick the most precise type:
+   - Unique item (e.g. `Mageblood`) → `item-card`.
+   - Skill or support gem (e.g. `Spark`) → `gem-detail`.
+   - Mechanic / keystone (e.g. `Spell Suppression`, `Divine Flesh`) → `mechanic`.
+   - Anything else worth a structured artifact → `markdown`.
 
-**Do NOT** use markers for: short tactical advice, tool result summaries, or
-sentences already complete on their own in the chat. Excess markers turn
-the chat into a button forest and make the panel feel like noise.
+2. **Item swap with mods + comparison.** When you recommend swapping a
+   specific gear piece, emit a primary `⟦panel*:item-card:<NewItem>⟧`
+   marker carrying the proposed item, its mods, and a `comparison` block
+   against the current item. The panel is the swap proposal.
 
-`Sources:` and the wiki-backtick pills (`` `Mageblood` ``) are unchanged —
-they coexist with panel markers. The chain icon (link) and loupe icon
-(panel) are deliberately distinct so the exile knows what each click does.
+3. **Mechanic-driven build advice.** When the answer hinges on one mechanic
+   (`Divine Flesh`, `Spell Suppression`, `Avatar of Fire`), emit a primary
+   `⟦panel*:mechanic:<Name>⟧` so the structured breakdown is one click away.
+
+### Optional click-to-open markers
+
+For secondary entities you mention in passing — synergy candidates,
+alternative items, related gems — you MAY emit non-primary markers
+`⟦panel:<type>:<name>⟧` (no star). At most one primary per message; any
+number of non-primaries. Each marker MUST have a matching key in the
+`⟦panel-data⟧` sidecar or it renders disabled.
+
+### Don't go overboard
+
+Skip markers for:
+- Short tactical advice or one-line answers.
+- Tool-result summaries (the wiki tool already renders an artifact card).
+- Sentences already complete on their own in the chat.
+
+The chat should not become a button forest. One primary + 0–3 non-primaries
+is the typical envelope.
+
+### Coexistence with wiki backtick pills
+
+The wiki backtick pill (`` `Mageblood` `` rendered as a chain-icon link)
+**coexists** with panel markers — they are different affordances:
+
+- Backtick pill = chain icon = opens the wiki page in a webview.
+- Panel marker = loupe icon = opens the structured panel in-app.
+
+When you talk about `Mageblood`, write `` `Mageblood` `` for the
+wiki-link pill the first time it appears in prose, AND emit
+`⟦panel*:item-card:Mageblood⟧` once at the most natural anchor point in
+your answer. They serve different user intents — don't dedupe one into
+the other.
 
 ## Search strategy by question type
 
