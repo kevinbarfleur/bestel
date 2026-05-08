@@ -91,3 +91,27 @@ The Maxroll articles cataloged in `maxroll/` are pointers, not citations. Always
 - Generic SEO guide pages without date / patch / author.
 - AI answer aggregators (Perplexity summaries, Bing chat, etc.) — go to the source they cite instead.
 - Unverified forum posts.
+
+## Tier-4 hard blocklist (`web_fetch` enforces this)
+
+The agent's `web_fetch` tool **rejects** these domains outright before evaluating the tier-1/2 allowlist. They are SEO-optimised, often AI-generated, contradict each other, and harm answer quality. Reason: PoE-specific blog farms that recycle patch-day announcements with no editorial integrity.
+
+| Domain | Reason |
+|---|---|
+| `aoeah.com` | RMT-adjacent SEO blog. |
+| `mmogah.com` | RMT/boosting SEO. |
+| `iggm.com` | RMT-adjacent SEO. |
+| `ggwtb.com` | RMT/SEO. |
+| `boostmatch.com` | Boost service SEO. |
+| `sportskeeda.com` | Generic gaming-news SEO; PoE coverage shallow and frequently wrong. |
+| `gamewatcher.com` | Generic gaming-news SEO. |
+| `switchbladegaming.com` | Low-quality SEO. |
+| `dotesports.com` | News-flavoured SEO; PoE coverage frequently wrong on mechanics. |
+| `gamerant.com` | Generic gaming SEO. |
+
+If a user pastes a URL from one of these domains, the agent should:
+1. Refuse to fetch the URL.
+2. Briefly explain why (one sentence: "This domain is on the tier-4 SEO blocklist; let me find the same fact from a wiki / patch notes / official source.").
+3. Offer a tier-1/2 alternative.
+
+To override (legit research case), the user must explicitly request the fetch and accept the caveat.

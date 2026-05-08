@@ -32,12 +32,14 @@ const FILE_SYSTEM_PROMPT: &str = "SYSTEM_PROMPT.md";
 const FILE_CORE_KNOWLEDGE: &str = "CORE_KNOWLEDGE.md";
 const FILE_LOCAL_ADDENDUM: &str = "local_addendum.md";
 
-/// The reference library — 17 numbered conceptual docs + 5 maxroll catalogues.
+/// The reference library — 27 numbered conceptual docs + creators registry +
+/// PoE2 scaffolds + glossary + threshold tables + 5 maxroll catalogues.
 /// Bundled into the binary so the agent has a complete fallback even when the
 /// user has wiped `~/.bestel/prompts/references/`. The agent fetches these on
 /// demand via the `read_internal_reference` tool — they are NOT concatenated
 /// into the system prompt.
 pub const BUNDLED_REFERENCES: &[(&str, &str)] = &[
+    // Core numbered conceptual docs.
     ("00_README.md", include_str!("../../../docs/references/00_README.md")),
     ("01_source_policy.md", include_str!("../../../docs/references/01_source_policy.md")),
     ("02_arpg_foundations.md", include_str!("../../../docs/references/02_arpg_foundations.md")),
@@ -55,6 +57,53 @@ pub const BUNDLED_REFERENCES: &[(&str, &str)] = &[
     ("14_validation_and_failure_modes.md", include_str!("../../../docs/references/14_validation_and_failure_modes.md")),
     ("15_source_registry.md", include_str!("../../../docs/references/15_source_registry.md")),
     ("16_build_methodology_and_creators.md", include_str!("../../../docs/references/16_build_methodology_and_creators.md")),
+    ("17_build_archetype_taxonomy.md", include_str!("../../../docs/references/17_build_archetype_taxonomy.md")),
+    ("18_atlas_and_endgame_mechanics.md", include_str!("../../../docs/references/18_atlas_and_endgame_mechanics.md")),
+    ("19_combat_movement_animation.md", include_str!("../../../docs/references/19_combat_movement_animation.md")),
+    ("20_item_basetype_identity.md", include_str!("../../../docs/references/20_item_basetype_identity.md")),
+    ("21_currency_and_barter_taxonomy.md", include_str!("../../../docs/references/21_currency_and_barter_taxonomy.md")),
+    ("22_trade_etiquette_and_scams.md", include_str!("../../../docs/references/22_trade_etiquette_and_scams.md")),
+    ("23_hardcore_softcore_ssf_mode_differences.md", include_str!("../../../docs/references/23_hardcore_softcore_ssf_mode_differences.md")),
+    ("24_patch_history_meta.md", include_str!("../../../docs/references/24_patch_history_meta.md")),
+    ("25_pob_engine_integration.md", include_str!("../../../docs/references/25_pob_engine_integration.md")),
+    ("26_validation_and_self_correction.md", include_str!("../../../docs/references/26_validation_and_self_correction.md")),
+    // Creators registry — per-creator profiles, indexed by 00_README.
+    ("creators_registry/00_README.md", include_str!("../../../docs/references/creators_registry/00_README.md")),
+    ("creators_registry/ben_.md", include_str!("../../../docs/references/creators_registry/ben_.md")),
+    ("creators_registry/coconutmage.md", include_str!("../../../docs/references/creators_registry/coconutmage.md")),
+    ("creators_registry/darthmicrotransaction.md", include_str!("../../../docs/references/creators_registry/darthmicrotransaction.md")),
+    ("creators_registry/dslily.md", include_str!("../../../docs/references/creators_registry/dslily.md")),
+    ("creators_registry/fubgun.md", include_str!("../../../docs/references/creators_registry/fubgun.md")),
+    ("creators_registry/furty.md", include_str!("../../../docs/references/creators_registry/furty.md")),
+    ("creators_registry/ghazzy.md", include_str!("../../../docs/references/creators_registry/ghazzy.md")),
+    ("creators_registry/goratha.md", include_str!("../../../docs/references/creators_registry/goratha.md")),
+    ("creators_registry/kobeblaubeere.md", include_str!("../../../docs/references/creators_registry/kobeblaubeere.md")),
+    ("creators_registry/kripparrian.md", include_str!("../../../docs/references/creators_registry/kripparrian.md")),
+    ("creators_registry/mathil.md", include_str!("../../../docs/references/creators_registry/mathil.md")),
+    ("creators_registry/octoxy.md", include_str!("../../../docs/references/creators_registry/octoxy.md")),
+    ("creators_registry/palsteron.md", include_str!("../../../docs/references/creators_registry/palsteron.md")),
+    ("creators_registry/pohx.md", include_str!("../../../docs/references/creators_registry/pohx.md")),
+    ("creators_registry/quin69.md", include_str!("../../../docs/references/creators_registry/quin69.md")),
+    ("creators_registry/ruetoo.md", include_str!("../../../docs/references/creators_registry/ruetoo.md")),
+    ("creators_registry/subtractem.md", include_str!("../../../docs/references/creators_registry/subtractem.md")),
+    ("creators_registry/tripolarbear.md", include_str!("../../../docs/references/creators_registry/tripolarbear.md")),
+    ("creators_registry/zizaran.md", include_str!("../../../docs/references/creators_registry/zizaran.md")),
+    ("creators_registry/ziggyd.md", include_str!("../../../docs/references/creators_registry/ziggyd.md")),
+    // PoE2 scaffolds — version-pinned mechanics. 0.5 stubs filled at launch.
+    ("poe2/00_version_pinning.md", include_str!("../../../docs/references/poe2/00_version_pinning.md")),
+    ("poe2/01_spirit_economy.md", include_str!("../../../docs/references/poe2/01_spirit_economy.md")),
+    ("poe2/02_weapon_sets.md", include_str!("../../../docs/references/poe2/02_weapon_sets.md")),
+    ("poe2/03_trials_sekhemas_chaos.md", include_str!("../../../docs/references/poe2/03_trials_sekhemas_chaos.md")),
+    ("poe2/04_runes_soul_cores_talismans.md", include_str!("../../../docs/references/poe2/04_runes_soul_cores_talismans.md")),
+    ("poe2/05_atlas_mechanics_05.md", include_str!("../../../docs/references/poe2/05_atlas_mechanics_05.md")),
+    ("poe2/06_runes_of_aldur.md", include_str!("../../../docs/references/poe2/06_runes_of_aldur.md")),
+    // Glossary — multilingual (FR↔EN today; expandable).
+    ("glossary/fr_en.md", include_str!("../../../docs/references/glossary/fr_en.md")),
+    // Thresholds — version-pinned numerical bars by content tier.
+    ("thresholds/red_maps.md", include_str!("../../../docs/references/thresholds/red_maps.md")),
+    ("thresholds/pinnacle.md", include_str!("../../../docs/references/thresholds/pinnacle.md")),
+    ("thresholds/uber_pinnacle.md", include_str!("../../../docs/references/thresholds/uber_pinnacle.md")),
+    // Maxroll catalogues — author-curated article index.
     ("maxroll/00_README.md", include_str!("../../../docs/references/maxroll/00_README.md")),
     ("maxroll/poe1_bosses.md", include_str!("../../../docs/references/maxroll/poe1_bosses.md")),
     ("maxroll/poe1_crafting.md", include_str!("../../../docs/references/maxroll/poe1_crafting.md")),
@@ -417,6 +466,10 @@ pub fn list_files() -> Result<PromptTree> {
     let root = prompts_dir().context("home directory not resolvable")?;
     let mut always_loaded: Vec<PromptFileMeta> = Vec::new();
     let mut references_top: Vec<PromptFileMeta> = Vec::new();
+    let mut references_creators: Vec<PromptFileMeta> = Vec::new();
+    let mut references_poe2: Vec<PromptFileMeta> = Vec::new();
+    let mut references_glossary: Vec<PromptFileMeta> = Vec::new();
+    let mut references_thresholds: Vec<PromptFileMeta> = Vec::new();
     let mut references_maxroll: Vec<PromptFileMeta> = Vec::new();
     let mut providers: Vec<PromptFileMeta> = Vec::new();
     let mut models: Vec<PromptFileMeta> = Vec::new();
@@ -442,18 +495,25 @@ pub fn list_files() -> Result<PromptTree> {
         }
     }
 
-    let maxroll_root = refs_root.join("maxroll");
-    if let Ok(rd) = fs::read_dir(&maxroll_root) {
-        for entry in rd.flatten() {
-            let path = entry.path();
-            if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("md") {
-                if let Some(file_name) = path.file_name().and_then(|s| s.to_str()) {
-                    let rel = format!("references/maxroll/{file_name}");
-                    references_maxroll.push(meta_for(&rel, &path));
+    let scan_subdir = |subdir: &str, bucket: &mut Vec<PromptFileMeta>| {
+        let dir = refs_root.join(subdir);
+        if let Ok(rd) = fs::read_dir(&dir) {
+            for entry in rd.flatten() {
+                let path = entry.path();
+                if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("md") {
+                    if let Some(file_name) = path.file_name().and_then(|s| s.to_str()) {
+                        let rel = format!("references/{subdir}/{file_name}");
+                        bucket.push(meta_for(&rel, &path));
+                    }
                 }
             }
         }
-    }
+    };
+    scan_subdir("creators_registry", &mut references_creators);
+    scan_subdir("poe2", &mut references_poe2);
+    scan_subdir("glossary", &mut references_glossary);
+    scan_subdir("thresholds", &mut references_thresholds);
+    scan_subdir("maxroll", &mut references_maxroll);
 
     let providers_dir = root.join("providers");
     if let Ok(rd) = fs::read_dir(&providers_dir) {
@@ -502,6 +562,10 @@ pub fn list_files() -> Result<PromptTree> {
     };
     sort_by_name(&mut always_loaded);
     sort_by_name(&mut references_top);
+    sort_by_name(&mut references_creators);
+    sort_by_name(&mut references_poe2);
+    sort_by_name(&mut references_glossary);
+    sort_by_name(&mut references_thresholds);
     sort_by_name(&mut references_maxroll);
     sort_by_name(&mut providers);
     sort_by_name(&mut models);
@@ -520,6 +584,34 @@ pub fn list_files() -> Result<PromptTree> {
             label: "Reference library".to_string(),
             description: "Conceptual knowledge base. The agent fetches these on demand via the read_internal_reference tool.".to_string(),
             items: references_top,
+        });
+    }
+    if !references_creators.is_empty() {
+        groups.push(PromptGroup {
+            label: "Reference library — Creator profiles".to_string(),
+            description: "Per-creator profiles (build creators on Maxroll, Mobalytics, Twitch). Each profile lists archetypes, signature quirks, biases, where to verify.".to_string(),
+            items: references_creators,
+        });
+    }
+    if !references_poe2.is_empty() {
+        groups.push(PromptGroup {
+            label: "Reference library — PoE2 mechanics".to_string(),
+            description: "Version-pinned PoE2-specific mechanics. Always check 00_version_pinning.md before applying claims here.".to_string(),
+            items: references_poe2,
+        });
+    }
+    if !references_glossary.is_empty() {
+        groups.push(PromptGroup {
+            label: "Reference library — Glossary".to_string(),
+            description: "Multilingual glossaries used to translate user queries into canonical English terms before fetching wiki/repoe data.".to_string(),
+            items: references_glossary,
+        });
+    }
+    if !references_thresholds.is_empty() {
+        groups.push(PromptGroup {
+            label: "Reference library — Threshold tables".to_string(),
+            description: "Version-pinned numerical bars per content tier (red maps, pinnacle, uber pinnacle). DPS, EHP, max-hit, recovery floors.".to_string(),
+            items: references_thresholds,
         });
     }
     if !references_maxroll.is_empty() {

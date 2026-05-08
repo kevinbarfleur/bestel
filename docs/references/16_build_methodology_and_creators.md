@@ -1,6 +1,6 @@
 ---
-description: 6 trusted creator profiles, build-guide anatomy (Maxroll/Mobalytics), 12-step decision framework, build-quality diagnostic.
-fetch_when: For build evaluation, "is this guide good", creator/leveling-guide questions, or designing a new build from scratch.
+description: Build-guide anatomy (Maxroll/Mobalytics), 12-step decision framework, build-quality diagnostic, build-pattern vocabulary. Creator profiles moved to creators_registry/.
+fetch_when: For build evaluation, "is this guide good", build-anatomy questions, decision-framework questions, or designing a new build from scratch. For specific creator coverage see creators_registry/00_README.md.
 ---
 
 # 16 — Build creators and build-crafting methodology
@@ -17,54 +17,27 @@ The agent should treat everything below as a **mental scaffold**, not as rules. 
 
 ---
 
-## Part 1 — Creator profiles
+## Part 1 — Creator profiles → see [`creators_registry/`](creators_registry/00_README.md)
 
-These are the creators whose work the agent should consult when asked about builds, league starts, or the current meta. Each profile lists the creator's URL, archetype focus, and signature philosophy. **The agent should always open the profile URL to retrieve the current build list before quoting specifics**, because builds get archived per-league and updated per-patch.
+Creator profiles have been moved out of this document into per-creator
+files under `creators_registry/`. The registry covers ~19 creators across
+PoE1 and PoE2 with consistent metadata: known archetypes, signature
+quirks, biases, where to verify.
 
-### Goratha — Maxroll
+**The agent should always open the profile URL to retrieve the current
+build list before quoting specifics**, because builds get archived
+per-league and updated per-patch. The registry is curated for navigation,
+not for citation.
 
-- **PoE1 profile:** <https://maxroll.gg/@goratha?game=poe>
-- **PoE2 profile:** <https://maxroll.gg/@goratha?game=poe2>
+Quick links to the most-cited profiles (full list in
+[`creators_registry/00_README.md`](creators_registry/00_README.md)):
 
-Goratha is a Maxroll content creator known for SSF-friendly, well-rounded league starters that smooth out the early-to-late game transition. His writing emphasises that a build should be *playable from level 1 with no twink gear*, scale gracefully through the campaign, and remain viable through Atlas progression without requiring a chase unique to function. His PoE1 signature archetypes have included Penance Brand Ignite Elementalist, Rolling Magma Mines Saboteur, Shock Nova of Procession Archmage Hierophant, and Eviscerate Bleed Gladiator. In PoE2 (0.4.0+) he has covered Disciple of Varashta plant builds, Fireball Blood Mage, and Bleed Rake Amazon. The agent should reach for Goratha when a player asks "what should I league-start with as a beginner" or "I want a build I can theoretically finish on SSF."
-
-### Zizaran — Maxroll
-
-- **PoE1 profile:** <https://maxroll.gg/@zizaran?game=poe>
-- **PoE2 profile:** <https://maxroll.gg/@zizaran?game=poe2>
-
-Zizaran has been streaming PoE since 2015 and runs the Gauntlet, the largest hardcore community event. His builds skew toward *hardcore-viable* — meaning defensive layers are non-negotiable, and the build is expected to survive bad map mods, on-death effects, and lag spikes. Signature PoE1 builds include Boneshatter Juggernaut (slow immunity, regen, Trauma stacking), EA Ballista Champion (Fortify-based defenses on totems), Lacerate Gladiator (Block-stacking bleed). In PoE2 he has covered Ice Strike Invoker. He is also an unofficial community spokesperson — he interviews GGG developers, surfaces community concerns, and his guides usually include an honest difficulty/safety rating. The agent should reach for Zizaran when a player asks about hardcore play, when defense matters more than damage, or when the player is a beginner who values clear and stable instructions.
-
-### Palsteron — Maxroll
-
-- **PoE1 profile:** <https://maxroll.gg/@palsteron>
-- **PoE2 profile:** <https://maxroll.gg/@palsteron?game=poe2>
-- Twitch: <https://www.twitch.tv/palsteron>
-
-Palsteron specialises in *bow and totem* builds — Explosive Arrow Ballista (Champion and Elementalist variants), Toxic Rain Ballista Pathfinder, Caustic Arrow Poison Ballista Trickster, Kinetic Fusillade Ballista Hierophant, Archmage Ball Lightning Hierophant. His writing is unusually clear about itemisation philosophy: *"The Item Progression in Path of Exile is not as rigid as in most other games... flexibility is key. The game won't always give you exactly the item you are looking for, so you need to adapt. Even if small upgrades seem insignificant, the sum of them decides whether your character fails or succeeds."* The agent should reach for Palsteron when a player wants a bow or totem build, when crafting itemisation needs explanation, or when the player asks about scaling Caustic Arrow / Toxic Rain / Explosive Arrow specifically.
-
-### Pohx — Mobalytics
-
-- **PoE1 profile:** <https://mobalytics.gg/poe/profile/pohx>
-- External reference site (his own): the "Pohx Wiki" — searchable as a PoE community institution dedicated to Righteous Fire
-
-Pohx is *the* Righteous Fire reference. His career has been built on making the RF Chieftain accessible to new players: low APM, tanky, very forgiving, scales naturally with monster density via Hinekora's Death's Fury proc. He maintains both a vanilla league-start version and a Life Stack RF endgame variant (Kaom's Heart, Adorned Jewels, Foulborn Rathpith). Anyone asking "I'm new to PoE, give me something I can't fail with" or "how does Righteous Fire work" should be routed to Pohx. The agent should also know his archetype's hard limit: RF is **DoT-cap-bound** at the high end, single-target on Maven and similar pinnacle bosses is often weak, and the build is restricted to Marauder (Chieftain ascendancy is the canonical home).
-
-### Ruetoo — Mobalytics
-
-- **PoE1 profile:** <https://mobalytics.gg/poe/profile/ruetoo>
-- **PoE2 profile:** <https://mobalytics.gg/poe-2/ruetoo>
-- Twitch: <https://www.twitch.tv/ruetoo>
-
-Ruetoo is a partnered creator who covers both games. PoE1: Slayer (Elemental Hit), Elementalist (Phys DoT — often co-authored with imexile), and other off-meta optimisation work. PoE2: Mercenary Tactician with Stormblast Bolts + Trinity stacking, Pathfinder with grenades, Ranger Lightning Spear / Explosive Shot, Huntress Rapid Shot Amazon (Fresh Clip mechanic). His guide style is unusual in that he ships **multiple progression tabs in one guide** (Live, Take 2, Rip variants — explicitly tracking his own character iterations), which is useful when a player wants to see how a build evolves rather than only its endgame state. The agent should reach for Ruetoo when a player wants high-skill optimisation, off-meta exploration, or to see the *iteration process* behind a build rather than a static recipe.
-
-### Fubgun — Mobalytics
-
-- **PoE1 profile:** <https://mobalytics.gg/poe/profile/fubgun>
-- **PoE2 profile:** <https://mobalytics.gg/poe-2/fubgun>
-- Twitch: <https://www.twitch.tv/fubgun>
-
-Fubgun is the clearspeed maximalist. PoE1: Lightning Arrow / Elemental Hit / Tornado Shot Deadeye — bow archetypes optimised for mapping throughput. PoE2: Lightning Arrow Deadeye (one of the most popular meta builds), Lightning Spear Deadeye (pre-nerf reference). His guide format is unusually explicit about progression tiers — he ships variants labelled `Starter`, `Crit swap`, `Mid game`, `Inspired setup`, `Endgame no HH`, `Headhunter`, `Warden(Optional) Uber Endgame`. He also includes vendor regex strings to filter shop UIs and gear-acquisition shortcuts (Hyrri's Bite vendor recipe, Prismweave as cheap early unique). The agent should reach for Fubgun when a player explicitly wants *speed* — fast mapping, fast farming, fast clear — or wants to understand how a build's gearing scales tier by tier from league start to mirror-tier.
+- [`creators_registry/goratha.md`](creators_registry/goratha.md) — Maxroll, SSF-friendly league starters.
+- [`creators_registry/zizaran.md`](creators_registry/zizaran.md) — community lead, Gauntlet HC event.
+- [`creators_registry/palsteron.md`](creators_registry/palsteron.md) — bow / totem specialist; itemisation philosophy.
+- [`creators_registry/pohx.md`](creators_registry/pohx.md) — RF authority.
+- [`creators_registry/ruetoo.md`](creators_registry/ruetoo.md) — high-skill optimisation, off-meta iteration.
+- [`creators_registry/fubgun.md`](creators_registry/fubgun.md) — clearspeed maximalist, tier ladders.
 
 ---
 

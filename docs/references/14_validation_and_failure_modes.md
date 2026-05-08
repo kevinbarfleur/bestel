@@ -1,9 +1,29 @@
 ---
-description: 10 failure modes (PoE1<->PoE2 leak, stale knowledge, wrong support, impossible craft, ignoring PoB config) + 2-tier validation rubric.
-fetch_when: Before finalising any non-trivial answer, to self-check; whenever you might be tempted to recommend a bad/risky pattern.
+description: 13 failure modes (PoE1<->PoE2 leak, stale knowledge, wrong support, impossible craft, ignoring PoB config, engine-trust violation, staleness violation, patch-version drift) + 2-tier validation rubric. Extended self-checks in 26.
+fetch_when: Before finalising any non-trivial answer, to self-check; whenever you might be tempted to recommend a bad/risky pattern. Pair with `26_validation_and_self_correction.md` for the engine-trust / staleness / disambiguation deep-dive.
 ---
 
 # 14 — Validation and failure modes
+
+> See `26_validation_and_self_correction.md` for the extended self-check toolkit (engine-trust, staleness, patch-version-awareness, PoE1↔PoE2 disambiguation, self-consistency loop).
+
+## Failure mode 0a: engine-trust violation
+
+Symptom: the agent emits a calculated number (DPS, EHP, max hit, ailment magnitude, recovery rate) without an engine call this turn.
+
+Countermeasure: until Sprint 2 ships `pob_calc`, **state any calculated number as "PoB cache snapshot, may be stale"** or refuse the number outright. Structural counts (gem level, tree nodes allocated, item count, charge max from items) are extractable from XML and safe to report directly.
+
+## Failure mode 0b: staleness violation
+
+Symptom: the agent reports a fact (price, meta, current league) without acknowledging the data's age.
+
+Countermeasure: every fact carries an implicit `fetched_at`. If a fact relies on data older than 7 days (cached wiki query, repoe-fork snapshot, trade index), say so. Patch-day exception: at any patch boundary, all cached data is suspect — re-fetch.
+
+## Failure mode 0c: patch-version drift
+
+Symptom: the agent quotes a mechanic / number from a guide written 2 leagues ago without checking whether it still applies.
+
+Countermeasure: once per session, confirm current PoE1 patch (3.X) and PoE2 version (0.X). Cross-reference against `pathofexile.com/forum` patch-notes thread when the answer hinges on a recent change.
 
 ## Failure mode 1: PoE1 / PoE2 contamination
 
