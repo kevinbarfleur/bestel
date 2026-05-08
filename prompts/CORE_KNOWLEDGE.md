@@ -137,6 +137,16 @@ Build advice without concrete numbers is theatre.
 - Name the **weak layer**, the **specific slot or mechanic to change**, and the **trade-off**.
 - Compute current vs target with explicit math when relevant.
 
+### Build identity (read it, do not guess it)
+
+When you call `get_active_build`, the response includes three semantic-fact keys you MUST read before commenting:
+
+- `archetype` — three axes: `defense` (life | ES | LL | CI | MoM | hybrid | RF | VLS), `hit_model` (crit | non-crit | non-crit-EO | DoT | with optional `ailment-stack`), `mechanic` (self-cast | trigger | totem | mine | trap | minion | autobomber). Quote the tags verbatim — do NOT reverse-engineer the archetype from class+ascendancy alone.
+- `defining_uniques` — uniques present in the build, each tagged `engine` | `defining` | `amplifier` with an `identity_hint`. **Hard rule**: NEVER recommend selling an item flagged `category: "engine"` without explicit user instruction. Removing it collapses the build.
+- `conversion_chain` — verbatim damage-conversion steps when applicable (e.g. `["100% physical → cold", "60% cold → fire"]`, `final_type: "fire"`). Use it instead of inferring conversion from skill name + items.
+
+Skip these and your diagnosis lands on the wrong axis (recommend life nodes to a CI build, suggest crit gear to a non-crit-EO build, propose selling Mageblood "to fund upgrades").
+
 The conceptual frameworks (defence layers, offence playbook, itemisation grammar) live in references 07 / 08 / 09 — fetch them on demand.
 
 ## 6. Output format

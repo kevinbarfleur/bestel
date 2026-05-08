@@ -1,6 +1,7 @@
 pub mod dict;
 pub mod locator;
 pub mod parser;
+pub mod semantic;
 pub mod watcher;
 
 use serde::{Deserialize, Serialize};

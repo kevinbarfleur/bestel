@@ -3,6 +3,7 @@ use std::sync::{Arc, RwLock};
 use anyhow::{anyhow, Context, Result};
 use serde_json::{json, Value};
 
+use crate::pob::semantic::BuildIdentity;
 use crate::pob::{PobBuild, PoeVersion};
 use crate::sources::repoe::{self, Category as RepoeCategory, Game as RepoeGame};
 use crate::sources::{FileCache, PoeHttpClient, TradeClient, WikiClient};
@@ -270,7 +271,7 @@ pub fn tool_schemas() -> Vec<Value> {
     vec![
         json!({
             "name": GET_ACTIVE_BUILD,
-            "description": "Returns the exile's currently loaded Path of Building build: game (PoE1/PoE2), class, ascendancy, level, main skill, full skill groups with linked gems, every item with its full text, key defensive stats (life, mana, ES, EHP, armour, evasion, suppression, block, dodge), per-element resistances and max-hit values, charges (power/frenzy/endurance current+max), active buffs (combat/buff/curse lists), config (boss profile, enemy resists, flask uptimes, custom mods), and passive tree summary (class/ascend IDs, version, node and mastery counts, weapon-set node split). Always call this BEFORE making any claim about the exile's character. No arguments.",
+            "description": "Returns the exile's currently loaded Path of Building build: game (PoE1/PoE2), class, ascendancy, level, main skill, full skill groups with linked gems, every item with its full text, key defensive stats (life, mana, ES, EHP, armour, evasion, suppression, block, dodge), per-element resistances and max-hit values, charges (power/frenzy/endurance current+max), active buffs (combat/buff/curse lists), config (boss profile, enemy resists, flask uptimes, custom mods), and passive tree summary (class/ascend IDs, version, node and mastery counts, weapon-set node split). The response also includes SEMANTIC FACTS computed from the parsed build: `archetype` (defense/hit_model/mechanic tags — e.g. {defense:[\"life\",\"MoM\"], hit_model:[\"non-crit-EO\"], mechanic:[\"self-cast\"]}), `defining_uniques` (uniques present, each tagged engine|defining|amplifier with an identity hint), and `conversion_chain` (verbatim damage-conversion steps when applicable). Surface archetype tags FIRST when commenting on the build — do NOT guess the archetype from class+ascendancy alone. Never recommend selling an item flagged `category: \"engine\"` without explicit user instruction; engine items collapse the build if removed. Always call this BEFORE making any claim about the exile's character. No arguments.",
             "input_schema": {
                 "type": "object",
                 "properties": {},
@@ -875,6 +876,19 @@ fn render_build_for_llm(b: &PobBuild) -> String {
         })
         .collect();
     summary.insert("items".into(), json!(items));
+
+    // Sprint 3 — semantic build identity. Computed on every render
+    // (cheap, ~1-5 ms). Surfaces archetype tags, defining uniques, and
+    // the conversion chain so the agent quotes them instead of guessing
+    // from class+ascendancy.
+    let identity = BuildIdentity::from_build(b);
+    summary.insert("archetype".into(), json!(identity.archetype));
+    if !identity.defining_uniques.is_empty() {
+        summary.insert("defining_uniques".into(), json!(identity.defining_uniques));
+    }
+    if let Some(chain) = identity.conversion_chain {
+        summary.insert("conversion_chain".into(), json!(chain));
+    }
 
     let value = serde_json::Value::Object(summary);
     let s = serde_json::to_string(&value).unwrap_or_default();
