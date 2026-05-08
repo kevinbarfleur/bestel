@@ -1,0 +1,31 @@
+/* Dev-panel-window-only styling. Loaded by dev-panel-main.ts.
+   Mirrors prompt-editor.css so every scroll surface in the dev panel
+   (run list, scenarios, prompts, viewer panes) gets the same discreet
+   graphite scrollbar as the rest of the app. */
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--ink-ghost) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--ink-ghost);
+  border-radius: 4px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--ink-faint);
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}

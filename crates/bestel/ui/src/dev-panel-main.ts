@@ -7,6 +7,7 @@ import DevPanelRoot from './views/DevPanel/DevPanelRoot.vue';
 import './styles/tokens.css';
 import './styles/fonts.css';
 import './styles/global.css';
+import './styles/dev-panel.css';
 
 function applyTheme(theme: 'light' | 'dark') {
   document.documentElement.classList.toggle('theme-dark', theme === 'dark');
