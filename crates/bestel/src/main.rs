@@ -159,6 +159,27 @@ async fn bootstrap_runtime(app: tauri::AppHandle) {
     }
     boot_prompts_watcher(&app);
     boot_provider_status(&app).await;
+    boot_data_refresh();
+}
+
+/// Spawn background daily refresh tasks for the offline data catalogues:
+/// - repoe-fork game data (PoE1 + PoE2 mods, base items, gems, uniques, ...)
+/// - official trade-stats catalogue (`/api/trade/data/stats`)
+///
+/// Each task runs after a short warm-up delay, validates the live payload,
+/// atomic-writes a zstd-compressed copy under `~/.bestel/cache/`, and swaps
+/// the in-memory snapshot. Failures are logged and never propagate — the
+/// bundled compile-time snapshot stays as the offline-first fallback.
+fn boot_data_refresh() {
+    use bestel_core::sources::{repoe, repoe_refresh, trade_catalogue, FileCache, PoeHttpClient};
+
+    match PoeHttpClient::new() {
+        Ok(http) => {
+            repoe_refresh::spawn(repoe::global(), http.clone());
+            trade_catalogue::spawn(http, FileCache::new(FileCache::default_dir()));
+        }
+        Err(e) => tracing::warn!(target: "bestel", "data refresh tasks not started: {e:?}"),
+    }
 }
 
 fn boot_prompts_watcher(app: &tauri::AppHandle) {

@@ -26,6 +26,8 @@ use serde_json::{json, Value};
 use crate::pob::PoeVersion;
 use crate::sources::cache::FileCache;
 use crate::sources::http::PoeHttpClient;
+use crate::sources::repoe::Game;
+use crate::sources::trade_catalogue;
 
 const TRADE_TTL_DATA: Duration = Duration::from_secs(12 * 3600);
 const TRADE_TTL_LEAGUES: Duration = Duration::from_secs(60 * 60);
@@ -109,8 +111,14 @@ impl TradeClient {
         Ok(names)
     }
 
-    /// Returns the raw `/data/stats` payload. Cached 12h.
+    /// Returns the raw `/data/stats` payload. Resolution order:
+    /// 1. In-memory `trade_catalogue` (bundled snapshot or nightly-refreshed).
+    /// 2. On-disk 12h TTL cache (legacy fallback for older installs).
+    /// 3. Live HTTP fetch (writes both catalogue and TTL cache).
     pub async fn raw_stats(&self) -> Result<Value> {
+        if let Ok(catalogue) = trade_catalogue::get(to_catalogue_game(self.game)) {
+            return Ok(catalogue.raw.clone());
+        }
         let key = format!("trade:{:?}:stats", self.game);
         if let Some(v) = self.cache.get::<Value>(&key, TRADE_TTL_DATA).await {
             return Ok(v);
@@ -277,6 +285,13 @@ impl TradeClient {
             },
             "sort": {"price": "asc"}
         })
+    }
+}
+
+fn to_catalogue_game(v: PoeVersion) -> Game {
+    match v {
+        PoeVersion::Poe1 => Game::Poe1,
+        PoeVersion::Poe2 => Game::Poe2,
     }
 }
 

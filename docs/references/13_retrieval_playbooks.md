@@ -205,4 +205,84 @@ Before the final answer:
 - Did I include one actionable next step?
 - Did I state uncertainty where source coverage is weak?
 - Did I avoid overfitting to stale patch / meta data?
+- Did I emit calculated numbers without an engine call? (engine-trust)
+- Did I report cached data without flagging its age? (staleness)
 ```
+
+## Playbook: offline game-data lookup (`repoe_lookup`)
+
+Use when: "what mods can roll on X base?", "what bases drop unique Z?", "what is the level-20 stat block for gem Y?", "show me the stat translations for `+# to Maximum Life`", "what implicit does Stellar Amulet have?".
+
+```text
+1. Resolve game (poe1 / poe2).
+2. Pick category:
+   - mods               (affixes — domains, types, item-class restrictions, weights)
+   - base_items         (item bases — implicits, requirements, drop level)
+   - gems               (skill / support gems — tags, stats, level scaling)
+   - uniques            (unique items — explicits, base, source)
+   - cluster_jewels     (PoE1 only)
+   - essences           (PoE1 only)
+   - fossils            (PoE1 only)
+   - stat_translations  (raw stat id ↔ formatted text)
+3. Prefer `id` for exact lookups (e.g. id=`Metadata/Items/Amulets/AmuletStellar`).
+4. Use `name` for fuzzy token-overlap (e.g. name="Stellar Amulet", limit=5).
+5. Output ships `source: bundled|refreshed` + `fetched_at` — surface the
+   age in the answer when it matters (>30d triggers a warning automatically).
+```
+
+Examples:
+
+```text
+repoe_lookup game=poe1 category=base_items name="Stellar Amulet"
+  → Metadata/Items/Amulets/AmuletStellar with implicit + drop level.
+
+repoe_lookup game=poe1 category=mods name="maximum life suffix"
+  → top-K matching mods, each with domain / required level / item-class weights.
+
+repoe_lookup game=poe1 category=uniques id="Metadata/Items/Armours/Helmets/HelmetUnique12"
+  → exact unique JSON record (Headhunter-tier item).
+
+repoe_lookup game=poe1 category=stat_translations name="maximum life"
+  → trade-stat ↔ display string mapping.
+
+repoe_lookup game=poe2 category=cluster_jewels …
+  → explicit "not available for poe2" error. Fall back to `wiki_cargo`.
+```
+
+PoE2 currently bundles only `mods`, `base_items`, and `uniques`. The
+others return "not available for poe2" — fall back to `wiki_cargo` or
+`wiki_parse` against `poe2wiki.net` / `poe2db.tw`.
+
+`repoe_lookup` is offline-first: the bundled snapshot ships with the app,
+the daily refresh task tops it up against `https://repoe-fork.github.io/`.
+A network outage does NOT break the tool — it just keeps returning the
+last refreshed (or bundled) data with `source: bundled`.
+
+## Playbook placeholders for upcoming tools (Sprint 2+)
+
+These tools are planned but not yet shipped. When the agent receives a question that *would* be served by them, fall back to the closest existing tool and flag the gap.
+
+### `pob_calc` — Sprint 2 (engine)
+
+Use when: "what's my real DPS?", "EHP against fire hits?", "max hit by element?".
+
+```text
+1. Confirm a build is loaded (`get_active_build`).
+2. Pick category (offence / defence / charges / reservation / ailments / all).
+3. Optional skill_index for non-default skill group.
+4. Returns canonical PoB output keys + Calcs config echo.
+5. ALWAYS surface the Calcs assumptions (enemyIsBoss, charges-up, flask uptime, etc.) in your answer.
+```
+
+**Until shipped**: report `<PlayerStat>` cache snapshot values from `get_active_build` and explicitly flag "PoB cache, may be stale".
+
+### `wiki_sqlite` — Sprint 4 (mirror)
+
+Use when: any wiki-cargo query that should be near-instant and offline-resilient.
+
+```text
+1. Drops in transparently — `wiki_cargo` queries SQLite first, falls back to live Cargo on miss.
+2. No new API surface.
+```
+
+**Until shipped**: existing `wiki_cargo` works against live Cargo with 1h TTL cache.

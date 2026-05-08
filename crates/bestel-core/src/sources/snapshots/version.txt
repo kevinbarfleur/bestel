@@ -1,0 +1,19 @@
+# repoe-fork + trade-stats snapshot manifest
+# fetched_at: 2026-05-08T02:09:38.934958100+00:00
+# total_compressed: 2810927 (2.68 MB)
+
+poe1/mods: 21.22 MB raw -> 0.87 MB zstd
+poe1/base_items: 2.68 MB raw -> 127.1 kB zstd
+poe1/gems: 13.23 MB raw -> 0.63 MB zstd
+poe1/uniques: 378.4 kB raw -> 38.1 kB zstd
+poe1/cluster_jewels: 11.9 kB raw -> 2.0 kB zstd
+poe1/essences: 110.7 kB raw -> 8.2 kB zstd
+poe1/fossils: 261.7 kB raw -> 6.3 kB zstd
+poe1/stat_translations: 4.27 MB raw -> 327.8 kB zstd
+poe2/mods: 7.30 MB raw -> 350.4 kB zstd
+poe2/base_items: 2.10 MB raw -> 93.1 kB zstd
+poe2/gems: SKIPPED (HTTP 404 Not Found on https://repoe-fork.github.io/poe2/gems.min.json)
+poe2/uniques: 100.7 kB raw -> 10.5 kB zstd
+poe2/stat_translations: SKIPPED (HTTP 404 Not Found on https://repoe-fork.github.io/poe2/stat_translations.min.json)
+trade_stats/poe1: 1.79 MB raw -> 186.0 kB zstd
+trade_stats/poe2: 0.61 MB raw -> 58.7 kB zstd

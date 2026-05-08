@@ -27,10 +27,14 @@
 pub mod cache;
 pub mod http;
 pub mod poedb;
+pub mod repoe;
+pub mod repoe_refresh;
 pub mod trade;
+pub mod trade_catalogue;
 pub mod wiki;
 
 pub use cache::FileCache;
 pub use http::{PoeHttpClient, RateLimitError};
+pub use repoe::{Category, Game, LookupEntry, LookupResult, RepoeClient, SnapshotSource};
 pub use trade::{StatRef, TradeClient, TradeSearchResp};
 pub use wiki::{WikiClient, WikiHit, WikiPage};

@@ -6,6 +6,10 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 description.workspace = true
+build = "build.rs"
+
+[build-dependencies]
+zstd = "0.13"
 
 [[example]]
 name = "smoke"
@@ -26,6 +30,10 @@ path = "examples/synergies_smoke.rs"
 [[example]]
 name = "real_battery"
 path = "examples/real_battery.rs"
+
+[[example]]
+name = "refresh_snapshots"
+path = "examples/refresh_snapshots.rs"
 
 [dev-dependencies]
 tokio = { workspace = true }
@@ -49,3 +57,4 @@ sha2 = { workspace = true }
 urlencoding = { workspace = true }
 base64 = { workspace = true }
 regex = "1"
+zstd = "0.13"

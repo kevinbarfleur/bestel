@@ -4,6 +4,7 @@ use anyhow::{anyhow, Context, Result};
 use serde_json::{json, Value};
 
 use crate::pob::{PobBuild, PoeVersion};
+use crate::sources::repoe::{self, Category as RepoeCategory, Game as RepoeGame};
 use crate::sources::{FileCache, PoeHttpClient, TradeClient, WikiClient};
 
 pub const GET_ACTIVE_BUILD: &str = "get_active_build";
@@ -15,6 +16,25 @@ pub const TRADE_RESOLVE_STATS: &str = "trade_resolve_stats";
 pub const TRADE_SEARCH_URL: &str = "trade_search_url";
 pub const WEB_FETCH: &str = "web_fetch";
 pub const READ_INTERNAL_REFERENCE: &str = "read_internal_reference";
+pub const REPOE_LOOKUP: &str = "repoe_lookup";
+
+/// Hosts that the `web_fetch` tool **rejects outright** before consulting the
+/// allowlist. Mirrors the tier-4 SEO blocklist in
+/// `docs/references/15_source_registry.md`. Reason: SEO-optimised PoE blog
+/// farms recycle patch announcements with no editorial integrity, frequently
+/// contradict each other, and harm answer quality. Subdomains match too.
+const FETCH_BLOCKLIST: &[&str] = &[
+    "aoeah.com",
+    "mmogah.com",
+    "iggm.com",
+    "ggwtb.com",
+    "boostmatch.com",
+    "sportskeeda.com",
+    "gamewatcher.com",
+    "switchbladegaming.com",
+    "dotesports.com",
+    "gamerant.com",
+];
 
 /// Hosts the `web_fetch` tool will accept. Mirrors the tier-1–7 allowlist
 /// in `docs/references/15_source_registry.md`. Subdomains of any entry are
@@ -170,6 +190,14 @@ pub fn host_allowed(url: &str) -> Result<()> {
         .host_str()
         .ok_or_else(|| anyhow!("URL has no host"))?
         .to_ascii_lowercase();
+    let blocked = FETCH_BLOCKLIST.iter().any(|b| {
+        host == *b || host.ends_with(&format!(".{b}"))
+    });
+    if blocked {
+        return Err(anyhow!(
+            "Host '{host}' is on Bestel's tier-4 SEO blocklist (no editorial integrity, frequently wrong on PoE mechanics). Find the same fact via wiki / patch notes / official source instead."
+        ));
+    }
     let ok = FETCH_ALLOWLIST.iter().any(|allowed| {
         host == *allowed || host.ends_with(&format!(".{allowed}"))
     });
@@ -329,6 +357,28 @@ pub fn tool_schemas() -> Vec<Value> {
             }
         }),
         json!({
+            "name": REPOE_LOOKUP,
+            "description": "Look up game-data entries from the bundled repoe-fork catalogue (PoE1 or PoE2). Categories: mods, base_items, gems, uniques, cluster_jewels, essences, fossils, stat_translations. Provide either `id` (exact metadata path lookup, e.g. 'Metadata/Items/Amulets/AmuletStellar') OR `name` (fuzzy token-overlap search, e.g. 'Stellar Amulet'). Returns the matching JSON object(s) plus snapshot metadata (source: bundled or refreshed, fetched_at). Strictly offline against the bundled snapshot — no live web fetch. Use this BEFORE wiki_cargo or web_fetch when the question is about base items, mod pools, gems, uniques, cluster jewel notables, essences, fossils, or stat translations. PoE2 only ships mods/base_items/uniques right now; other categories return an explicit not-available error.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "game": {"type": "string", "enum": ["poe1", "poe2"]},
+                    "category": {
+                        "type": "string",
+                        "enum": [
+                            "mods", "base_items", "gems", "uniques",
+                            "cluster_jewels", "essences", "fossils", "stat_translations"
+                        ]
+                    },
+                    "id": {"type": "string", "description": "Exact metadata id for a single-entry lookup."},
+                    "name": {"type": "string", "description": "Free-text name for fuzzy lookup."},
+                    "limit": {"type": "integer", "default": 5, "minimum": 1, "maximum": 20}
+                },
+                "required": ["game", "category"],
+                "additionalProperties": false
+            }
+        }),
+        json!({
             "name": READ_INTERNAL_REFERENCE,
             "description": "Read one of Bestel's internal reference files from `~/.bestel/prompts/references/`. CORE_KNOWLEDGE.md lists the available files and when to fetch each. Pass the relative path under references/ — e.g. '07_offence_damage_scaling.md' or 'maxroll/poe1_bosses.md'. Returns the file's full markdown text (truncated at 25 KB). Use this for conceptual frameworks (build reasoning, defence layering, crafting workflows) and the Maxroll URL catalogues; use wiki_parse for live mechanical truth. Path traversal and absolute paths are rejected.",
             "input_schema": {
@@ -472,6 +522,43 @@ pub async fn dispatch(name: &str, input: &Value, ctx: &ToolCtx) -> Result<String
                 "url": url,
                 "content": truncate(&plaintext, 25_000),
             });
+            Ok(truncate(&serde_json::to_string(&value).unwrap_or_default(), 30_000))
+        }
+        REPOE_LOOKUP => {
+            let game = input
+                .get("game")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| anyhow!("'game' is required ('poe1' or 'poe2')"))?;
+            let game = RepoeGame::parse(game)
+                .ok_or_else(|| anyhow!("'game' must be 'poe1' or 'poe2', got '{game}'"))?;
+            let category = input
+                .get("category")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| anyhow!("'category' is required"))?;
+            let category = RepoeCategory::parse(category).ok_or_else(|| {
+                anyhow!(
+                    "'category' must be one of mods/base_items/gems/uniques/cluster_jewels/essences/fossils/stat_translations, got '{category}'"
+                )
+            })?;
+            let id = input.get("id").and_then(|v| v.as_str());
+            let name = input.get("name").and_then(|v| v.as_str());
+            if id.is_some() && name.is_some() {
+                return Err(anyhow!("provide either 'id' or 'name', not both"));
+            }
+            let limit = input
+                .get("limit")
+                .and_then(|v| v.as_u64())
+                .map(|n| n.clamp(1, 20) as usize)
+                .unwrap_or(5);
+            let client = repoe::global();
+            let result = if let Some(id) = id {
+                client.lookup_by_id(game, category, id)?
+            } else if let Some(name) = name {
+                client.lookup_by_name(game, category, name, limit)?
+            } else {
+                return Err(anyhow!("provide either 'id' or 'name'"));
+            };
+            let value = serde_json::to_value(&result).context("serialize repoe lookup")?;
             Ok(truncate(&serde_json::to_string(&value).unwrap_or_default(), 30_000))
         }
         READ_INTERNAL_REFERENCE => {
@@ -653,7 +740,9 @@ mod tests {
         assert!(names.contains(&TRADE_RESOLVE_STATS));
         assert!(names.contains(&TRADE_SEARCH_URL));
         assert!(names.contains(&WEB_FETCH));
-        assert_eq!(schemas.len(), 8);
+        assert!(names.contains(&READ_INTERNAL_REFERENCE));
+        assert!(names.contains(&REPOE_LOOKUP));
+        assert_eq!(schemas.len(), 10);
     }
 
     #[test]
@@ -680,6 +769,16 @@ mod tests {
         assert!(msg.contains("poewiki.net"));
         assert!(host_allowed("https://poe.fextralife.com/anything").is_err());
         assert!(host_allowed("https://random-seo-blog.example.com/build").is_err());
+    }
+
+    #[test]
+    fn host_allowed_rejects_tier4_seo_blocklist() {
+        let err = host_allowed("https://www.aoeah.com/poe-build-guide").unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("tier-4 SEO blocklist"), "got: {msg}");
+        assert!(host_allowed("https://mmogah.com/anything").is_err());
+        assert!(host_allowed("https://news.dotesports.com/poe").is_err());
+        assert!(host_allowed("https://www.sportskeeda.com/poe").is_err());
     }
 
     #[test]
