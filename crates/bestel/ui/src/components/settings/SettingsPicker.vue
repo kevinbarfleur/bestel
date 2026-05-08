@@ -17,11 +17,20 @@ import SettingsToggle from './SettingsToggle.vue';
 import SettingsRadioCard from './SettingsRadioCard.vue';
 import SettingsModelRow from './SettingsModelRow.vue';
 import SettingsPromptsPane from './SettingsPromptsPane.vue';
+import SettingsDeveloperPane from './SettingsDeveloperPane.vue';
 
 defineProps<{ modelValue: boolean }>();
 const emit = defineEmits<{ 'update:modelValue': [value: boolean] }>();
 
-type Section = 'appearance' | 'links' | 'model' | 'folders' | 'prompts' | 'shortcuts' | 'data';
+type Section =
+  | 'appearance'
+  | 'links'
+  | 'model'
+  | 'folders'
+  | 'prompts'
+  | 'developer'
+  | 'shortcuts'
+  | 'data';
 
 const SECTIONS: Array<{ id: Section; label: string; hint: string }> = [
   { id: 'appearance', label: 'Appearance', hint: 'Theme & paper tone' },
@@ -29,6 +38,7 @@ const SECTIONS: Array<{ id: Section; label: string; hint: string }> = [
   { id: 'model', label: 'Default model', hint: 'Boot selection' },
   { id: 'folders', label: 'Watcher folders', hint: 'PoB build sources' },
   { id: 'prompts', label: 'Prompts & docs', hint: 'Edit system prompt + per-model overrides' },
+  { id: 'developer', label: 'Developer', hint: 'Test panel + battery runner' },
   { id: 'shortcuts', label: 'Shortcuts', hint: 'Keyboard reference' },
   { id: 'data', label: 'Data & privacy', hint: 'Storage, caches, keys' },
 ];
@@ -357,6 +367,9 @@ const chatCount = computed(() => history.chats.length);
 
         <!-- ============== PROMPTS & DOCS ============== -->
         <SettingsPromptsPane v-else-if="active === 'prompts'" />
+
+        <!-- ============== DEVELOPER ============== -->
+        <SettingsDeveloperPane v-else-if="active === 'developer'" />
 
         <!-- ============== SHORTCUTS ============== -->
         <div v-else-if="active === 'shortcuts'" class="pane">

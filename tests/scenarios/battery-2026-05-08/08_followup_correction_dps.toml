@@ -1,0 +1,17 @@
+name = "08_followup_correction_dps"
+provider = "any"
+build_fixture = "C:/Users/kbarf/Documents/Path of Building/Builds/3.26/Penance Brand.xml"
+timeout_secs = 360
+cost = "low"
+
+[[turn]]
+user = "What's my real DPS against a Pinnacle boss?"
+
+[[turn]]
+user = "That doesn't look right — my build's main skill is Penance Brand of Dissipation, not Frostblink. Can you verify which skill the engine actually used and re-run the calc on the correct one?"
+
+[[expectations]]
+must_call_tool = "get_active_build"
+min_final_text_len = 600
+min_tool_calls = 1
+must_match = ["(?i)penance"]

@@ -262,19 +262,40 @@ last refreshed (or bundled) data with `source: bundled`.
 
 These tools are planned but not yet shipped. When the agent receives a question that *would* be served by them, fall back to the closest existing tool and flag the gap.
 
-### `pob_calc` — Sprint 2 (engine)
+### `pob_calc` (active — Sprint 2 ✅)
 
 Use when: "what's my real DPS?", "EHP against fire hits?", "max hit by element?".
 
 ```text
 1. Confirm a build is loaded (`get_active_build`).
 2. Pick category (offence / defence / charges / reservation / ailments / all).
-3. Optional skill_index for non-default skill group.
-4. Returns canonical PoB output keys + Calcs config echo.
-5. ALWAYS surface the Calcs assumptions (enemyIsBoss, charges-up, flask uptime, etc.) in your answer.
+3. Optional `skill_index` for non-default skill group.
+4. Optional `calcs` overrides: enemyIsBoss, usePowerCharges, useFrenzyCharges,
+   useEnduranceCharges, forceBuffOnslaught, multiplierImpaleStacks, useFlask1..5.
+5. Default profile when the user does not specify: enemyIsBoss=true (Pinnacle),
+   charges up. State that default explicitly.
+6. ALWAYS surface the Calcs echo from the response — two PoBs with identical
+   gear can show 10× DPS swings purely from Calcs.
+7. If the engine number conflicts with `<PlayerStat>` cache from get_active_build
+   by more than ~5%, trust the engine and flag the cache as stale.
 ```
 
-**Until shipped**: report `<PlayerStat>` cache snapshot values from `get_active_build` and explicitly flag "PoB cache, may be stale".
+Examples:
+
+```text
+pob_calc category=offence calcs={"enemyIsBoss":true,"usePowerCharges":true,"useFrenzyCharges":true}
+  → TotalDPS, CombinedDPS, FullDPS, AverageHit, ailment DPS — against pinnacle, charges up.
+
+pob_calc category=defence calcs={"enemyIsBoss":true}
+  → EHP + MaxHitFire/Cold/Lightning/Phys/Chaos against pinnacle.
+
+pob_calc category=all
+  → entire PoB output table (use sparingly — large).
+```
+
+If the user is on macOS or Linux, `pob_calc` returns "engine not bundled for
+this platform" — fall back to `<PlayerStat>` cache from `get_active_build`
+with explicit staleness disclaimer. Sprint 2 ships Windows-only.
 
 ### `wiki_sqlite` — Sprint 4 (mirror)
 

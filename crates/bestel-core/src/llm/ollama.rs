@@ -432,6 +432,7 @@ const LOCAL_TOOL_ALLOWLIST: &[&str] = &[
     "wiki_synergies",
     "web_fetch",
     "read_internal_reference",
+    "pob_calc",
 ];
 
 /// Drop tools not in [`LOCAL_TOOL_ALLOWLIST`] from the schema list. The

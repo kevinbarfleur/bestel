@@ -1,0 +1,11 @@
+name = "06_molten_strike_zenith"
+provider = "any"
+build_fixture = "C:/Users/kbarf/Documents/Path of Building/Builds/Molten Strike of the Zenith - Perso.xml"
+prompt = "Look at my Molten Strike build. What archetype is it (use the build archetype taxonomy reference)? Identify the core scaling axes and the biggest single-slot upgrade left."
+timeout_secs = 300
+cost = "low"
+
+[[expectations]]
+must_call_tool = "get_active_build"
+min_final_text_len = 400
+min_tool_calls = 1

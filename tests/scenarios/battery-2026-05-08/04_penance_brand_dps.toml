@@ -1,0 +1,11 @@
+name = "04_penance_brand_dps"
+provider = "any"
+build_fixture = "C:/Users/kbarf/Documents/Path of Building/Builds/3.26/Penance Brand.xml"
+prompt = "What's my real DPS against a Pinnacle boss with all charges up? Quote the specific output keys you used and surface the Calcs config you assumed."
+timeout_secs = 300
+cost = "low"
+
+[[expectations]]
+must_call_tool = "get_active_build"
+min_final_text_len = 400
+min_tool_calls = 1

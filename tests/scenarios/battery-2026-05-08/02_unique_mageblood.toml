@@ -1,0 +1,12 @@
+name = "02_unique_mageblood"
+provider = "any"
+prompt = "Show me the full PoE1 unique entry for Mageblood. What's its base, drop level, and explicit modifiers?"
+timeout_secs = 240
+cost = "low"
+
+[[expectations]]
+must_match = ["(?i)mageblood", "(?i)flask"]
+must_not_match = ["(?i)don't have data"]
+must_call_tool = "repoe_lookup"
+min_final_text_len = 250
+min_tool_calls = 1

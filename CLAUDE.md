@@ -25,16 +25,20 @@ Desktop AI companion for Path of Exile 1 and 2. Persona: **Bestel**, chronicler 
 
 ## Bestel's voice
 
-- Defined in `SYSTEM_PROMPT.md` and reinforced by `crates/bestel-core/CORE_KNOWLEDGE.md`. Don't modify either without discussion.
+- Defined in `prompts/SYSTEM_PROMPT.md` and reinforced by `prompts/CORE_KNOWLEDGE.md`. Don't modify either without discussion.
 - Always call `get_active_build` before commenting on the player's character.
 - Refuse off-topic questions politely, in character.
 - Default language is English; mirror the user's language for prose, keep proper nouns (skills, items, ascendancies, currencies, leagues) in English.
 
-## Reference docs
+## Knowledge layer (`prompts/`)
 
-`docs/references/` is the conceptual knowledge base. The numbered files (`00_README` → `16_build_methodology_and_creators`) cover source policy, aRPG foundations, GGG philosophy, game model, build reasoning, character mechanics, offence / defence, itemisation / crafting, skills / gems / passives / ascendancies, endgame / economy / trade, vocabulary, retrieval playbooks, validation, source registry, and build creators. The `maxroll/` subfolder catalogs Maxroll articles with URLs and routing hints.
+The agent's load-bearing knowledge layer lives at the workspace root under `prompts/`, mirroring exactly the layout that gets seeded on user disk at `~/.bestel/prompts/`. Every file in this directory is bundled into the binary via `include_str!` and seeded to the user on first launch. Editing a file there changes what the agent sees on the next chat turn.
 
-`crates/bestel-core/CORE_KNOWLEDGE.md` is a distilled always-loaded subset of the references; it is concatenated to `SYSTEM_PROMPT.md` at compile time and shipped to every LLM call.
+- `prompts/SYSTEM_PROMPT.md` — voice + hard rules. Always loaded.
+- `prompts/CORE_KNOWLEDGE.md` — distilled invariants + tool inventory + reference index. Always loaded; concatenated to SYSTEM_PROMPT at compile time.
+- `prompts/references/` — fetch-on-demand conceptual library. Numbered files `00_README` → `26_validation_and_self_correction` cover source policy, aRPG foundations, GGG philosophy, game model, build reasoning, character mechanics, offence / defence, itemisation / crafting, skills / gems / passives / ascendancies, endgame / economy / trade, vocabulary, retrieval playbooks, validation, source registry, build creators, archetype taxonomy, atlas mechanics, combat / movement / animation, basetype identity, currency taxonomy, trade etiquette, mode differences, patch history, PoB engine integration, self-correction. Subfolders: `creators_registry/` (per-creator profiles), `glossary/` (FR↔EN), `poe2/` (version-pinned PoE2 mechanics), `thresholds/` (red maps / pinnacle / uber bars), `maxroll/` (URL catalogue). The agent fetches these on demand via the `read_internal_reference` tool.
+
+`docs/` keeps genuine developer-facing artefacts only (ROADMAP, test_prompts, brainstorm) — none of it is bundled into the agent.
 
 ## Test prompts (real user voice)
 

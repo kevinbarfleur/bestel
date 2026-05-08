@@ -6,7 +6,7 @@ Parking lot for ideas, plans, and feature explorations that are not currently sc
 
 - One file per idea. Filename reflects the topic (`passive-tree-viewer.md`, `cluster-jewels-rendering.md`, etc.).
 - Each file starts with a status header: parked / in-progress / shipped / dropped.
-- When an idea ships, move the file to `docs/references/` (if it documents shipped behavior) or delete it.
+- When an idea ships, move the file to `prompts/references/` (if it documents shipped behavior) or delete it.
 - When an idea is dropped, keep the file but flip the status to `dropped` with a short reason — useful for "why didn't we do X" questions later.
 
 ## Index

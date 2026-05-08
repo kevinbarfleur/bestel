@@ -15,15 +15,15 @@
 //! `tests/fixtures/pob/` and are referenced by name minus `.xml`.
 
 mod expectations;
-mod scenario;
 
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Context, Result};
+use bestel_core::test_runner::scenario;
+use bestel_core::test_runner::{Cost, ProviderChoice, Scenario};
 use regex::Regex;
-use scenario::{Cost, ProviderChoice, Scenario};
 use serde_json::Value;
 use tokio::process::Command;
 

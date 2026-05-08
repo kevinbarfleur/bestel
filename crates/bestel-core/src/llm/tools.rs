@@ -17,10 +17,11 @@ pub const TRADE_SEARCH_URL: &str = "trade_search_url";
 pub const WEB_FETCH: &str = "web_fetch";
 pub const READ_INTERNAL_REFERENCE: &str = "read_internal_reference";
 pub const REPOE_LOOKUP: &str = "repoe_lookup";
+pub const POB_CALC: &str = "pob_calc";
 
 /// Hosts that the `web_fetch` tool **rejects outright** before consulting the
 /// allowlist. Mirrors the tier-4 SEO blocklist in
-/// `docs/references/15_source_registry.md`. Reason: SEO-optimised PoE blog
+/// `prompts/references/15_source_registry.md`. Reason: SEO-optimised PoE blog
 /// farms recycle patch announcements with no editorial integrity, frequently
 /// contradict each other, and harm answer quality. Subdomains match too.
 const FETCH_BLOCKLIST: &[&str] = &[
@@ -37,7 +38,7 @@ const FETCH_BLOCKLIST: &[&str] = &[
 ];
 
 /// Hosts the `web_fetch` tool will accept. Mirrors the tier-1–7 allowlist
-/// in `docs/references/15_source_registry.md`. Subdomains of any entry are
+/// in `prompts/references/15_source_registry.md`. Subdomains of any entry are
 /// also accepted (e.g. `forum.pathofexile.com` matches `pathofexile.com`).
 const FETCH_ALLOWLIST: &[&str] = &[
     // Tier 1 — canonical
@@ -131,6 +132,11 @@ pub struct ToolCtx {
     pub trade_poe1: TradeClient,
     pub trade_poe2: TradeClient,
     pub http: PoeHttpClient,
+    /// Lazy headless PoB engine sidecar. Populated by the Tauri layer once
+    /// `bundle.externalBin` resource paths are resolved. Left `None` for
+    /// the MCP-serve entry point (no Tauri AppHandle, no resource dir);
+    /// `pob_calc` then returns a clear "engine not configured" error.
+    pub pob_engine: Option<Arc<bestel_pob_engine::PobEngineHandle>>,
 }
 
 impl ToolCtx {
@@ -141,6 +147,7 @@ impl ToolCtx {
         let wiki_poe2 = WikiClient::new(http.clone(), cache.clone(), PoeVersion::Poe2);
         let trade_poe1 = TradeClient::new(http.clone(), cache.clone(), PoeVersion::Poe1);
         let trade_poe2 = TradeClient::new(http.clone(), cache, PoeVersion::Poe2);
+        let pob_engine = crate::llm::pob_engine::global();
         Ok(Self {
             build,
             wiki_poe1,
@@ -148,7 +155,19 @@ impl ToolCtx {
             trade_poe1,
             trade_poe2,
             http,
+            pob_engine,
         })
+    }
+
+    /// Attach a lazy PoB engine handle. Called from the Tauri bootstrap
+    /// once vendored LuaJIT + harness paths are resolved via
+    /// `app.path().resource_dir()`.
+    pub fn with_pob_engine(
+        mut self,
+        engine: Arc<bestel_pob_engine::PobEngineHandle>,
+    ) -> Self {
+        self.pob_engine = Some(engine);
+        self
     }
 
     fn wiki(&self, game: &str) -> &WikiClient {
@@ -358,7 +377,7 @@ pub fn tool_schemas() -> Vec<Value> {
         }),
         json!({
             "name": REPOE_LOOKUP,
-            "description": "Look up game-data entries from the bundled repoe-fork catalogue (PoE1 or PoE2). Categories: mods, base_items, gems, uniques, cluster_jewels, essences, fossils, stat_translations. Provide either `id` (exact metadata path lookup, e.g. 'Metadata/Items/Amulets/AmuletStellar') OR `name` (fuzzy token-overlap search, e.g. 'Stellar Amulet'). Returns the matching JSON object(s) plus snapshot metadata (source: bundled or refreshed, fetched_at). Strictly offline against the bundled snapshot — no live web fetch. Use this BEFORE wiki_cargo or web_fetch when the question is about base items, mod pools, gems, uniques, cluster jewel notables, essences, fossils, or stat translations. PoE2 only ships mods/base_items/uniques right now; other categories return an explicit not-available error.",
+            "description": "ALWAYS try this BEFORE `wiki_search` / `wiki_parse` / `wiki_cargo` / `web_fetch` when the question is about a base item, a unique, a mod pool, a gem, a cluster-jewel notable, an essence, a fossil, or a stat translation — bundled offline catalogue, < 10 ms cold, no network round-trip. Categories: `mods`, `base_items`, `gems`, `uniques`, `cluster_jewels`, `essences`, `fossils`, `stat_translations` (PoE1) — PoE2 only ships `mods`, `base_items`, `uniques` and returns an explicit 'not available for poe2' error for the rest. Provide either `id` (exact metadata path, e.g. 'Metadata/Items/Amulets/AmuletStellar') or `name` (fuzzy token-overlap, e.g. 'Marble Amulet'). Returns the matching JSON object(s) plus snapshot metadata (`source: bundled|refreshed`, `fetched_at`). If `repoe_lookup` returns 0 entries the entity may not exist under that name — fall back to `wiki_search` to disambiguate, then retry. Do NOT default to wiki for itemisation lookups; the wiki has rate limits and HTML noise that the bundle does not.",
             "input_schema": {
                 "type": "object",
                 "properties": {
@@ -379,20 +398,69 @@ pub fn tool_schemas() -> Vec<Value> {
             }
         }),
         json!({
-            "name": READ_INTERNAL_REFERENCE,
-            "description": "Read one of Bestel's internal reference files from `~/.bestel/prompts/references/`. CORE_KNOWLEDGE.md lists the available files and when to fetch each. Pass the relative path under references/ — e.g. '07_offence_damage_scaling.md' or 'maxroll/poe1_bosses.md'. Returns the file's full markdown text (truncated at 25 KB). Use this for conceptual frameworks (build reasoning, defence layering, crafting workflows) and the Maxroll URL catalogues; use wiki_parse for live mechanical truth. Path traversal and absolute paths are rejected.",
+            "name": POB_CALC,
+            "description": "Run the bundled headless PoB engine against the active build and return canonical output stats. Categories: offence (DPS, hit chance, crit, ailment DPS), defence (EHP, max-hit by element, block, suppression), charges (max counts), reservation (life/mana/spirit %), ailments (shock/freeze/ignite chance), all (entire output table). Optional `skill_index` selects a non-default skill group. Optional `calcs` overrides the PoB Calcs config (enemyIsBoss, usePowerCharges, useFrenzyCharges, useEnduranceCharges, forceBuffOnslaught, multiplierImpaleStacks, useFlask1..5). The response ALWAYS echoes (1) the effective Calcs config and (2) `active_skill` metadata identifying which skill group the engine actually used. **CRITICAL VERIFICATION STEP**: before quoting any number, compare `active_skill.active_skill_label` (or `active_skill_gem`) with the build's `main_skill` from `get_active_build`. If they don't match, the engine fell back to the wrong skill — DO NOT quote the number; instead report the cached `<PlayerStat>` value with an explicit staleness note, OR retry pob_calc with an explicit `skill_index`. Surface the Calcs assumptions in your answer (`enemyIsBoss=Pinnacle`, `useFlask3=true`, etc.) — two PoBs with identical gear can show 10× DPS swings purely from Calcs config; never quote a number without naming the assumptions. The response also includes a `warnings` array; if non-empty, surface those warnings to the user.",
             "input_schema": {
                 "type": "object",
                 "properties": {
-                    "rel_path": {
+                    "category": {
                         "type": "string",
-                        "description": "Path under references/, e.g. '08_defence_recovery_survivability.md' or 'maxroll/poe1_crafting.md'."
+                        "enum": ["offence", "defence", "charges", "reservation", "ailments", "all"]
+                    },
+                    "skill_index": {"type": "integer", "minimum": 0},
+                    "calcs": {
+                        "type": "object",
+                        "properties": {
+                            "enemyIsBoss": {
+                                "description": "true → 'Pinnacle' boss profile; false → 'None'. Pass a string for finer control: 'None' / 'Boss' / 'Pinnacle' / 'Uber'."
+                            },
+                            "usePowerCharges": {"type": "boolean"},
+                            "useFrenzyCharges": {"type": "boolean"},
+                            "useEnduranceCharges": {"type": "boolean"},
+                            "forceBuffOnslaught": {"type": "boolean"},
+                            "multiplierImpaleStacks": {"type": "integer"},
+                            "useFlask1": {"type": "boolean"},
+                            "useFlask2": {"type": "boolean"},
+                            "useFlask3": {"type": "boolean"},
+                            "useFlask4": {"type": "boolean"},
+                            "useFlask5": {"type": "boolean"}
+                        },
+                        "additionalProperties": false
                     }
                 },
-                "required": ["rel_path"],
+                "required": ["category"],
                 "additionalProperties": false
             }
         }),
+        {
+            // Build the rel_path `enum` from the bundled references list
+            // so the schema ALWAYS matches what `read_reference()` actually
+            // accepts. Hard-coding a list drifts; reading from
+            // `crate::prompts::BUNDLED_REFERENCES` keeps them in lockstep.
+            // Models that respect JSON Schema `enum` (Anthropic, DeepSeek
+            // via Anthropic-compat) cannot invent a filename — the API
+            // layer rejects unknown values upfront.
+            let valid_paths: Vec<String> = crate::prompts::BUNDLED_REFERENCES
+                .iter()
+                .map(|(p, _)| (*p).to_string())
+                .collect();
+            json!({
+                "name": READ_INTERNAL_REFERENCE,
+                "description": "Read one of Bestel's internal reference files from `~/.bestel/prompts/references/`. The `rel_path` MUST be one of the values in the `enum` list — never invent a filename, never re-number, never pluralise. Common mistake: 'build_archetypes' (plural) instead of 'build_archetype' (singular, file 17). If you're not sure which file to fetch, browse `00_README.md` first. Returns the file's full markdown text (truncated at 25 KB). Use this for conceptual frameworks (build reasoning, defence layering, crafting workflows) and the Maxroll URL catalogues; use wiki_parse for live mechanical truth. Path traversal and absolute paths are rejected.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "rel_path": {
+                            "type": "string",
+                            "enum": valid_paths,
+                            "description": "MUST match one of the enum values. The list above is the complete reference library."
+                        }
+                    },
+                    "required": ["rel_path"],
+                    "additionalProperties": false
+                }
+            })
+        },
     ]
 }
 
@@ -573,8 +641,112 @@ pub async fn dispatch(name: &str, input: &Value, ctx: &ToolCtx) -> Result<String
             });
             Ok(truncate(&serde_json::to_string(&value).unwrap_or_default(), 30_000))
         }
+        POB_CALC => dispatch_pob_calc(input, ctx).await,
         other => Err(anyhow!("unknown tool '{other}'")),
     }
+}
+
+async fn dispatch_pob_calc(input: &Value, ctx: &ToolCtx) -> Result<String> {
+    use bestel_pob_engine::{CalcRequest, Category as PobCategory, EngineCalcs};
+    use bestel_pob_engine::lifecycle::Game as PobGame;
+
+    let engine = ctx
+        .pob_engine
+        .as_ref()
+        .ok_or_else(|| anyhow!(
+            "PoB engine not configured for this entry point. The headless calculator is wired in the desktop app; run Bestel via the Tauri window (not `bestel mcp-serve`) to use pob_calc."
+        ))?;
+
+    let build = ctx.build.get().ok_or_else(|| anyhow!(
+        "No active Path of Building build. Ask the exile to save a build in PoB so the chronicler can read it before calling pob_calc."
+    ))?;
+
+    let category_str = input
+        .get("category")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow!("'category' is required"))?;
+    let category = PobCategory::parse(category_str).ok_or_else(|| {
+        anyhow!(
+            "'category' must be one of offence/defence/charges/reservation/ailments/all, got '{category_str}'"
+        )
+    })?;
+
+    let skill_index = input
+        .get("skill_index")
+        .and_then(|v| v.as_u64())
+        .map(|n| n as u32);
+
+    let mut calcs = EngineCalcs::default();
+    if let Some(c) = input.get("calcs").and_then(|v| v.as_object()) {
+        if let Some(v) = c.get("enemyIsBoss") {
+            // Accept bool or string; the harness normalises both.
+            if let Some(b) = v.as_bool() {
+                calcs.enemy_is_boss = Some(b);
+            } else if let Some(s) = v.as_str() {
+                // For string, encode the boolean equivalent: anything other
+                // than "None" maps to true (interesting case).
+                calcs.enemy_is_boss = Some(!s.eq_ignore_ascii_case("None"));
+            }
+        }
+        if let Some(b) = c.get("usePowerCharges").and_then(|v| v.as_bool()) {
+            calcs.use_power_charges = Some(b);
+        }
+        if let Some(b) = c.get("useFrenzyCharges").and_then(|v| v.as_bool()) {
+            calcs.use_frenzy_charges = Some(b);
+        }
+        if let Some(b) = c.get("useEnduranceCharges").and_then(|v| v.as_bool()) {
+            calcs.use_endurance_charges = Some(b);
+        }
+        if let Some(b) = c.get("forceBuffOnslaught").and_then(|v| v.as_bool()) {
+            calcs.force_buff_onslaught = Some(b);
+        }
+        if let Some(n) = c.get("multiplierImpaleStacks").and_then(|v| v.as_i64()) {
+            calcs.multiplier_impale_stacks = Some(n as i32);
+        }
+        for (i, key) in [
+            "useFlask1", "useFlask2", "useFlask3", "useFlask4", "useFlask5",
+        ]
+        .iter()
+        .enumerate()
+        {
+            if let Some(b) = c.get(*key).and_then(|v| v.as_bool()) {
+                match i {
+                    0 => calcs.use_flask1 = Some(b),
+                    1 => calcs.use_flask2 = Some(b),
+                    2 => calcs.use_flask3 = Some(b),
+                    3 => calcs.use_flask4 = Some(b),
+                    4 => calcs.use_flask5 = Some(b),
+                    _ => unreachable!(),
+                }
+            }
+        }
+    }
+
+    let xml = tokio::fs::read_to_string(&build.source_file)
+        .await
+        .with_context(|| format!(
+            "read PoB XML at {}",
+            build.source_file.display()
+        ))?;
+
+    let game = match build.game {
+        PoeVersion::Poe2 => PobGame::Poe2,
+        _ => PobGame::Poe1,
+    };
+
+    let response = engine
+        .calc(CalcRequest {
+            game,
+            build_xml: xml,
+            category,
+            skill_index,
+            calcs,
+        })
+        .await
+        .map_err(|e| anyhow!("pob engine: {e}"))?;
+
+    let payload = serde_json::to_value(&response).context("serialize pob_calc response")?;
+    Ok(truncate(&serde_json::to_string(&payload).unwrap_or_default(), 30_000))
 }
 
 fn render_build_for_llm(b: &PobBuild) -> String {
@@ -742,7 +914,8 @@ mod tests {
         assert!(names.contains(&WEB_FETCH));
         assert!(names.contains(&READ_INTERNAL_REFERENCE));
         assert!(names.contains(&REPOE_LOOKUP));
-        assert_eq!(schemas.len(), 10);
+        assert!(names.contains(&POB_CALC));
+        assert_eq!(schemas.len(), 11);
     }
 
     #[test]

@@ -1,0 +1,12 @@
+name = "07_poe2_shapeshift"
+provider = "any"
+build_fixture = "C:/Users/kbarf/Documents/Path of Building (PoE2)/Builds/ShapeMyShift.xml"
+prompt = "Look at my PoE2 build. What's the class/ascendancy and the main combat loop? Flag any PoE1-only assumptions I might be carrying over that don't apply in PoE2."
+timeout_secs = 300
+cost = "low"
+
+[[expectations]]
+must_call_tool = "get_active_build"
+must_match = ["(?i)poe2|path of exile 2"]
+min_final_text_len = 400
+min_tool_calls = 1

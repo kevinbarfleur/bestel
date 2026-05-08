@@ -34,7 +34,7 @@ The files are numbered to match the agent's reasoning flow:
 maxroll/                             secondary-source catalog of Maxroll articles (URLs + routing hints)
 ```
 
-A distilled "always-loaded" version of these files lives in `crates/bestel-core/CORE_KNOWLEDGE.md` — that file is regenerated from the docs above and is what the agent actually reads at runtime.
+A distilled "always-loaded" version of these files lives in `prompts/CORE_KNOWLEDGE.md` — that file is regenerated from the docs above and is what the agent actually reads at runtime.
 
 ## How the agent uses these docs
 
@@ -66,7 +66,7 @@ This documentation is regenerated on a small set of triggers:
 - **PoE2 → 1.0.** Full revision of all PoE2-tagged sections.
 - ⚠️ **PoE2 0.5 (end of May 2026) overhauls the endgame mapping system.** `11_endgame_economy_trade_leagues.md` and `12_vocabulary_glossary.md` describe the legacy system; both will need a pass when 0.5 ships. Until then the docs flag PoE2 endgame terms with a "subject to 0.5 rework" caveat.
 
-After each documentation revision, regenerate `crates/bestel-core/CORE_KNOWLEDGE.md` from these files. The core is a distilled snapshot, not a manually edited file.
+After each documentation revision, regenerate `prompts/CORE_KNOWLEDGE.md` from these files. The core is a distilled snapshot, not a manually edited file.
 
 ## What does and does not belong here
 

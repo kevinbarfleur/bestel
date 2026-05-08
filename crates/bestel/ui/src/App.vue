@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, onMounted, onUnmounted } from 'vue';
 import { RouterView, useRoute } from 'vue-router';
 import { storeToRefs } from 'pinia';
+import { invoke } from '@tauri-apps/api/core';
 
 import TopBar from './components/topbar/TopBar.vue';
 import RunicToast from './components/runic/RunicToast.vue';
@@ -20,8 +21,23 @@ import { useUiStore } from './stores/ui';
 
 const route = useRoute();
 const isComponentsRoute = computed(() => route.path === '/components');
-const isDebugRoute = computed(() => route.path === '/debug');
-const hideTopBar = computed(() => isComponentsRoute.value || isDebugRoute.value);
+const hideTopBar = computed(() => isComponentsRoute.value);
+
+function onKeyDown(ev: KeyboardEvent) {
+  // Ctrl+Shift+D — open the dev panel window from any context.
+  if (ev.ctrlKey && ev.shiftKey && (ev.key === 'D' || ev.key === 'd')) {
+    ev.preventDefault();
+    invoke('dev_panel_open').catch((e) => console.error('dev_panel_open', e));
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', onKeyDown);
+});
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', onKeyDown);
+});
 
 const { state: tooltipState } = useTooltip();
 const toastsStore = useToastsStore();

@@ -36,7 +36,7 @@ same files under `~/.bestel/prompts/`.
 ## Architecture decisions (locked 2026-05-08)
 
 - **Doc surface**: every reference, glossary, threshold table, creator
-  profile, validation rule lives under `docs/references/` and is bundled
+  profile, validation rule lives under `prompts/references/` and is bundled
   via `BUNDLED_REFERENCES` in `crates/bestel-core/src/prompts.rs`. Adding
   a doc = one line in the array + `cargo build --release`. End-users
   edit copies under `~/.bestel/prompts/references/` via the existing
@@ -72,7 +72,7 @@ same files under `~/.bestel/prompts/`.
 Pure text + small `web_fetch` change. No new tools, no new crates, no
 network code. Highest agent-quality lift per dev-day.
 
-**New reference docs** under `docs/references/`:
+**New reference docs** under `prompts/references/`:
 
 - `17_build_archetype_taxonomy.md` — formal taxonomy (hit/crit, hit/non-
   crit, ailment-stack, DoT, totem, mine, trap, minion, trigger,
@@ -442,8 +442,64 @@ Day-of work, scaffolding done in Sprint 0.
     68 tests pass. (S1-1) version.txt does not exist on
     repoe-fork.github.io — refresh task uses plain GET, decision
     documented. (S1-2) parity encoded in `available_for`.
-- ☐ **Sprint 2** — PoB engine headless
-  - notes:
+- ✅ **Sprint 2** — PoB engine headless
+  - notes: Done 2026-05-08. New crate `bestel-pob-engine` with
+    `protocol.rs` (ndJSON Cmd/Reply), `lifecycle.rs` (per-game process,
+    8 s command timeout, 10 min idle, 3-restart-window circuit-breaker),
+    `calc.rs` (high-level orchestration: load_build_xml → set_config →
+    set_main_selection → get_stats → echo). Vendored
+    `PathOfBuildingCommunity` (v2.65.0) and `PathOfBuilding-PoE2`
+    (v2.49.3) as git submodules under `crates/bestel-pob-engine/vendor/`.
+    Forked the ianderse `api-stdio` harness from scratch under
+    `vendor/api-stdio-bestel/api-stdio.lua` so `set_config` exposes the
+    full Calcs key set (enemyIsBoss/charges/flasks/impale/onslaught).
+    Built LuaJIT 2.1 ROLLING from upstream MIT source via MSVC; vendored
+    Windows binary at `external/luajit/windows-x86_64/luajit.exe`
+    (~290 KB) plus `lua51.dll`. SHA256 in `scripts/luajit.sha256.txt`,
+    `vendor-luajit.ps1` regenerates from source. `pob_calc` tool
+    advertised in tools.rs schemas (length 10 → 11), dispatch arm reads
+    the active PobBuild, pipes XML to the engine, surfaces the Calcs
+    echo in the response. `pob_calc` IS in `LOCAL_TOOL_ALLOWLIST`
+    (simple I/O, high-signal output suits 7-8B models).
+    `crates/bestel-core/src/llm/pob_engine.rs` provides the lazy global
+    handle — auto-resolves vendored paths from the workspace, env-var
+    override `BESTEL_POB_ENGINE_DIR` for production layouts. Engine
+    refuses gracefully when binary or PoB submodule is missing. End-to-end
+    smoke test passes: spawn → load fixture → calc(offence,
+    enemyIsBoss=Pinnacle) → stats + Calcs echo. (S2-1) PoB1 v2.65.0,
+    PoB2 v2.49.3 — both have HeadlessWrapper.lua. (S2-2) ianderse
+    set_config exposes only bandit/pantheon/enemyLevel; we forked and
+    extended. (S2-3) Code-signing deferred — ships unsigned with
+    SmartScreen disclaimer. (S2-4) Cross-platform LuaJIT build
+    irrelevant — Windows-only this sprint. **Sub-sprint deferred**:
+    Tauri `bundle.externalBin/resources` wiring is non-trivial because
+    the vendored PoB tree is ~600 MB (TreeData/ alone is 524 MB).
+    Engine works in dev (cargo test, cargo tauri dev) via workspace-
+    relative path resolution. Production installer integration becomes
+    a Sprint 2.1 (figure out which PoB asset subset is load-bearing for
+    headless calc, ship the trimmed bundle).
+- ✅ **Sprint Tooling** — knowledge layer relocation + dev panel + battery CLI
+  - notes: Done 2026-05-08. Pause on the main Intelligence Roadmap to fix
+    layout debt + ship a self-service dev/test stack. Knowledge layer
+    moved to top-level `prompts/` (SYSTEM_PROMPT.md + CORE_KNOWLEDGE.md
+    + references/), mirroring `~/.bestel/prompts/` exactly. New separate
+    Tauri window `dev-panel` (mirrors prompt-editor pattern) with four
+    tabs: Runs (migrated from old /debug route), Scenarios (loads
+    `tests/scenarios/*.toml`), Real prompts (loads
+    `docs/test_prompts/real_user_prompts.toml`, 31 entries, filterable
+    by category), Live test (model picker + PoB fixture picker + free
+    prompt + side-by-side rendered markdown / raw stream events / stats).
+    New Settings section "Developer" with "Open dev panel" CTA. Global
+    shortcut `Ctrl+Shift+D` opens the panel from any window. Old
+    `/debug` route deleted. Scenario parser moved to
+    `bestel-core::test_runner` so the CLI and dev panel share it.
+    New CLI subcommand `bestel run-battery <dir>
+    [--model <id>] [--out <dir>] [--filter-name <substr>]
+    [--pob-fixture <name|path>]` runs scenarios in-process against
+    live providers, persists `PersistedRun` JSON per scenario, exits
+    non-zero on errors. Two known UX bugs (`wiki.La` auto-link from
+    markdown-it linkify, narration-leak around tool calls) carry over
+    to a future UX sprint — the dev panel makes both reproducible.
 - ☐ **Sprint 3** — PoB semantic-facts extractor
   - notes:
 - ☐ **Sprint 4** — Wiki SQLite mirror

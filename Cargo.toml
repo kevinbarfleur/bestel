@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/bestel-core", "crates/bestel-test", "crates/bestel"]
+members = ["crates/bestel-core", "crates/bestel-pob-engine", "crates/bestel-test", "crates/bestel"]
 resolver = "2"
 
 [workspace.package]

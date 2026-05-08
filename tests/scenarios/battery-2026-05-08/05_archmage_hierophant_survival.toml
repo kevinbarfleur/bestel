@@ -1,0 +1,11 @@
+name = "05_archmage_hierophant_survival"
+provider = "any"
+build_fixture = "C:/Users/kbarf/Documents/Path of Building/Builds/Archmage Hierophant Leaguestarter [PoE 3.25].xml"
+prompt = "Diagnose my survival. What's my weakest defensive layer right now and what's the cheapest fix? Quote real numbers from the build."
+timeout_secs = 300
+cost = "low"
+
+[[expectations]]
+must_call_tool = "get_active_build"
+min_final_text_len = 400
+min_tool_calls = 1

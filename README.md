@@ -45,7 +45,7 @@ no pep talks.
 - **Persistent chat history.** Conversations are saved locally with
   their attached build, restored on the next launch.
 - **PoE-aware reasoning core.** A baked-in knowledge layer
-  (`crates/bestel-core/CORE_KNOWLEDGE.md`) gives the agent build
+  (`prompts/CORE_KNOWLEDGE.md`) gives the agent build
   ontology, search planning, validation reflexes, and the genre / GGG
   priors — so it plans searches well rather than guessing from memory.
 - **MCP server mode.** Run `bestel mcp-serve` to expose Bestel's PoE
@@ -233,7 +233,7 @@ The agent uses a strict source allowlist: official `pathofexile.com`
 with explicit patch + author + date. Fandom, Fextralife, RMT sites,
 and AI-aggregator answers are blocked.
 
-The full registry lives in `docs/references/15_source_registry.md`.
+The full registry lives in `prompts/references/15_source_registry.md`.
 
 ## Stack
 
@@ -247,7 +247,7 @@ The full registry lives in `docs/references/15_source_registry.md`.
   local inference. Both share the same tool dispatch loop in
   `crates/bestel-core/src/llm/tools.rs`.
 
-The full structure is documented in `docs/references/` (concept docs,
+The full structure is documented in `prompts/references/` (concept docs,
 source policy, build reasoning, retrieval playbooks, validation
 checklists, vocabulary, plus the Maxroll catalogs and the
 build-creators methodology).

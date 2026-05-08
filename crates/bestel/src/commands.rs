@@ -457,6 +457,7 @@ pub async fn delete_api_key(env_name: String) -> Result<(), String> {
 }
 
 const PROMPT_EDITOR_LABEL: &str = "prompt-editor";
+const DEV_PANEL_LABEL: &str = "dev-panel";
 
 #[tauri::command]
 pub fn prompts_list() -> Result<bestel_core::prompts::PromptTree, String> {
@@ -524,6 +525,66 @@ pub async fn prompts_open_editor(app: AppHandle) -> Result<(), String> {
         .visible(true)
         .build()
         .map_err(|e| format!("create prompt editor window: {e}"))?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn dev_load_scenarios(rel_path: Option<String>) -> Result<Vec<bestel_core::test_runner::Scenario>, String> {
+    use std::path::PathBuf;
+
+    let rel = rel_path.unwrap_or_else(|| "tests/scenarios".to_string());
+    // Resolve relative to the workspace root by walking up from the cwd.
+    let mut candidate = std::env::current_dir().map_err(|e| e.to_string())?;
+    let target = loop {
+        let p = candidate.join(&rel);
+        if p.is_dir() {
+            break p;
+        }
+        if !candidate.pop() {
+            return Err(format!("scenarios dir '{rel}' not found from cwd"));
+        }
+    };
+    bestel_core::test_runner::load_scenarios(&PathBuf::from(target)).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn dev_load_real_prompts() -> Result<Vec<bestel_core::test_runner::RealPrompt>, String> {
+    use std::path::PathBuf;
+
+    let mut candidate = std::env::current_dir().map_err(|e| e.to_string())?;
+    let target = loop {
+        let p = candidate.join("docs/test_prompts/real_user_prompts.toml");
+        if p.is_file() {
+            break p;
+        }
+        if !candidate.pop() {
+            return Err("real_user_prompts.toml not found from cwd".into());
+        }
+    };
+    bestel_core::test_runner::load_real_prompts(&PathBuf::from(target)).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn dev_panel_open(app: AppHandle) -> Result<(), String> {
+    if let Some(existing) = app.get_webview_window(DEV_PANEL_LABEL) {
+        let _ = existing.show();
+        let _ = existing.set_focus();
+        let _ = existing.unminimize();
+        return Ok(());
+    }
+
+    // Window declared in tauri.conf.json with visible: false. The config
+    // entry handles geometry; the builder is the fallback.
+    let url = tauri::WebviewUrl::App("dev-panel.html".into());
+    tauri::WebviewWindowBuilder::new(&app, DEV_PANEL_LABEL, url)
+        .title("Dev panel — Bestel")
+        .inner_size(1280.0, 820.0)
+        .min_inner_size(900.0, 560.0)
+        .decorations(false)
+        .resizable(true)
+        .visible(true)
+        .build()
+        .map_err(|e| format!("create dev panel window: {e}"))?;
     Ok(())
 }
 

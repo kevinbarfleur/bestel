@@ -1,0 +1,17 @@
+name = "10_followup_lookup_then_apply"
+provider = "any"
+timeout_secs = 300
+cost = "low"
+
+[[turn]]
+user = "What does the unique Voices do in PoE1?"
+
+[[turn]]
+user = "If I socket a Voices in a large cluster jewel slot, what builds does that enable? Name 2 archetypes that get value out of it."
+pause_secs = 1
+
+[[expectations]]
+must_call_tool = "repoe_lookup"
+min_final_text_len = 500
+min_tool_calls = 1
+must_match = ["(?i)voices", "(?i)cluster"]

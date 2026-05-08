@@ -419,6 +419,19 @@ impl AnthropicClient {
                 .collect::<Vec<_>>()
                 .join("");
 
+            // Separate text from this iteration's assistant turn from the
+            // previous iteration's text. Without this the "narrating"
+            // prose around tool calls gets glued: e.g.
+            // "...the boss:Here is your real DPS..." (no break). Inserting
+            // a paragraph break makes the persisted final_text + the chat
+            // UI render naturally and matches what the user actually saw
+            // streaming in.
+            if !full_assistant.is_empty() && !assistant_text.is_empty() {
+                if !full_assistant.ends_with('\n') {
+                    full_assistant.push('\n');
+                }
+                full_assistant.push('\n');
+            }
             full_assistant.push_str(&assistant_text);
 
             let mut assistant_content: Vec<Value> = Vec::new();

@@ -1,0 +1,11 @@
+name = "03_pob_perso_3_26_diagnose"
+provider = "any"
+build_fixture = "C:/Users/kbarf/Documents/Path of Building/Builds/PoB perso 3.26.xml"
+prompt = "Look at my loaded PoB build. Tell me the class/ascendancy, the main skill, and pick ONE concrete upgrade I should prioritise next. Quote actual stats from my build."
+timeout_secs = 300
+cost = "low"
+
+[[expectations]]
+must_call_tool = "get_active_build"
+min_final_text_len = 400
+min_tool_calls = 1

@@ -3,7 +3,7 @@
 
 use serde_json::Value;
 
-use crate::scenario::Expectation;
+use bestel_core::test_runner::Expectation;
 
 #[derive(Debug)]
 pub struct EvalResult {
@@ -29,12 +29,30 @@ pub fn evaluate(exp: &Expectation, run_json: &Value) -> EvalResult {
         .cloned()
         .unwrap_or_default();
 
-    for re in &exp.must_match {
+    let must_match = match exp.must_match_compiled() {
+        Ok(v) => v,
+        Err(e) => {
+            return EvalResult {
+                passed: false,
+                failures: vec![format!("invalid must_match regex: {e}")],
+            }
+        }
+    };
+    let must_not_match = match exp.must_not_match_compiled() {
+        Ok(v) => v,
+        Err(e) => {
+            return EvalResult {
+                passed: false,
+                failures: vec![format!("invalid must_not_match regex: {e}")],
+            }
+        }
+    };
+    for re in &must_match {
         if !re.is_match(final_text) {
             failures.push(format!("missing pattern in answer: /{}/", re.as_str()));
         }
     }
-    for re in &exp.must_not_match {
+    for re in &must_not_match {
         if re.is_match(final_text) {
             failures.push(format!(
                 "forbidden pattern present in answer: /{}/",

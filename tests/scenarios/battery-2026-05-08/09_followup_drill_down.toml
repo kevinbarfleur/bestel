@@ -1,0 +1,20 @@
+name = "09_followup_drill_down"
+provider = "any"
+build_fixture = "C:/Users/kbarf/Documents/Path of Building/Builds/Archmage Hierophant Leaguestarter [PoE 3.25].xml"
+timeout_secs = 420
+cost = "low"
+
+[[turn]]
+user = "Look at my build and pick the weakest defensive layer."
+
+[[turn]]
+user = "OK, now give me the SINGLE cheapest gear-only fix for that layer (no passive tree changes, no gem swaps). Quote the exact slot, target mod, and rough chaos cost."
+pause_secs = 2
+
+[[turn]]
+user = "What item base would let me roll that mod, and what item-level minimum?"
+
+[[expectations]]
+must_call_tool = "get_active_build"
+min_final_text_len = 800
+min_tool_calls = 2

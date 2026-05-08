@@ -1,0 +1,12 @@
+name = "01_mod_lookup_marble_amulet"
+provider = "any"
+prompt = "What mods can roll on a Marble Amulet in PoE1? Give me the main prefix/suffix pool with item-level minimums."
+timeout_secs = 240
+cost = "low"
+
+[[expectations]]
+must_match = ["(?i)marble", "(?i)amulet"]
+must_not_match = ["(?i)don't have data", "(?i)not available"]
+must_call_tool = "repoe_lookup"
+min_final_text_len = 200
+min_tool_calls = 1

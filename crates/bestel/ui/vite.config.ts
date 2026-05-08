@@ -31,6 +31,7 @@ export default defineConfig({
       input: {
         index: resolve(__dirname, 'index.html'),
         'prompt-editor': resolve(__dirname, 'prompt-editor.html'),
+        'dev-panel': resolve(__dirname, 'dev-panel.html'),
       },
     },
   },

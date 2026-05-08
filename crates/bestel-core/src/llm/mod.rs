@@ -10,6 +10,7 @@ pub mod detect;
 pub mod keys;
 pub mod models;
 pub mod ollama;
+pub mod pob_engine;
 pub mod recorder;
 pub mod tools;
 pub mod wiki;

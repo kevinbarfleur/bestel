@@ -1,19 +1,17 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
-import { useRouter } from 'vue-router';
 
 import {
   deleteAllDebugRuns,
   deleteDebugRun,
   getDebugRun,
   listDebugRuns,
-} from '../api/tauri';
-import type { DebugRunDto } from '../api/types';
-import type { ChatMessageVm, Segment } from '../stores/chat';
-import ChatMessage from '../components/chat/ChatMessage.vue';
-import { useToastsStore } from '../stores/toasts';
+} from '../../../api/tauri';
+import type { DebugRunDto } from '../../../api/types';
+import type { ChatMessageVm, Segment } from '../../../stores/chat';
+import ChatMessage from '../../../components/chat/ChatMessage.vue';
+import { useToastsStore } from '../../../stores/toasts';
 
-const router = useRouter();
 const toasts = useToastsStore();
 
 const runs = ref<DebugRunDto[]>([]);
@@ -134,10 +132,6 @@ async function removeAll() {
   } catch (e) {
     toasts.push({ variant: 'error', title: 'Clear failed', body: String(e) });
   }
-}
-
-function close() {
-  router.push('/');
 }
 
 onMounted(refresh);
@@ -312,7 +306,6 @@ const messagesForSelected = computed<ChatMessageVm[]>(() => {
         </li>
       </ul>
       <footer class="debug__side-foot">
-        <button class="debug__btn debug__btn--ghost" @click="close">← back</button>
         <button
           class="debug__btn debug__btn--danger"
           @click="removeAll"

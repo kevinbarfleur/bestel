@@ -1,0 +1,6 @@
+[submodule "crates/bestel-pob-engine/vendor/PathOfBuildingCommunity"]
+	path = crates/bestel-pob-engine/vendor/PathOfBuildingCommunity
+	url = https://github.com/PathOfBuildingCommunity/PathOfBuilding
+[submodule "crates/bestel-pob-engine/vendor/PathOfBuilding-PoE2"]
+	path = crates/bestel-pob-engine/vendor/PathOfBuilding-PoE2
+	url = https://github.com/PathOfBuildingCommunity/PathOfBuilding-PoE2

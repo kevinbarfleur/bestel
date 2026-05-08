@@ -13,9 +13,14 @@ const escapeHtml = (s: string): string =>
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 
+// linkify is intentionally OFF: it auto-converts patterns like `wiki.La`
+// (sentence ending with a period followed by a capitalised word) into
+// clickable .la TLD links, since markdown-it linkify treats unknown TLDs
+// as valid domains. Authors must use explicit [text](https://…) syntax for
+// real links — our agent always emits explicit URLs anyway.
 const md: MarkdownIt = new MarkdownIt({
   html: false,
-  linkify: true,
+  linkify: false,
   breaks: false,
   highlight: (str: string, lang: string): string => {
     if (lang && hljs.getLanguage(lang)) {

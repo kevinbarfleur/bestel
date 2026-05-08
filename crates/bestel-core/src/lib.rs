@@ -5,5 +5,6 @@ pub mod pob;
 pub mod prompt;
 pub mod prompts;
 pub mod sources;
+pub mod test_runner;
 
 pub use pob::{PobBuild, PoeVersion};
