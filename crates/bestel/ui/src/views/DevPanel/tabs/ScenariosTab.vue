@@ -52,252 +52,400 @@ async function refresh() {
 }
 
 function runScenario(s: Scenario) {
-  // Wired in Step 4 (Live test tab pre-fill + run).
   console.log('[scenarios] run requested', s.name);
+}
+
+function relPath(s: Scenario): string {
+  return s.source_path.replace(/^.*[\\/]tests[\\/]/, 'tests/');
 }
 
 onMounted(refresh);
 </script>
 
 <template>
-  <div class="scenarios-tab">
-    <header class="scenarios-tab__head">
-      <input
-        v-model="filter"
-        class="scenarios-tab__filter"
-        type="text"
-        placeholder="Filter scenarios… (name, prompt, fixture)"
-      />
-      <button class="scenarios-tab__btn" @click="refresh" :disabled="loading">
-        {{ loading ? '…' : '↻ refresh' }}
+  <div class="sc-tab">
+    <header class="sc-tab__head">
+      <div class="sc-search">
+        <svg class="sc-search__icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+          <circle cx="11" cy="11" r="7" />
+          <path d="m21 21-4.35-4.35" />
+        </svg>
+        <input
+          v-model="filter"
+          type="text"
+          placeholder="Filter scenarios… (name, prompt, fixture)"
+        />
+      </div>
+      <button class="sc-tab__btn" @click="refresh" :disabled="loading">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+          <path d="M21 12a9 9 0 1 1-3-6.7L21 8" /><path d="M21 3v5h-5" />
+        </svg>
+        <span>{{ loading ? '…' : 'Refresh' }}</span>
       </button>
-      <span class="scenarios-tab__count">{{ filtered.length }} / {{ scenarios.length }}</span>
+      <span class="sc-tab__count">{{ filtered.length }} / {{ scenarios.length }}</span>
     </header>
 
-    <p v-if="errorMsg" class="scenarios-tab__err">{{ errorMsg }}</p>
+    <p v-if="errorMsg" class="sc-tab__err">{{ errorMsg }}</p>
 
-    <ul class="scenarios-tab__list">
-      <li v-for="s in filtered" :key="s.name" class="scenario-card">
-        <header class="scenario-card__head">
-          <h3 class="scenario-card__name">{{ s.name }}</h3>
-          <div class="scenario-card__pills">
-            <span class="pill" :data-tone="s.provider">{{ s.provider }}</span>
-            <span class="pill" :data-tone="s.cost">{{ s.cost }}</span>
-            <span v-if="s.build_fixture" class="pill" data-tone="fixture">
-              build: {{ s.build_fixture }}
-            </span>
-            <span class="pill" data-tone="timeout">{{ s.timeout_secs }}s</span>
+    <ul class="sc-list">
+      <li v-for="s in filtered" :key="s.name" class="sc-card">
+        <div class="sc-card__main">
+          <div class="sc-card__row">
+            <span class="sc-card__name">{{ s.name }}</span>
+            <span class="sc-tag">{{ s.provider }}</span>
+            <span class="sc-tag sc-tag--amber">{{ s.cost }}</span>
+            <span v-if="s.build_fixture" class="sc-tag sc-tag--mono">build: {{ s.build_fixture }}</span>
+            <span class="sc-tag sc-tag--mono">{{ s.timeout_secs }}s</span>
           </div>
-          <button class="scenario-card__run" @click="runScenario(s)">▶ Run</button>
-        </header>
+          <p class="sc-card__prompt">{{ s.prompt }}</p>
+          <div class="sc-card__meta">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+              <path d="M5 12h14M13 5l7 7-7 7" />
+            </svg>
+            <span>{{ s.expectations.length }} expectation{{ s.expectations.length === 1 ? '' : 's' }}</span>
+          </div>
 
-        <p class="scenario-card__prompt">{{ s.prompt }}</p>
+          <details v-if="s.expectations.length" class="sc-card__exp">
+            <summary>show expectations</summary>
+            <ol>
+              <li v-for="(exp, i) in s.expectations" :key="i" class="sc-exp">
+                <ul class="sc-exp__list">
+                  <li v-for="r in exp.must_match" :key="'mm:' + r">
+                    <span class="sc-exp-tag sc-exp-tag--must">must match</span>
+                    <code>{{ r }}</code>
+                  </li>
+                  <li v-for="r in exp.must_not_match" :key="'nn:' + r">
+                    <span class="sc-exp-tag sc-exp-tag--not">must NOT match</span>
+                    <code>{{ r }}</code>
+                  </li>
+                  <li v-for="d in exp.must_cite_domain" :key="'cd:' + d">
+                    <span class="sc-exp-tag sc-exp-tag--cite">cite domain</span>
+                    <code>{{ d }}</code>
+                  </li>
+                  <li v-if="exp.must_call_tool">
+                    <span class="sc-exp-tag sc-exp-tag--tool">must call tool</span>
+                    <code>{{ exp.must_call_tool }}</code>
+                  </li>
+                  <li v-for="t in exp.forbid_tool" :key="'ft:' + t">
+                    <span class="sc-exp-tag sc-exp-tag--forbid">forbid tool</span>
+                    <code>{{ t }}</code>
+                  </li>
+                  <li v-if="exp.min_final_text_len">
+                    <span class="sc-exp-tag">min length</span>
+                    <code>{{ exp.min_final_text_len }} chars</code>
+                  </li>
+                  <li v-if="exp.min_tool_calls">
+                    <span class="sc-exp-tag">min tool calls</span>
+                    <code>{{ exp.min_tool_calls }}</code>
+                  </li>
+                </ul>
+              </li>
+            </ol>
+          </details>
+        </div>
 
-        <details v-if="s.expectations.length" class="scenario-card__exp">
-          <summary>{{ s.expectations.length }} expectation(s)</summary>
-          <ol>
-            <li v-for="(exp, i) in s.expectations" :key="i" class="exp-row">
-              <ul class="exp-row__list">
-                <li v-for="r in exp.must_match" :key="'mm:' + r">
-                  <span class="exp-tag exp-tag--must">must match</span>
-                  <code>{{ r }}</code>
-                </li>
-                <li v-for="r in exp.must_not_match" :key="'nn:' + r">
-                  <span class="exp-tag exp-tag--not">must NOT match</span>
-                  <code>{{ r }}</code>
-                </li>
-                <li v-for="d in exp.must_cite_domain" :key="'cd:' + d">
-                  <span class="exp-tag exp-tag--cite">cite domain</span>
-                  <code>{{ d }}</code>
-                </li>
-                <li v-if="exp.must_call_tool">
-                  <span class="exp-tag exp-tag--tool">must call tool</span>
-                  <code>{{ exp.must_call_tool }}</code>
-                </li>
-                <li v-for="t in exp.forbid_tool" :key="'ft:' + t">
-                  <span class="exp-tag exp-tag--forbid">forbid tool</span>
-                  <code>{{ t }}</code>
-                </li>
-                <li v-if="exp.min_final_text_len">
-                  <span class="exp-tag">min length</span>
-                  {{ exp.min_final_text_len }} chars
-                </li>
-                <li v-if="exp.min_tool_calls">
-                  <span class="exp-tag">min tool calls</span>
-                  {{ exp.min_tool_calls }}
-                </li>
-              </ul>
-            </li>
-          </ol>
-        </details>
+        <div class="sc-card__side">
+          <button type="button" class="sc-run" @click="runScenario(s)">
+            <span class="sc-run__arrow">▶</span>
+            <span>Run</span>
+          </button>
+          <span class="sc-card__path">{{ relPath(s) }}</span>
+        </div>
+      </li>
+      <li v-if="!loading && scenarios.length === 0" class="sc-empty">
+        No scenarios found under <code>tests/scenarios/</code>.
       </li>
     </ul>
   </div>
 </template>
 
 <style scoped>
-.scenarios-tab {
+.sc-tab {
+  height: 100%;
+  overflow: auto;
+  padding: 20px 28px 28px;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--hand);
   display: flex;
   flex-direction: column;
   gap: 16px;
 }
-.scenarios-tab__head {
+
+.sc-tab__head {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-wrap: wrap;
 }
-.scenarios-tab__filter {
+
+.sc-search {
   flex: 1;
-  background: #141417;
-  border: 1px solid #2a2a30;
-  color: #e8e6df;
+  min-width: 240px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 8px 12px;
+  background: var(--paper);
+  border: 1px solid var(--paper-line);
   border-radius: 4px;
-  font: inherit;
-  font-size: 13px;
 }
-.scenarios-tab__filter:focus {
-  outline: 1px solid #c9a86a;
-  border-color: #c9a86a;
+.sc-search:focus-within {
+  border-color: var(--amber);
 }
-.scenarios-tab__btn {
-  background: #1a1a1f;
-  border: 1px solid #2a2a30;
-  color: #c9c9d0;
-  padding: 8px 12px;
+.sc-search__icon {
+  color: var(--ink-faint);
+  flex: none;
+}
+.sc-search input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-family: var(--hand);
+  font-size: 14px;
+  color: var(--ink);
+}
+.sc-search input::placeholder {
+  color: var(--ink-faint);
+}
+
+.sc-tab__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 14px;
+  background: var(--paper);
+  border: 1px solid var(--paper-line);
   border-radius: 4px;
+  color: var(--ink);
+  font-family: var(--hand);
+  font-size: 13.5px;
+  font-weight: 500;
   cursor: pointer;
-  font: inherit;
-  font-size: 12px;
+  transition: border-color 100ms ease;
 }
-.scenarios-tab__btn:hover:not(:disabled) {
-  background: #22222a;
+.sc-tab__btn:hover:not(:disabled) {
+  border-color: var(--amber);
 }
-.scenarios-tab__count {
-  font-size: 11px;
-  color: #75757f;
+.sc-tab__btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.sc-tab__count {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--ink-soft);
   font-variant-numeric: tabular-nums;
 }
-.scenarios-tab__err {
-  color: #d84a4a;
-  background: #2a1518;
-  padding: 8px 12px;
+
+.sc-tab__err {
+  margin: 0;
+  padding: 10px 14px;
+  border: 1px solid var(--bad);
+  background: rgba(162, 58, 58, 0.06);
   border-radius: 4px;
-  font-size: 12px;
+  color: var(--bad);
+  font-size: 13px;
 }
-.scenarios-tab__list {
+
+.sc-list {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
+  gap: 14px;
+}
+
+.sc-card {
+  display: flex;
+  gap: 22px;
+  padding: 18px 22px;
+  border: 1px solid var(--paper-line);
+  background: var(--paper);
+  border-radius: 5px;
+}
+
+.sc-card__main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
   gap: 12px;
 }
-.scenario-card {
-  background: #141417;
-  border: 1px solid #2a2a30;
-  border-radius: 6px;
-  padding: 16px;
-}
-.scenario-card__head {
+
+.sc-card__row {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 8px;
+  gap: 10px;
   flex-wrap: wrap;
 }
-.scenario-card__name {
-  margin: 0;
-  font-family: var(--font-display, 'Cinzel', serif);
+
+.sc-card__name {
+  font-family: var(--mono);
   font-size: 14px;
-  color: #e8e6df;
-  letter-spacing: 0.04em;
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: 0.02em;
 }
-.scenario-card__pills {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-.pill {
-  background: #1f1f25;
-  color: #a8a8b0;
+
+.sc-tag {
+  font-family: var(--label);
+  font-size: 11.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 600;
   padding: 2px 8px;
+  border: 1px solid var(--ink-faint);
+  color: var(--ink-soft);
+  background: var(--paper);
   border-radius: 3px;
-  font-size: 11px;
-  letter-spacing: 0.04em;
-  text-transform: lowercase;
+  line-height: 1.3;
 }
-.pill[data-tone="anthropic"] { color: #d8a86f; }
-.pill[data-tone="ollama"] { color: #6fa8d8; }
-.pill[data-tone="any"] { color: #888; }
-.pill[data-tone="high"] { color: #d8786f; }
-.pill[data-tone="low"] { color: #75c075; }
-.pill[data-tone="fixture"] { color: #c9a86a; }
-.scenario-card__run {
-  margin-left: auto;
-  background: #2a3f2a;
-  border: 1px solid #4a6a4a;
-  color: #b4d4b4;
-  padding: 4px 12px;
-  border-radius: 4px;
-  font: inherit;
+.sc-tag--amber {
+  color: var(--amber);
+  border-color: var(--amber);
+  background: var(--amber-glow);
+}
+.sc-tag--mono {
+  font-family: var(--mono);
   font-size: 12px;
-  cursor: pointer;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  font-weight: 500;
 }
-.scenario-card__run:hover {
-  background: #355035;
-}
-.scenario-card__prompt {
-  color: #c9c9d0;
-  margin: 0 0 8px 0;
+
+.sc-card__prompt {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--ink-soft);
   white-space: pre-wrap;
-  font-size: 13px;
-  line-height: 1.5;
 }
-.scenario-card__exp summary {
+
+.sc-card__meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+  color: var(--ink-faint);
+}
+
+.sc-card__exp {
+  margin-top: 4px;
+}
+.sc-card__exp summary {
   cursor: pointer;
-  color: #75757f;
-  font-size: 11px;
+  font-family: var(--label);
+  font-size: 11.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  font-weight: 600;
   padding: 4px 0;
 }
-.scenario-card__exp ol {
+.sc-card__exp summary:hover {
+  color: var(--amber);
+}
+.sc-card__exp ol {
   margin: 8px 0 0 0;
   padding-left: 18px;
 }
-.exp-row__list {
+
+.sc-exp__list {
   list-style: none;
   padding: 0;
   margin: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-}
-.exp-row__list li {
-  display: flex;
   gap: 6px;
+}
+.sc-exp__list li {
+  display: flex;
   align-items: center;
-  font-size: 11px;
-  color: #c9c9d0;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--ink);
 }
-.exp-tag {
-  background: #1f1f25;
-  color: #75757f;
+
+.sc-exp-tag {
+  font-family: var(--label);
+  font-size: 10.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  font-weight: 700;
+  padding: 1px 7px;
+  border: 1px solid var(--ink-faint);
+  border-radius: 2px;
+  flex: none;
+}
+.sc-exp-tag--must   { color: var(--good);  border-color: var(--good); }
+.sc-exp-tag--not    { color: var(--bad);   border-color: var(--bad);  }
+.sc-exp-tag--cite   { color: var(--amber); border-color: var(--amber);}
+.sc-exp-tag--tool   { color: var(--note);  border-color: var(--note); }
+.sc-exp-tag--forbid { color: var(--bad);   border-color: var(--bad);  }
+
+.sc-exp__list code {
+  font-family: var(--mono);
+  font-size: 12px;
+  background: var(--paper-shade);
+  color: var(--ink);
   padding: 1px 6px;
-  border-radius: 2px;
-  font-size: 10px;
-  letter-spacing: 0.02em;
-  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  border-radius: 3px;
 }
-.exp-tag--must { color: #75c075; }
-.exp-tag--not { color: #d8786f; }
-.exp-tag--cite { color: #d8a86f; }
-.exp-tag--tool { color: #6fa8d8; }
-.exp-tag--forbid { color: #c14a4a; }
-code {
-  background: #0a0a0c;
-  color: #c9a86a;
-  padding: 1px 4px;
-  border-radius: 2px;
+
+.sc-card__side {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.sc-run {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: var(--paper);
+  color: var(--good);
+  border: 1px solid var(--good);
+  border-radius: 4px;
+  font-family: var(--hand);
+  font-size: 14.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 100ms ease;
+}
+.sc-run:hover {
+  background: rgba(46, 107, 58, 0.06);
+}
+.sc-run__arrow {
   font-size: 11px;
+}
+
+.sc-card__path {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--ink-faint);
+}
+
+.sc-empty {
+  padding: 32px 16px;
+  text-align: center;
+  font-style: italic;
+  color: var(--ink-faint);
+  font-size: 14px;
+}
+.sc-empty code {
+  font-family: var(--mono);
+  background: var(--paper-shade);
+  padding: 1px 6px;
+  border-radius: 3px;
+  color: var(--ink);
 }
 </style>
