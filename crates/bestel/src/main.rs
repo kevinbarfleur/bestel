@@ -505,6 +505,7 @@ fn run_tauri() {
                 commands::get_debug_run,
                 commands::delete_debug_run,
                 commands::delete_all_debug_runs,
+                commands::dev_export_all_runs,
                 commands::list_api_keys,
                 commands::set_api_key,
                 commands::delete_api_key,

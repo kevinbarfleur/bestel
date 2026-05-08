@@ -323,6 +323,127 @@ pub async fn delete_all_debug_runs() -> Result<usize, String> {
     debug_recorder::delete_all_runs().map_err(|e| e.to_string())
 }
 
+/// Export every persisted run as a single JSON document under
+/// `~/.bestel/exports/runs-export-<timestamp>.json`. The returned string
+/// is the absolute path to the written file. Each run is reshaped into a
+/// review-friendly entry (question, answer, tools, model metadata, stats)
+/// so an external expert agent can grade response quality without having
+/// to walk the raw stream-event format. Tool outputs are truncated to
+/// 4 KB per call to keep file size manageable.
+#[tauri::command]
+pub async fn dev_export_all_runs() -> Result<String, String> {
+    use chrono::Utc;
+    use serde_json::json;
+
+    let runs = debug_recorder::list_runs().map_err(|e| e.to_string())?;
+
+    let exports_dir = dirs::home_dir()
+        .ok_or_else(|| "no home dir".to_string())?
+        .join(".bestel")
+        .join("exports");
+    std::fs::create_dir_all(&exports_dir).map_err(|e| format!("create exports dir: {e}"))?;
+
+    const TOOL_OUTPUT_CAP_BYTES: usize = 4096;
+
+    let entries: Vec<serde_json::Value> = runs
+        .iter()
+        .map(|run| {
+            // Reshape segments into a clean per-run summary. We split the
+            // assistant transcript into:
+            //   - `answer`     : every Text segment concatenated
+            //   - `reasoning`  : every Reasoning segment concatenated
+            //   - `tools`      : structured per-call list with truncated outputs
+            let mut answer_parts: Vec<&str> = Vec::new();
+            let mut reasoning_parts: Vec<&str> = Vec::new();
+            let mut tool_entries: Vec<serde_json::Value> = Vec::new();
+
+            for seg in &run.assistant_segments {
+                match seg {
+                    debug_recorder::PersistedSegment::Text { text } => {
+                        answer_parts.push(text.as_str());
+                    }
+                    debug_recorder::PersistedSegment::Reasoning { text } => {
+                        reasoning_parts.push(text.as_str());
+                    }
+                    debug_recorder::PersistedSegment::Tool {
+                        id,
+                        name,
+                        detail,
+                        outputs,
+                        status,
+                        summary,
+                    } => {
+                        let combined = outputs.join("");
+                        let (output_excerpt, truncated) = if combined.len() > TOOL_OUTPUT_CAP_BYTES {
+                            let mut end = TOOL_OUTPUT_CAP_BYTES;
+                            while !combined.is_char_boundary(end) && end > 0 {
+                                end -= 1;
+                            }
+                            (combined[..end].to_string(), true)
+                        } else {
+                            (combined, false)
+                        };
+                        tool_entries.push(json!({
+                            "id": id,
+                            "name": name,
+                            "detail": detail,
+                            "status": status,
+                            "summary": summary,
+                            "output_excerpt": output_excerpt,
+                            "output_truncated": truncated,
+                        }));
+                    }
+                }
+            }
+
+            let answer = answer_parts.join("");
+            let reasoning = reasoning_parts.join("");
+
+            json!({
+                "id": run.id,
+                "started_at": run.started_at,
+                "ended_at": run.ended_at,
+                "source": run.source,
+                "model": {
+                    "id": run.model_id,
+                    "display_name": run.model_display_name,
+                    "provider": run.provider,
+                },
+                "question": run.user_text,
+                "user_attachments": run.user_attachments,
+                "answer": answer,
+                "reasoning": if reasoning.is_empty() {
+                    serde_json::Value::Null
+                } else {
+                    serde_json::Value::String(reasoning)
+                },
+                "tools": tool_entries,
+                "stats": run.stats,
+                "error": run.error,
+            })
+        })
+        .collect();
+
+    let now = Utc::now();
+    let stamp = now.format("%Y%m%d-%H%M%S").to_string();
+    let file_name = format!("runs-export-{stamp}.json");
+    let path = exports_dir.join(&file_name);
+
+    let envelope = json!({
+        "exported_at": now.to_rfc3339(),
+        "bestel_version": env!("CARGO_PKG_VERSION"),
+        "schema_version": 1,
+        "total_runs": entries.len(),
+        "tool_output_cap_bytes": TOOL_OUTPUT_CAP_BYTES,
+        "runs": entries,
+    });
+
+    let body = serde_json::to_vec_pretty(&envelope).map_err(|e| format!("serialize: {e}"))?;
+    std::fs::write(&path, body).map_err(|e| format!("write {}: {e}", path.display()))?;
+
+    Ok(path.display().to_string())
+}
+
 #[tauri::command]
 pub async fn open_external(url: String, app: AppHandle) -> Result<(), String> {
     app.opener()

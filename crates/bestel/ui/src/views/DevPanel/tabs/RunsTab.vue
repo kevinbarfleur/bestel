@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
+import { invoke } from '@tauri-apps/api/core';
 
 import {
   deleteAllDebugRuns,
@@ -131,6 +132,24 @@ async function removeAll() {
     toasts.push({ variant: 'info', title: 'Cleared', body: `${n} run(s) deleted.` });
   } catch (e) {
     toasts.push({ variant: 'error', title: 'Clear failed', body: String(e) });
+  }
+}
+
+const exporting = ref(false);
+async function exportAll() {
+  if (exporting.value || runs.value.length === 0) return;
+  exporting.value = true;
+  try {
+    const path = await invoke<string>('dev_export_all_runs');
+    toasts.push({
+      variant: 'info',
+      title: `Exported ${runs.value.length} run(s)`,
+      body: path,
+    });
+  } catch (e) {
+    toasts.push({ variant: 'error', title: 'Export failed', body: String(e) });
+  } finally {
+    exporting.value = false;
   }
 }
 
@@ -306,6 +325,14 @@ const messagesForSelected = computed<ChatMessageVm[]>(() => {
         </li>
       </ul>
       <footer class="debug__side-foot">
+        <button
+          class="debug__btn"
+          @click="exportAll"
+          :disabled="runs.length === 0 || exporting"
+          :title="`Write all ${runs.length} run(s) to a single JSON under ~/.bestel/exports/`"
+        >
+          {{ exporting ? 'exporting…' : 'export all' }}
+        </button>
         <button
           class="debug__btn debug__btn--danger"
           @click="removeAll"
