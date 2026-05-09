@@ -1,0 +1,23 @@
+# Generated from tests/eval/eval_set.toml — do not hand-edit.
+# Category: mapping
+
+name = "map_currency_chase_div_only_atlas"
+provider = "any"
+prompt = """
+whats the most divine-printer atlas right now if i can only farm 1 thing
+"""
+timeout_secs = 240
+cost = "low"
+
+[[expectations]]
+must_match = [
+  "scarab",
+  "atlas",
+]
+must_not_match = [
+  "fandom",
+  "guarantee",
+]
+must_not_expose_reasoning = true
+must_have_panel_data_first = true
+must_cite_only_fetched_urls = true

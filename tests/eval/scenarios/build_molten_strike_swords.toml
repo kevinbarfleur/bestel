@@ -1,0 +1,25 @@
+# Generated from tests/eval/eval_set.toml — do not hand-edit.
+# Category: build
+
+name = "build_molten_strike_swords"
+provider = "any"
+build_fixture = "poe1_molten_strike_juggernaut"
+prompt = """
+should i keep both reaver swords or swap one
+"""
+timeout_secs = 240
+cost = "low"
+
+[[expectations]]
+must_match = [
+  "Identity:",
+  "Reaver",
+]
+must_not_match = [
+  "Crown of Eyes",
+  "Rakiata",
+]
+must_not_expose_reasoning = true
+must_have_panel_data_first = true
+must_cite_only_fetched_urls = true
+must_have_identity_card_if_build = true

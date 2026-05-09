@@ -1,0 +1,24 @@
+# Generated from tests/eval/eval_set.toml — do not hand-edit.
+# Category: craft
+
+name = "craft_poe2_essence_lightning"
+provider = "any"
+applies_to = ["poe2"]
+prompt = """
+in poe2 0.5 which essences add lightning damage on a body armour
+"""
+timeout_secs = 240
+cost = "low"
+
+[[expectations]]
+must_match = [
+  "essence",
+  "lightning",
+]
+must_not_match = [
+  "fandom",
+  "PoE1 only",
+]
+must_not_expose_reasoning = true
+must_have_panel_data_first = true
+must_cite_only_fetched_urls = true

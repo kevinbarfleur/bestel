@@ -1,0 +1,26 @@
+# Generated from tests/eval/eval_set.toml — do not hand-edit.
+# Category: build
+
+name = "build_diag_ele_oneshot"
+provider = "any"
+build_fixture = "poe1_inquisitor"
+prompt = """
+can you look at my char and tell me why i die so much to elemental hits
+"""
+timeout_secs = 240
+cost = "low"
+
+[[expectations]]
+must_match = [
+  "Identity:",
+  "max hit",
+  "resists",
+]
+must_not_match = [
+  "Granite Flask",
+  "switch ascendancy",
+]
+must_not_expose_reasoning = true
+must_have_panel_data_first = true
+must_cite_only_fetched_urls = true
+must_have_identity_card_if_build = true

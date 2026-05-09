@@ -1,0 +1,24 @@
+# Generated from tests/eval/eval_set.toml — do not hand-edit.
+# Category: mechanic
+
+name = "mech_poe2_charm_vs_flask"
+provider = "any"
+applies_to = ["poe2"]
+prompt = """
+are charms in poe2 just renamed flasks or do they work differently
+"""
+timeout_secs = 240
+cost = "low"
+
+[[expectations]]
+must_match = [
+  "charm",
+  "PoE2",
+]
+must_not_match = [
+  "identical",
+  "same as flasks",
+]
+must_not_expose_reasoning = true
+must_have_panel_data_first = true
+must_cite_only_fetched_urls = true

@@ -1,0 +1,24 @@
+# Generated from tests/eval/eval_set.toml — do not hand-edit.
+# Category: craft
+
+name = "craft_bench_suffix_limits"
+provider = "any"
+prompt = """
+whats the limit on how many bench-crafted suffixes i can stack on one item
+"""
+timeout_secs = 240
+cost = "low"
+
+[[expectations]]
+must_match = [
+  "one",
+  "single",
+  "bench",
+]
+must_not_match = [
+  "two",
+  "three",
+]
+must_not_expose_reasoning = true
+must_have_panel_data_first = true
+must_cite_only_fetched_urls = true

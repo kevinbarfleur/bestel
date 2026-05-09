@@ -1,0 +1,20 @@
+# Generated from tests/eval/eval_set.toml — do not hand-edit.
+# Category: build
+
+name = "build_next_3div_upgrade"
+provider = "any"
+build_fixture = "poe1_inquisitor"
+prompt = """
+with 3 divines what's the single biggest upgrade i can buy for this build
+"""
+timeout_secs = 240
+cost = "low"
+
+[[expectations]]
+must_match = [
+  "Identity:",
+]
+must_not_expose_reasoning = true
+must_have_panel_data_first = true
+must_cite_only_fetched_urls = true
+must_have_identity_card_if_build = true

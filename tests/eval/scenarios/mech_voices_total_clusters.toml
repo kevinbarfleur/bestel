@@ -1,0 +1,26 @@
+# Generated from tests/eval/eval_set.toml — do not hand-edit.
+# Category: mechanic
+
+name = "mech_voices_total_clusters"
+provider = "any"
+prompt = """
+how many cluster jewels total can i fit in my tree if i drop one Voices? the wiki and the build guide give me different numbers
+"""
+timeout_secs = 240
+cost = "low"
+
+[[expectations]]
+must_match = [
+  "large",
+  "medium",
+  "small",
+  "Voices",
+]
+must_not_match = [
+  "Luminous Trove",
+  "9 cluster",
+  "drop level 1",
+]
+must_not_expose_reasoning = true
+must_have_panel_data_first = true
+must_cite_only_fetched_urls = true

@@ -1,0 +1,22 @@
+# Generated from tests/eval/eval_set.toml — do not hand-edit.
+# Category: mapping
+
+name = "map_boss_uber_uber"
+provider = "any"
+prompt = """
+whats the rough order of difficulty for the uber pinnacle bosses
+"""
+timeout_secs = 240
+cost = "low"
+
+[[expectations]]
+must_match = [
+  "Uber",
+  "Pinnacle",
+]
+must_not_match = [
+  "fandom",
+]
+must_not_expose_reasoning = true
+must_have_panel_data_first = true
+must_cite_only_fetched_urls = true

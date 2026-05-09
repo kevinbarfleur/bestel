@@ -48,6 +48,24 @@ pub struct ChatStats {
     pub tool_calls: usize,
     pub tool_done: usize,
     pub tool_failed: usize,
+    /// Sprint C cache telemetry. Populated from `LlmDelta::Usage` when the
+    /// provider reports it (Anthropic + DeepSeek via Anthropic-compat). Older
+    /// persisted runs without these keys deserialize to zero / `None`.
+    #[serde(default)]
+    pub input_tokens: u64,
+    #[serde(default)]
+    pub cached_input_tokens: u64,
+    #[serde(default)]
+    pub cache_creation_tokens: u64,
+    #[serde(default)]
+    pub output_tokens: u64,
+    #[serde(default)]
+    pub cost_usd: Option<f64>,
+    /// Sprint G — conditional verifier verdict for the run. `None` when the
+    /// answer didn't trigger verification (Brief mechanics, off-topic
+    /// refusal). Persisted runs from before Sprint G deserialize as `None`.
+    #[serde(default)]
+    pub verifier_verdict: Option<crate::llm::verifier::VerifierVerdict>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -193,7 +211,20 @@ impl Recorder {
                 }
             }
             LlmDelta::MessageEnd => {}
-            LlmDelta::Usage(_) => {}
+            LlmDelta::Usage(u) => {
+                // Anthropic emits one final Usage event per turn carrying
+                // cumulative-since-start counters. Capture them so the
+                // PersistedRun preserves cache telemetry alongside the
+                // existing tool / segment counts.
+                self.stats.input_tokens = u.input_tokens;
+                self.stats.cached_input_tokens = u.cached_input_tokens;
+                self.stats.cache_creation_tokens = u.cache_creation_tokens;
+                self.stats.output_tokens = u.output_tokens;
+                self.stats.cost_usd = u.cost_usd;
+            }
+            LlmDelta::Verifier(v) => {
+                self.stats.verifier_verdict = Some(v.clone());
+            }
             LlmDelta::Error(msg) => {
                 self.error = Some(msg.clone());
             }
@@ -203,6 +234,23 @@ impl Recorder {
     pub fn finish(mut self, final_text: String) -> PersistedRun {
         let now = Utc::now();
         self.stats.elapsed_ms = (now - self.started).num_milliseconds().max(0) as u64;
+        let cleaned_final = strip_thinking_blocks(&final_text);
+        // Mirror the strip into persisted text segments so a re-render of
+        // the run from `assistant_segments` matches the cleaned final_text
+        // and the linter does not re-discover a leak that the user-facing
+        // path already handled.
+        for seg in self.segments.iter_mut() {
+            if let PersistedSegment::Text { text } = seg {
+                *text = strip_thinking_blocks(text);
+            }
+        }
+        if cleaned_final.len() != final_text.len() {
+            tracing::warn!(
+                stripped_bytes = final_text.len() - cleaned_final.len(),
+                "stripped <thinking> blocks from persisted final_text — model leaked native thinking tag"
+            );
+            self.stats.text_bytes = cleaned_final.len();
+        }
         PersistedRun {
             id: format!(
                 "{}__{}",
@@ -218,11 +266,53 @@ impl Recorder {
             user_text: self.user_text,
             user_attachments: self.user_attachments,
             assistant_segments: self.segments,
-            final_text,
+            final_text: cleaned_final,
             stats: self.stats,
             error: self.error,
         }
     }
+}
+
+/// Strip any `<thinking>...</thinking>` and `<reflection>...</reflection>`
+/// blocks the model leaked into visible text. Catches the Haiku-class
+/// behaviour where the model emits the tag despite the SYSTEM_PROMPT
+/// prohibition. Idempotent — running twice on already-clean input is a
+/// no-op. Tags are matched case-insensitively but only at exact tag
+/// boundaries; defensive against partial leaks where only the opening
+/// tag landed (truncates at the open tag).
+fn strip_thinking_blocks(input: &str) -> String {
+    const TAGS: &[&str] = &["thinking", "reflection"];
+    let mut out = input.to_string();
+    for tag in TAGS {
+        out = strip_one_tag(&out, tag);
+    }
+    out.trim().to_string()
+}
+
+fn strip_one_tag(input: &str, tag: &str) -> String {
+    let lower = input.to_ascii_lowercase();
+    let open = format!("<{tag}>");
+    let close = format!("</{tag}>");
+    let mut out = String::with_capacity(input.len());
+    let mut cursor = 0usize;
+    while let Some(open_at) = lower[cursor..].find(&open) {
+        let abs_open = cursor + open_at;
+        out.push_str(&input[cursor..abs_open]);
+        let after_open = abs_open + open.len();
+        match lower[after_open..].find(&close) {
+            Some(close_off) => {
+                cursor = after_open + close_off + close.len();
+            }
+            None => {
+                // Unbalanced — opening tag with no close. Drop the rest of
+                // the input rather than ship a partial leaked block.
+                cursor = input.len();
+                break;
+            }
+        }
+    }
+    out.push_str(&input[cursor..]);
+    out
 }
 
 fn random_suffix() -> String {
@@ -244,7 +334,31 @@ pub fn save_run(run: &PersistedRun) -> Result<PathBuf> {
     let path = dir.join(format!("{}.json", run.id));
     let body = serde_json::to_vec_pretty(run).context("serialize run")?;
     std::fs::write(&path, body).with_context(|| format!("write {}", path.display()))?;
+    if let Some(db) = crate::persistence::global_db() {
+        if let Err(e) = crate::persistence::insert_run(&db, run) {
+            tracing::warn!(error = ?e, run_id = %run.id, "failed to mirror run to SQLite");
+        }
+    }
     Ok(path)
+}
+
+/// Mirror a Sprint A linter report to SQLite. JSON sidecar remains
+/// authoritative; this only powers SQL queries like
+/// `query_runs_failing_identity`.
+///
+/// Each finding is mapped to `(run_id, rule, severity, message)`. The
+/// sidecar JSON's optional `evidence` is dropped — if needed it can be
+/// re-derived by re-linting. Pre-existing rows for the same `run_id` are
+/// replaced atomically so re-runs stay idempotent.
+pub fn mirror_lint_findings(
+    run_id: &str,
+    rows: Vec<crate::persistence::LintFindingRow>,
+) {
+    if let Some(db) = crate::persistence::global_db() {
+        if let Err(e) = crate::persistence::replace_lint_findings(&db, run_id, &rows) {
+            tracing::warn!(error = ?e, run_id, "failed to mirror lint findings to SQLite");
+        }
+    }
 }
 
 pub fn list_runs() -> Result<Vec<PersistedRun>> {
@@ -379,6 +493,48 @@ mod tests {
                 assert_eq!(summary.as_deref(), Some("ok"));
             }
             _ => panic!("expected tool segment"),
+        }
+    }
+
+    #[test]
+    fn strip_thinking_blocks_removes_full_block() {
+        let input = "<thinking>\nplanning the answer.\n</thinking>\nThe cap is 100%.";
+        let cleaned = strip_thinking_blocks(input);
+        assert_eq!(cleaned, "The cap is 100%.");
+    }
+
+    #[test]
+    fn strip_thinking_blocks_handles_unbalanced_open_tag() {
+        // Defensive: stream truncated mid-block. We drop the rest rather
+        // than ship a leaked partial block.
+        let input = "intro <thinking>\npartial reasoning";
+        let cleaned = strip_thinking_blocks(input);
+        assert_eq!(cleaned, "intro");
+    }
+
+    #[test]
+    fn strip_thinking_blocks_no_op_on_clean_input() {
+        let input = "Spell suppression caps at 100%.";
+        assert_eq!(strip_thinking_blocks(input), input);
+    }
+
+    #[test]
+    fn strip_thinking_blocks_also_strips_reflection() {
+        let input = "<reflection>second-guessing</reflection>The answer is 100%.";
+        let cleaned = strip_thinking_blocks(input);
+        assert_eq!(cleaned, "The answer is 100%.");
+    }
+
+    #[test]
+    fn finish_strips_leaked_thinking_from_final_text() {
+        let mut r = rec();
+        r.apply(&LlmDelta::TextDelta("<thinking>\nplanning\n</thinking>\nThe cap is 100%.".into()));
+        let run = r.finish("<thinking>\nplanning\n</thinking>\nThe cap is 100%.".into());
+        assert_eq!(run.final_text, "The cap is 100%.");
+        if let PersistedSegment::Text { text } = &run.assistant_segments[0] {
+            assert_eq!(text, "The cap is 100%.");
+        } else {
+            panic!("expected first segment to be Text");
         }
     }
 

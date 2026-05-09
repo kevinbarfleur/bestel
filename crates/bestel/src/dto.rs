@@ -396,6 +396,13 @@ pub enum DeltaEvent {
     Completed {
         session_id: u64,
     },
+    /// Sprint G — verifier verdict surfaced to the dev panel.
+    Verifier {
+        session_id: u64,
+        status: String,
+        findings_count: usize,
+        findings_summary: String,
+    },
 }
 
 impl DeltaEvent {
@@ -430,6 +437,28 @@ impl DeltaEvent {
                 output_tokens: stats.output_tokens,
                 cost_usd: stats.cost_usd,
             },
+            LlmDelta::Verifier(v) => {
+                let status = match v.status {
+                    bestel_core::llm::verifier::VerdictStatus::Pass => "pass",
+                    bestel_core::llm::verifier::VerdictStatus::Revise => "revise",
+                    bestel_core::llm::verifier::VerdictStatus::Fail => "fail",
+                };
+                let summary = if v.findings.is_empty() {
+                    String::new()
+                } else {
+                    v.findings
+                        .iter()
+                        .map(|f| format!("{}: {}", f.category, f.issue))
+                        .collect::<Vec<_>>()
+                        .join("; ")
+                };
+                DeltaEvent::Verifier {
+                    session_id,
+                    status: status.to_string(),
+                    findings_count: v.findings.len(),
+                    findings_summary: summary,
+                }
+            }
             LlmDelta::MessageEnd => DeltaEvent::MessageEnd { session_id },
             LlmDelta::Error(message) => DeltaEvent::Error {
                 session_id,

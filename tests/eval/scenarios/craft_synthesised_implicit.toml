@@ -1,0 +1,20 @@
+# Generated from tests/eval/eval_set.toml — do not hand-edit.
+# Category: craft
+
+name = "craft_synthesised_implicit"
+provider = "any"
+prompt = """
+whats the difference between a synthesised implicit and a regular implicit on a synthesised item
+"""
+timeout_secs = 240
+cost = "low"
+
+[[expectations]]
+must_match = [
+  "synthesis",
+  "implicit",
+  "Cortex",
+]
+must_not_expose_reasoning = true
+must_have_panel_data_first = true
+must_cite_only_fetched_urls = true

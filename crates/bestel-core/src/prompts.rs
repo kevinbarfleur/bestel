@@ -67,6 +67,12 @@ pub const BUNDLED_REFERENCES: &[(&str, &str)] = &[
     ("24_patch_history_meta.md", include_str!("../../../prompts/references/24_patch_history_meta.md")),
     ("25_pob_engine_integration.md", include_str!("../../../prompts/references/25_pob_engine_integration.md")),
     ("26_validation_and_self_correction.md", include_str!("../../../prompts/references/26_validation_and_self_correction.md")),
+    // Sprint B runtime extension — output contracts, failure policy, tripwires, panel grammar, mode examples.
+    ("27_response_contracts.md", include_str!("../../../prompts/references/27_response_contracts.md")),
+    ("28_tool_failure_policy.md", include_str!("../../../prompts/references/28_tool_failure_policy.md")),
+    ("29_known_mechanics_tripwires.md", include_str!("../../../prompts/references/29_known_mechanics_tripwires.md")),
+    ("30_panel_marker_grammar.md", include_str!("../../../prompts/references/30_panel_marker_grammar.md")),
+    ("31_answer_mode_examples.md", include_str!("../../../prompts/references/31_answer_mode_examples.md")),
     // Creators registry — per-creator profiles, indexed by 00_README.
     ("creators_registry/00_README.md", include_str!("../../../prompts/references/creators_registry/00_README.md")),
     ("creators_registry/ben_.md", include_str!("../../../prompts/references/creators_registry/ben_.md")),
@@ -372,6 +378,55 @@ pub fn load_composed() -> String {
     let system = read_or_bundled(FILE_SYSTEM_PROMPT, BUNDLED_SYSTEM_PROMPT);
     let core = read_or_bundled(FILE_CORE_KNOWLEDGE, BUNDLED_CORE_KNOWLEDGE);
     format!("{system}\n\n---\n\n{core}")
+}
+
+/// Three system-prompt blocks designed for Anthropic prompt-cache breakpoints
+/// (Sprint C). Splits `SYSTEM_PROMPT.md` on the opening `<tool_policy>` tag —
+/// everything before is block 1 (persona + runtime contract), everything from
+/// that tag onward is block 2 (tool policy + answer mode router + output
+/// contracts + failure policy + auxiliaries). `CORE_KNOWLEDGE.md` is block 3.
+/// Provider + model overrides are appended to block 2 so they share its cache
+/// entry (overrides are stable per (provider, model) pair).
+///
+/// Returned tuple: `(block_1, block_2_with_overrides, block_3_core_knowledge)`.
+/// All three are intended to receive `cache_control: ephemeral` with TTL 1h.
+pub fn load_anthropic_blocks(provider: &str, model_id: &str) -> (String, String, String) {
+    let system = read_or_bundled(FILE_SYSTEM_PROMPT, BUNDLED_SYSTEM_PROMPT);
+    let core = read_or_bundled(FILE_CORE_KNOWLEDGE, BUNDLED_CORE_KNOWLEDGE);
+
+    let split_marker = "<tool_policy>";
+    let (block_1, block_2_base) = match system.find(split_marker) {
+        Some(pos) => (system[..pos].to_string(), system[pos..].to_string()),
+        // SYSTEM_PROMPT.md was edited and lost the `<tool_policy>` marker.
+        // Fall back to a single block so caching still works at coarser
+        // granularity instead of breaking the request entirely.
+        None => (String::new(), system.clone()),
+    };
+
+    let mut block_2 = block_2_base;
+    if let Some(po) = load_provider_override(provider) {
+        block_2.push_str("\n\n---\n\n");
+        block_2.push_str(&po);
+    }
+    if let Some(mo) = load_model_override(model_id) {
+        block_2.push_str("\n\n---\n\n");
+        block_2.push_str(&mo);
+    }
+
+    // Sprint F — append the skill descriptions block to the cached BP4
+    // (CORE_KNOWLEDGE) section. The model sees skill names + when-to-use
+    // hints alongside CORE_KNOWLEDGE; skill BODIES still load on demand
+    // via the `load_skill` tool.
+    let mut core_with_skills = core;
+    let skills_block = crate::skills::descriptions_block();
+    if !skills_block.is_empty() {
+        if !core_with_skills.is_empty() {
+            core_with_skills.push_str("\n\n---\n\n");
+        }
+        core_with_skills.push_str(&skills_block);
+    }
+
+    (block_1, block_2, core_with_skills)
 }
 
 /// Local-model addendum read from disk, with bundled fallback.

@@ -1,0 +1,27 @@
+# Generated from tests/eval/eval_set.toml — do not hand-edit.
+# Category: build
+
+name = "build_hierophant_weakest_layer"
+provider = "any"
+build_fixture = "poe1_hierophant_manastack"
+prompt = """
+looking at this build, whats the weakest defensive layer right now and the cheapest gear-only fix
+"""
+timeout_secs = 240
+cost = "low"
+
+[[expectations]]
+must_match = [
+  "physical mitigation",
+  "Identity:",
+  "armour",
+  "gear",
+]
+must_not_match = [
+  "Granite Flask",
+  "switch ascendancy",
+]
+must_not_expose_reasoning = true
+must_have_panel_data_first = true
+must_cite_only_fetched_urls = true
+must_have_identity_card_if_build = true

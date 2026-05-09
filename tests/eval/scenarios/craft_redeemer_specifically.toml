@@ -1,0 +1,20 @@
+# Generated from tests/eval/eval_set.toml — do not hand-edit.
+# Category: craft
+
+name = "craft_redeemer_specifically"
+provider = "any"
+prompt = """
+i have a redeemer influenced ring, how do i specifically force redeemer mods without hitting basic prefixes
+"""
+timeout_secs = 240
+cost = "low"
+
+[[expectations]]
+must_match = [
+  "Awakener",
+  "Beastcraft",
+  "Aisling",
+]
+must_not_expose_reasoning = true
+must_have_panel_data_first = true
+must_cite_only_fetched_urls = true

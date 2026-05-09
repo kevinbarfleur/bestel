@@ -7,12 +7,15 @@
 
 pub mod anthropic;
 pub mod detect;
+pub mod kb;
 pub mod keys;
 pub mod models;
 pub mod ollama;
 pub mod pob_engine;
 pub mod recorder;
+pub mod session_notes;
 pub mod tools;
+pub mod verifier;
 pub mod wiki;
 
 use anyhow::Result;
@@ -94,6 +97,11 @@ pub enum LlmDelta {
     /// Token accounting for the full agent run, emitted once before
     /// `MessageEnd`. Subscription / local providers may skip this entirely.
     Usage(UsageStats),
+    /// Sprint G — verifier verdict (one per turn) emitted after the
+    /// streaming pump finishes and before `MessageEnd`. Carries
+    /// `pass | revise | fail` plus structured findings; the dev panel
+    /// surfaces the badge and the recorder persists it in `ChatStats`.
+    Verifier(verifier::VerifierVerdict),
     MessageEnd,
     Error(String),
 }

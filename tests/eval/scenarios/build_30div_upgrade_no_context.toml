@@ -1,0 +1,25 @@
+# Generated from tests/eval/eval_set.toml — do not hand-edit.
+# Category: build
+
+name = "build_30div_upgrade_no_context"
+provider = "any"
+prompt = """
+i have like 30 div what should i upgrade
+"""
+timeout_secs = 240
+cost = "low"
+
+[[expectations]]
+must_match = [
+  "which",
+  "ask",
+  "bottleneck",
+]
+must_not_match = [
+  "Mageblood",
+  "Headhunter",
+  "buy",
+]
+must_not_expose_reasoning = true
+must_have_panel_data_first = true
+must_cite_only_fetched_urls = true

@@ -1,0 +1,23 @@
+# Generated from tests/eval/eval_set.toml — do not hand-edit.
+# Category: mechanic
+
+name = "mech_pantheon_solaris_ailment"
+provider = "any"
+prompt = """
+does Soul of Solaris reduce ailment damage or just hit damage? i can't find a clear answer
+"""
+timeout_secs = 240
+cost = "low"
+
+[[expectations]]
+must_match = [
+  "physical",
+  "Solaris",
+  "hits",
+]
+must_not_match = [
+  "all damage from ailments",
+]
+must_not_expose_reasoning = true
+must_have_panel_data_first = true
+must_cite_only_fetched_urls = true

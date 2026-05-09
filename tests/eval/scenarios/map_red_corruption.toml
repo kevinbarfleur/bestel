@@ -1,0 +1,20 @@
+# Generated from tests/eval/eval_set.toml — do not hand-edit.
+# Category: mapping
+
+name = "map_red_corruption"
+provider = "any"
+prompt = """
+red maps versus t14, whats the corruption strategy if i just want maven witnessed
+"""
+timeout_secs = 240
+cost = "low"
+
+[[expectations]]
+must_match = [
+  "red maps",
+  "corruption",
+  "Maven",
+]
+must_not_expose_reasoning = true
+must_have_panel_data_first = true
+must_cite_only_fetched_urls = true

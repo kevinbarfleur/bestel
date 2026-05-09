@@ -1,0 +1,27 @@
+# Generated from tests/eval/eval_set.toml — do not hand-edit.
+# Category: craft
+
+name = "craft_eldritch_implicit_slots"
+provider = "any"
+prompt = """
+which gear slots can take eldritch implicits? i want to know before i start farming searing exarch
+"""
+timeout_secs = 240
+cost = "low"
+
+[[expectations]]
+must_match = [
+  "body armour",
+  "helmet",
+  "gloves",
+  "boots",
+]
+must_not_match = [
+  "weapon",
+  "amulet",
+  "ring",
+  "belt",
+]
+must_not_expose_reasoning = true
+must_have_panel_data_first = true
+must_cite_only_fetched_urls = true

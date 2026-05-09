@@ -323,6 +323,22 @@ pub async fn delete_all_debug_runs() -> Result<usize, String> {
     debug_recorder::delete_all_runs().map_err(|e| e.to_string())
 }
 
+/// Run the Sprint A response linter against a stored debug run. The dev
+/// panel calls this on selection to surface FAIL/WARN findings without
+/// having to bake the rules into the frontend. Returning `None` means no
+/// run was found for the supplied id; an empty `findings` array means the
+/// run was clean.
+#[tauri::command]
+pub async fn lint_debug_run(
+    id: String,
+) -> Result<Option<bestel_core::test_runner::LintReport>, String> {
+    let run = match debug_recorder::get_run(&id).map_err(|e| e.to_string())? {
+        Some(r) => r,
+        None => return Ok(None),
+    };
+    Ok(Some(bestel_core::test_runner::lint_run(&run)))
+}
+
 /// Export every persisted run as a single JSON document under
 /// `~/.bestel/exports/runs-export-<timestamp>.json`. The returned string
 /// is the absolute path to the written file. Each run is reshaped into a

@@ -1,0 +1,19 @@
+# Generated from tests/eval/eval_set.toml — do not hand-edit.
+# Category: mapping
+
+name = "map_pantheon_eater_maps"
+provider = "any"
+prompt = """
+which pantheon should i lock for tougher eater of worlds maps
+"""
+timeout_secs = 240
+cost = "low"
+
+[[expectations]]
+must_match = [
+  "Pantheon",
+  "Eater",
+]
+must_not_expose_reasoning = true
+must_have_panel_data_first = true
+must_cite_only_fetched_urls = true

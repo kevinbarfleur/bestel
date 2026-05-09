@@ -1,0 +1,24 @@
+# Generated from tests/eval/eval_set.toml — do not hand-edit.
+# Category: craft
+
+name = "craft_watchers_eye_aura_rolls"
+provider = "any"
+prompt = """
+if i have a watcher's eye, can i pre-pick which auras roll their mods or is it fully random
+"""
+timeout_secs = 240
+cost = "low"
+
+[[expectations]]
+must_match = [
+  "random",
+  "two auras",
+  "rolls",
+]
+must_not_match = [
+  "pick",
+  "select",
+]
+must_not_expose_reasoning = true
+must_have_panel_data_first = true
+must_cite_only_fetched_urls = true

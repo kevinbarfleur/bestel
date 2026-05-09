@@ -1,0 +1,25 @@
+# Generated from tests/eval/eval_set.toml — do not hand-edit.
+# Category: comparison
+
+name = "comparison_atlas_passives_poe2"
+provider = "any"
+applies_to = ["poe2"]
+prompt = """
+are atlas passive points the same idea as poe1 or completely different
+"""
+timeout_secs = 240
+cost = "low"
+
+[[expectations]]
+must_match = [
+  "PoE2",
+  "atlas",
+]
+must_not_match = [
+  "just like PoE1",
+  "identical to PoE1",
+  "Voidstones from Conquerors",
+]
+must_not_expose_reasoning = true
+must_have_panel_data_first = true
+must_cite_only_fetched_urls = true

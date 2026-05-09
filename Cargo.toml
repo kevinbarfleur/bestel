@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/bestel-core", "crates/bestel-pob-engine", "crates/bestel-test", "crates/bestel"]
+members = ["crates/bestel-core", "crates/bestel-pob-engine", "crates/bestel-rag", "crates/bestel-test", "crates/bestel"]
 resolver = "2"
 
 [workspace.package]
@@ -27,3 +27,14 @@ dirs = "5"
 sha2 = "0.10"
 urlencoding = "2"
 base64 = "0.22"
+# Sprint E — hybrid embedded KB search. arrow-* pinned to lancedb 0.27.2's
+# `=57.2` requirement to avoid duplicate-version errors.
+lancedb = { version = "0.27", default-features = false }
+arrow-array = "57.2"
+arrow-schema = "57.2"
+lance-index = "=4.0.0"
+blake3 = "1"
+tiktoken-rs = "0.11"
+# Sprint G2 — SQLite mirror for sessions/runs/verifier/lint/kb_versions.
+# `bundled` ships SQLite source so no system lib is required on Windows.
+rusqlite = { version = "0.32", features = ["bundled", "blob", "chrono", "serde_json"] }

@@ -1,6 +1,8 @@
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, RwLock};
 
 use anyhow::{anyhow, Context, Result};
+use bestel_rag::SharedKbEngine;
 use serde_json::{json, Value};
 
 use crate::pob::semantic::BuildIdentity;
@@ -19,6 +21,17 @@ pub const WEB_FETCH: &str = "web_fetch";
 pub const READ_INTERNAL_REFERENCE: &str = "read_internal_reference";
 pub const REPOE_LOOKUP: &str = "repoe_lookup";
 pub const POB_CALC: &str = "pob_calc";
+pub const KB_SEARCH: &str = "kb_search";
+pub const LOAD_SKILL: &str = "load_skill";
+
+/// Maximum `kb_search` calls per turn before the dispatch returns the
+/// structural fallback `"tool_storm_kb_search"` (Sprint E task 8 cap).
+pub const KB_SEARCH_TURN_CAP: u32 = 3;
+/// Maximum `load_skill` calls per turn (Sprint F cap). Default = 1; the
+/// model can ask for 2 only if the user explicitly requested a "full
+/// audit" or similar multi-skill workflow — this cap guards against
+/// skill-load thrash.
+pub const LOAD_SKILL_TURN_CAP: u32 = 2;
 
 /// Hosts that the `web_fetch` tool **rejects outright** before consulting the
 /// allowlist. Mirrors the tier-4 SEO blocklist in
@@ -138,6 +151,21 @@ pub struct ToolCtx {
     /// the MCP-serve entry point (no Tauri AppHandle, no resource dir);
     /// `pob_calc` then returns a clear "engine not configured" error.
     pub pob_engine: Option<Arc<bestel_pob_engine::PobEngineHandle>>,
+    /// Hybrid embedded KB. `None` until the runtime finishes the boot-time
+    /// indexing pass; until then `kb_search` returns a clear
+    /// "kb_not_ready" error and the model falls back to
+    /// `read_internal_reference`.
+    pub kb: Option<SharedKbEngine>,
+    /// Per-turn counter for `kb_search` invocations. Reset implicitly by
+    /// constructing a new `ToolCtx` per LLM iteration (see
+    /// `crates/bestel-core/src/llm/anthropic.rs`).
+    pub kb_calls_this_turn: Arc<AtomicU32>,
+    /// Per-turn counter for `load_skill` invocations (Sprint F cap).
+    pub skill_calls_this_turn: Arc<AtomicU32>,
+    /// Most recent user message text. Set by the provider before dispatch so
+    /// `get_active_build` (Sprint E P7) can run a server-side `kb_search`
+    /// against the same question and pre-attach `relevant_kb` passages.
+    pub user_question: Option<String>,
 }
 
 impl ToolCtx {
@@ -149,6 +177,7 @@ impl ToolCtx {
         let trade_poe1 = TradeClient::new(http.clone(), cache.clone(), PoeVersion::Poe1);
         let trade_poe2 = TradeClient::new(http.clone(), cache, PoeVersion::Poe2);
         let pob_engine = crate::llm::pob_engine::global();
+        let kb = crate::llm::kb::global();
         Ok(Self {
             build,
             wiki_poe1,
@@ -157,7 +186,19 @@ impl ToolCtx {
             trade_poe2,
             http,
             pob_engine,
+            kb,
+            kb_calls_this_turn: Arc::new(AtomicU32::new(0)),
+            skill_calls_this_turn: Arc::new(AtomicU32::new(0)),
+            user_question: None,
         })
+    }
+
+    /// Attach the most recent user message text. The provider should call
+    /// this before dispatch so that `get_active_build` can echo a few
+    /// `relevant_kb` passages alongside the build identity card.
+    pub fn with_user_question(mut self, q: impl Into<String>) -> Self {
+        self.user_question = Some(q.into());
+        self
     }
 
     /// Attach a lazy PoB engine handle. Called from the Tauri bootstrap
@@ -168,6 +209,13 @@ impl ToolCtx {
         engine: Arc<bestel_pob_engine::PobEngineHandle>,
     ) -> Self {
         self.pob_engine = Some(engine);
+        self
+    }
+
+    /// Attach a [`SharedKbEngine`]. Called from the runtime bootstrap once
+    /// the LanceDB index has been opened and the corpus indexed.
+    pub fn with_kb(mut self, kb: SharedKbEngine) -> Self {
+        self.kb = Some(kb);
         self
     }
 
@@ -447,7 +495,7 @@ pub fn tool_schemas() -> Vec<Value> {
                 .collect();
             json!({
                 "name": READ_INTERNAL_REFERENCE,
-                "description": "Read one of Bestel's internal reference files from `~/.bestel/prompts/references/`. The `rel_path` MUST be one of the values in the `enum` list — never invent a filename, never re-number, never pluralise. Common mistake: 'build_archetypes' (plural) instead of 'build_archetype' (singular, file 17). If you're not sure which file to fetch, browse `00_README.md` first. Returns the file's full markdown text (truncated at 25 KB). Use this for conceptual frameworks (build reasoning, defence layering, crafting workflows) and the Maxroll URL catalogues; use wiki_parse for live mechanical truth. Path traversal and absolute paths are rejected.",
+                "description": "Read one of Bestel's internal reference files from `~/.bestel/prompts/references/`. **Use ONLY when you already know the exact filename** (e.g. you saw it cited in a prior turn or in the reference index). For semantic queries (`how do Pantheon interact with duration buffs?`, `what counts as life-on-block?`), prefer `kb_search` — it returns the relevant passages directly without you having to guess the right file. The `rel_path` MUST be one of the values in the `enum` list — never invent a filename, never re-number, never pluralise. Common mistake: 'build_archetypes' (plural) instead of 'build_archetype' (singular, file 17). Returns the file's full markdown text (truncated at 25 KB). Path traversal and absolute paths are rejected.",
                 "input_schema": {
                     "type": "object",
                     "properties": {
@@ -462,12 +510,63 @@ pub fn tool_schemas() -> Vec<Value> {
                 }
             })
         },
+        {
+            let skill_names: Vec<String> = crate::skills::bundled_skill_names();
+            json!({
+                "name": LOAD_SKILL,
+                "description": "Load the full body of one of Bestel's progressive-disclosure skills — repeatable workflows (build review, craft audit, mapping strategy) whose checklists are too verbose to keep in the system prompt. The system prompt advertises each skill's `description` + triggers (~100 words each). Call this when the user's question matches a skill's triggers and you need the full diagnostic flow / template / checklist. Returns the SKILL.md body plus the names of templates available under that skill. Cap: 1 skill per turn by default, 2 only when the user asked for a full audit. Skills are NOT a substitute for tool calls — pob_calc / wiki_parse / kb_search still run for live data; the skill provides STRUCTURE for the answer.",
+                "input_schema": {
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "enum": skill_names,
+                            "description": "Skill folder name. MUST match one of the enum values."
+                        }
+                    },
+                    "required": ["name"],
+                    "additionalProperties": false
+                }
+            })
+        },
+        json!({
+            "name": KB_SEARCH,
+            "description": "Hybrid (vector + BM25) search over Bestel's internal knowledge base — the same `~/.bestel/prompts/references/**` corpus exposed by `read_internal_reference`, but indexed semantically. Use for any question where you don't already know the exact source file: `how do Pantheon interact with duration buffs`, `what's the spell suppression cap`, `what defines a slow-projectile build`, etc. Returns up to `top_k` passages with their parent file, heading path, and a short body excerpt. Each passage cites the exact `~/.bestel/prompts/references/<rel_path>` it came from so you can chain into `read_internal_reference` if you need the full file. Cap: 3 calls per turn (after that, dispatch returns `tool_storm_kb_search` and you must answer with what you have or fall back to `wiki_search`). The corpus is limited to Bestel's internal references — for live game data (skills, uniques, bases) use `wiki_parse` / `repoe_lookup` instead.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Natural-language query. Phrase it close to the user's intent — embeddings handle paraphrase well."
+                    },
+                    "game": {
+                        "type": "string",
+                        "enum": ["poe1", "poe2"],
+                        "description": "Filter to passages applicable to one game. Omit to search both."
+                    },
+                    "top_k": {
+                        "type": "integer",
+                        "default": 5,
+                        "minimum": 1,
+                        "maximum": 10,
+                        "description": "Number of passages to return."
+                    },
+                    "tags": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Optional metadata tag filter (AND-joined). Currently unused for the bundled refs corpus; reserved for future skill / wiki-cache shards."
+                    }
+                },
+                "required": ["query"],
+                "additionalProperties": false
+            }
+        }),
     ]
 }
 
 pub async fn dispatch(name: &str, input: &Value, ctx: &ToolCtx) -> Result<String> {
     match name {
-        GET_ACTIVE_BUILD => Ok(ctx.build.render_tool_result()),
+        GET_ACTIVE_BUILD => dispatch_get_active_build(ctx).await,
         // Backwards-compat alias for the renamed tool. Some external MCP
         // clients may still call the old name; route them to the new
         // implementation transparently.
@@ -643,8 +742,186 @@ pub async fn dispatch(name: &str, input: &Value, ctx: &ToolCtx) -> Result<String
             Ok(truncate(&serde_json::to_string(&value).unwrap_or_default(), 30_000))
         }
         POB_CALC => dispatch_pob_calc(input, ctx).await,
+        KB_SEARCH => dispatch_kb_search(input, ctx).await,
+        LOAD_SKILL => dispatch_load_skill(input, ctx).await,
         other => Err(anyhow!("unknown tool '{other}'")),
     }
+}
+
+async fn dispatch_load_skill(input: &Value, ctx: &ToolCtx) -> Result<String> {
+    let prev = ctx.skill_calls_this_turn.fetch_add(1, Ordering::SeqCst);
+    if prev >= LOAD_SKILL_TURN_CAP {
+        return Ok(json!({
+            "status": "tool_storm_load_skill",
+            "message": format!(
+                "load_skill has been called {} times this turn (cap = {}). Stop loading more workflows and answer with what you have.",
+                prev + 1,
+                LOAD_SKILL_TURN_CAP
+            ),
+            "cap": LOAD_SKILL_TURN_CAP,
+        })
+        .to_string());
+    }
+    let name = input
+        .get("name")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow!("'name' is required and must be a string"))?;
+    let skill = crate::skills::load_skill(name)?;
+    let value = json!({
+        "status": "ok",
+        "name": skill.frontmatter.name,
+        "description": skill.frontmatter.description,
+        "when_to_use": skill.frontmatter.when_to_use,
+        "trigger_examples": skill.frontmatter.trigger_examples,
+        "body": skill.body,
+        "templates": skill.templates.keys().cloned().collect::<Vec<String>>(),
+    });
+    Ok(truncate(&serde_json::to_string(&value).unwrap_or_default(), 30_000))
+}
+
+/// Sprint E P7 / Sprint G P4 — wraps the Sprint D identity-card render with:
+/// (a) a server-side `kb_search` over the user's most recent question
+/// (`summary.relevant_kb`), and (b) the cached `current_diagnosis` from
+/// `~/.bestel/notes/<build_session>.json` (`summary.session_notes`) so a
+/// multi-turn diagnosis stays coherent across pivots. Falls back gracefully
+/// when KB / notes / question are absent.
+async fn dispatch_get_active_build(ctx: &ToolCtx) -> Result<String> {
+    let base = ctx.build.render_tool_result();
+    let active_build = ctx.build.get();
+    let mut value: Value = match serde_json::from_str(&base) {
+        Ok(v) => v,
+        Err(_) => return Ok(base),
+    };
+    let summary_obj = match value.as_object_mut() {
+        Some(o) if o.contains_key("summary") => {
+            o.get_mut("summary").and_then(|v| v.as_object_mut())
+        }
+        Some(o) => Some(o),
+        None => None,
+    };
+    let summary = match summary_obj {
+        Some(s) => s,
+        None => return Ok(base),
+    };
+
+    // (a) Sprint E P7 — relevant_kb passages.
+    if let (Some(kb), Some(question)) = (
+        ctx.kb.as_ref(),
+        ctx.user_question
+            .as_deref()
+            .filter(|s| !s.trim().is_empty()),
+    ) {
+        match kb.search(question, 5, None, &[]).await {
+            Ok(hits) => {
+                let kb_passages: Vec<Value> = hits
+                    .into_iter()
+                    .map(|h| {
+                        json!({
+                            "rel_path": h.chunk.doc_path,
+                            "heading_path": h.chunk.heading_path,
+                            "score": h.score,
+                            "excerpt": truncate(&h.chunk.body, 800),
+                        })
+                    })
+                    .collect();
+                summary.insert("relevant_kb".into(), Value::Array(kb_passages));
+            }
+            Err(err) => {
+                tracing::warn!(error = ?err, "kb.search inside get_active_build failed");
+            }
+        }
+    }
+
+    // (b) Sprint G P4 — session_notes for multi-turn diagnosis carry-over.
+    if let Some(build) = active_build {
+        let session_id = derive_build_session_id(&build);
+        let notes = crate::llm::session_notes::read_notes(&session_id);
+        if notes.current_diagnosis.is_some() {
+            if let Ok(notes_json) = serde_json::to_value(&notes) {
+                summary.insert("session_notes".into(), notes_json);
+            }
+        }
+    }
+
+    Ok(truncate(&serde_json::to_string(&value).unwrap_or(base.clone()), 30_000))
+}
+
+/// Stable session identifier per loaded build. Currently a Blake3 of the
+/// source file path so re-opening the same PoB resumes the diagnosis.
+fn derive_build_session_id(build: &PobBuild) -> String {
+    let path = build.source_file.display().to_string();
+    let hash = blake3::hash(path.as_bytes());
+    let hex = hash.to_hex();
+    // Take a 16-char prefix — collision-safe for per-user notes folders.
+    hex[..16.min(hex.len())].to_string()
+}
+
+async fn dispatch_kb_search(input: &Value, ctx: &ToolCtx) -> Result<String> {
+    let prev = ctx.kb_calls_this_turn.fetch_add(1, Ordering::SeqCst);
+    if prev >= KB_SEARCH_TURN_CAP {
+        return Ok(json!({
+            "status": "tool_storm_kb_search",
+            "message": format!(
+                "kb_search has been called {} times this turn (cap = {}). Stop retrieving and answer with what you have, or fall back to wiki_search if the question requires live game data.",
+                prev + 1,
+                KB_SEARCH_TURN_CAP
+            ),
+            "cap": KB_SEARCH_TURN_CAP,
+        })
+        .to_string());
+    }
+    let kb = match ctx.kb.as_ref() {
+        Some(k) => k.clone(),
+        None => {
+            return Ok(json!({
+                "status": "kb_not_ready",
+                "message": "Knowledge base index has not finished bootstrapping. Use read_internal_reference if you know the file, or wiki_parse for live game mechanics.",
+            })
+            .to_string());
+        }
+    };
+    let query = input
+        .get("query")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow!("'query' is required and must be a string"))?;
+    let game = input
+        .get("game")
+        .and_then(|v| v.as_str());
+    let top_k = input
+        .get("top_k")
+        .and_then(|v| v.as_u64())
+        .map(|n| n.clamp(1, 10) as usize)
+        .unwrap_or(5);
+    let tags: Vec<String> = input
+        .get("tags")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        })
+        .unwrap_or_default();
+    let hits = kb.search(query, top_k, game, &tags).await?;
+    let response_hits: Vec<Value> = hits
+        .into_iter()
+        .map(|h| {
+            json!({
+                "rel_path": h.chunk.doc_path,
+                "heading_path": h.chunk.heading_path,
+                "applies_to": h.chunk.applies_to,
+                "score": h.score,
+                "excerpt": truncate(&h.chunk.body, 1200),
+            })
+        })
+        .collect();
+    let value = json!({
+        "status": "ok",
+        "query": query,
+        "game": game,
+        "top_k": top_k,
+        "hits": response_hits,
+    });
+    Ok(truncate(&serde_json::to_string(&value).unwrap_or_default(), 30_000))
 }
 
 async fn dispatch_pob_calc(input: &Value, ctx: &ToolCtx) -> Result<String> {
@@ -886,13 +1163,60 @@ fn render_build_for_llm(b: &PobBuild) -> String {
     if !identity.defining_uniques.is_empty() {
         summary.insert("defining_uniques".into(), json!(identity.defining_uniques));
     }
-    if let Some(chain) = identity.conversion_chain {
+    if let Some(chain) = identity.conversion_chain.as_ref() {
         summary.insert("conversion_chain".into(), json!(chain));
     }
+    summary.insert(
+        "identity_line".into(),
+        json!(format_identity_line(&identity, identity.conversion_chain.as_ref())),
+    );
 
     let value = serde_json::Value::Object(summary);
     let s = serde_json::to_string(&value).unwrap_or_default();
     truncate(&s, 60_000)
+}
+
+/// Compose the canonical `Identity:` card line that the agent must echo
+/// verbatim when answering build-specific questions. Format:
+///
+/// `Identity: defense=<axis>, hit_model=<axis>, mechanic=<axis>. Defining
+///  uniques: <name> (<category>), …. Conversion: <step>, …`
+///
+/// Multi-tag axes are joined with `+` (e.g. `defense=life+MoM`). Empty
+/// tag lists render as `none`. Defining uniques and conversion clauses
+/// are omitted entirely when absent.
+fn format_identity_line(
+    id: &BuildIdentity,
+    chain: Option<&crate::pob::semantic::ConversionChain>,
+) -> String {
+    let join_axis = |axis: &[String]| -> String {
+        if axis.is_empty() {
+            "none".to_string()
+        } else {
+            axis.join("+")
+        }
+    };
+    let mut line = format!(
+        "Identity: defense={}, hit_model={}, mechanic={}.",
+        join_axis(&id.archetype.defense),
+        join_axis(&id.archetype.hit_model),
+        join_axis(&id.archetype.mechanic),
+    );
+    if !id.defining_uniques.is_empty() {
+        let uniques = id
+            .defining_uniques
+            .iter()
+            .map(|u| format!("{} ({})", u.name, u.category))
+            .collect::<Vec<_>>()
+            .join(", ");
+        line.push_str(&format!(" Defining uniques: {}.", uniques));
+    }
+    if let Some(c) = chain {
+        if !c.steps.is_empty() {
+            line.push_str(&format!(" Conversion: {}.", c.steps.join(", ")));
+        }
+    }
+    line
 }
 
 fn truncate(s: &str, max: usize) -> String {
@@ -910,6 +1234,71 @@ fn truncate(s: &str, max: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pob::semantic::{
+        ArchetypeTags, ConversionChain, DefiningUniqueMatch,
+    };
+
+    #[test]
+    fn identity_line_full_grammar() {
+        let id = BuildIdentity {
+            archetype: ArchetypeTags {
+                defense: vec!["life".into(), "MoM".into()],
+                hit_model: vec!["crit".into()],
+                mechanic: vec!["self-cast".into()],
+            },
+            defining_uniques: vec![
+                DefiningUniqueMatch {
+                    name: "Mageblood".into(),
+                    category: "engine".into(),
+                    identity_hint: "irrelevant".into(),
+                },
+                DefiningUniqueMatch {
+                    name: "Watcher's Eye".into(),
+                    category: "amplifier".into(),
+                    identity_hint: "irrelevant".into(),
+                },
+            ],
+            conversion_chain: Some(ConversionChain {
+                steps: vec!["60% physical → cold".into()],
+                final_type: "cold".into(),
+            }),
+        };
+        let line = format_identity_line(&id, id.conversion_chain.as_ref());
+        assert_eq!(
+            line,
+            "Identity: defense=life+MoM, hit_model=crit, mechanic=self-cast. \
+             Defining uniques: Mageblood (engine), Watcher's Eye (amplifier). \
+             Conversion: 60% physical → cold."
+        );
+    }
+
+    #[test]
+    fn identity_line_minimal_no_uniques_no_chain() {
+        let id = BuildIdentity {
+            archetype: ArchetypeTags {
+                defense: vec!["CI".into()],
+                hit_model: vec!["non-crit-EO".into()],
+                mechanic: vec!["totem".into()],
+            },
+            defining_uniques: Vec::new(),
+            conversion_chain: None,
+        };
+        let line = format_identity_line(&id, None);
+        assert_eq!(
+            line,
+            "Identity: defense=CI, hit_model=non-crit-EO, mechanic=totem."
+        );
+    }
+
+    #[test]
+    fn identity_line_empty_axis_renders_none() {
+        let id = BuildIdentity::default();
+        let line = format_identity_line(&id, None);
+        assert_eq!(
+            line,
+            "Identity: defense=none, hit_model=none, mechanic=none."
+        );
+    }
 
     #[test]
     fn schemas_advertise_full_in_app_surface() {
@@ -929,7 +1318,9 @@ mod tests {
         assert!(names.contains(&READ_INTERNAL_REFERENCE));
         assert!(names.contains(&REPOE_LOOKUP));
         assert!(names.contains(&POB_CALC));
-        assert_eq!(schemas.len(), 11);
+        assert!(names.contains(&KB_SEARCH));
+        assert!(names.contains(&LOAD_SKILL));
+        assert_eq!(schemas.len(), 13);
     }
 
     #[test]

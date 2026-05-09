@@ -1,0 +1,25 @@
+# Generated from tests/eval/eval_set.toml — do not hand-edit.
+# Category: build
+
+name = "build_red_map_oneshot"
+provider = "any"
+prompt = """
+keep getting one shot in red maps no idea why
+"""
+timeout_secs = 240
+cost = "low"
+
+[[expectations]]
+must_match = [
+  "which",
+  "type",
+  "phys",
+  "ele",
+]
+must_not_match = [
+  "save your build in PoB",
+  "switch ascendancy",
+]
+must_not_expose_reasoning = true
+must_have_panel_data_first = true
+must_cite_only_fetched_urls = true

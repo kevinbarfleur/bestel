@@ -1,0 +1,19 @@
+# Generated from tests/eval/eval_set.toml — do not hand-edit.
+# Category: mapping
+
+name = "map_pinnacle_order"
+provider = "any"
+prompt = """
+what order should i fight the pinnacle bosses for the best fragment economy
+"""
+timeout_secs = 240
+cost = "low"
+
+[[expectations]]
+must_match = [
+  "Pinnacle",
+  "fragment",
+]
+must_not_expose_reasoning = true
+must_have_panel_data_first = true
+must_cite_only_fetched_urls = true

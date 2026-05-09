@@ -1,0 +1,23 @@
+# Generated from tests/eval/eval_set.toml — do not hand-edit.
+# Category: craft
+
+name = "craft_fracturing_cost_outcome"
+provider = "any"
+prompt = """
+fracturing orbs - whats the actual cost and what mod gets locked
+"""
+timeout_secs = 240
+cost = "low"
+
+[[expectations]]
+must_match = [
+  "random mod",
+  "Fracturing Orb",
+]
+must_not_match = [
+  "choose",
+  "select",
+]
+must_not_expose_reasoning = true
+must_have_panel_data_first = true
+must_cite_only_fetched_urls = true

@@ -6,9 +6,10 @@ import {
   deleteAllDebugRuns,
   deleteDebugRun,
   getDebugRun,
+  lintDebugRun,
   listDebugRuns,
 } from '../../../api/tauri';
-import type { DebugRunDto } from '../../../api/types';
+import type { DebugRunDto, DebugRunStats, LintFinding, LintReport } from '../../../api/types';
 import type { ChatMessageVm, Segment } from '../../../stores/chat';
 import ChatMessage from '../../../components/chat/ChatMessage.vue';
 import { useToastsStore } from '../../../stores/toasts';
@@ -19,6 +20,10 @@ const runs = ref<DebugRunDto[]>([]);
 const selected = ref<DebugRunDto | null>(null);
 const loading = ref(false);
 const filter = ref('');
+// Lint reports cached per run id. Populated lazily from `lint_debug_run`
+// after the run list refreshes; the sidebar reads it for the FAIL/WARN
+// badges and the main pane reads it for the per-finding list.
+const lintReports = ref<Map<string, LintReport>>(new Map());
 // Which model ids the user has explicitly toggled OFF. Default empty =
 // everything visible, including any model that appears in the future.
 const hiddenModels = ref<Set<string>>(new Set());
@@ -96,11 +101,46 @@ async function refresh() {
     } else if (selected.value && !runs.value.find((r) => r.id === selected.value!.id)) {
       selected.value = null;
     }
+    void refreshLints();
   } catch (e) {
     toasts.push({ variant: 'error', title: 'Debug runs', body: String(e) });
   } finally {
     loading.value = false;
   }
+}
+
+async function refreshLints() {
+  // Compute lint reports for every run that we have not yet cached. Runs
+  // are processed in parallel but with a small concurrency window so the
+  // dev panel does not freeze on a fresh import of hundreds of runs.
+  const pending = runs.value.filter((r) => !lintReports.value.has(r.id));
+  if (pending.length === 0) return;
+  const next = new Map(lintReports.value);
+  const concurrency = 6;
+  for (let i = 0; i < pending.length; i += concurrency) {
+    const batch = pending.slice(i, i + concurrency);
+    const results = await Promise.all(
+      batch.map((r) => lintDebugRun(r.id).catch(() => null)),
+    );
+    for (let j = 0; j < batch.length; j += 1) {
+      const r = batch[j];
+      const report = results[j];
+      if (report) next.set(r.id, report);
+    }
+  }
+  lintReports.value = next;
+}
+
+function findingsForRun(id: string): LintFinding[] {
+  return lintReports.value.get(id)?.findings ?? [];
+}
+
+function failCountForRun(id: string): number {
+  return findingsForRun(id).filter((f) => f.severity === 'fail').length;
+}
+
+function warnCountForRun(id: string): number {
+  return findingsForRun(id).filter((f) => f.severity === 'warn').length;
 }
 
 async function select(run: DebugRunDto) {
@@ -166,6 +206,24 @@ function fmtTime(iso: string): string {
 function fmtElapsed(ms: number): string {
   if (ms < 1000) return `${ms}ms`;
   return `${(ms / 1000).toFixed(1)}s`;
+}
+
+function hasCacheStats(stats: DebugRunStats): boolean {
+  return (
+    (stats.input_tokens ?? 0) +
+      (stats.cached_input_tokens ?? 0) +
+      (stats.cache_creation_tokens ?? 0) +
+      (stats.output_tokens ?? 0) >
+    0
+  );
+}
+
+function cacheHitPct(stats: DebugRunStats): string {
+  const fresh = stats.input_tokens ?? 0;
+  const cached = stats.cached_input_tokens ?? 0;
+  const total = fresh + cached;
+  if (total === 0) return '—';
+  return `${Math.round((cached / total) * 100)}%`;
 }
 
 function truncate(s: string, max: number): string {
@@ -316,6 +374,16 @@ const messagesForSelected = computed<ChatMessageVm[]>(() => {
             <span>{{ r.stats.tool_calls }}🔧</span>
             <span class="debug__dot">·</span>
             <span>{{ r.stats.text_bytes }}b</span>
+            <span
+              v-if="failCountForRun(r.id) > 0"
+              class="debug__lint-pill debug__lint-pill--fail"
+              :title="`${failCountForRun(r.id)} lint FAIL`"
+            >{{ failCountForRun(r.id) }}F</span>
+            <span
+              v-if="warnCountForRun(r.id) > 0"
+              class="debug__lint-pill debug__lint-pill--warn"
+              :title="`${warnCountForRun(r.id)} lint WARN`"
+            >{{ warnCountForRun(r.id) }}W</span>
             <span v-if="r.error" class="debug__bad">err</span>
             <button class="debug__del" @click="removeOne(r, $event)" title="delete">×</button>
           </div>
@@ -371,7 +439,58 @@ const messagesForSelected = computed<ChatMessageVm[]>(() => {
             </span>
             <span v-if="selected.error" class="debug__bad">error: {{ selected.error }}</span>
           </div>
+          <div
+            v-if="hasCacheStats(selected.stats)"
+            class="debug__head-row debug__head-row--stats"
+          >
+            <span class="debug__caps">input</span>
+            <span class="debug__head-mono">{{ selected.stats.input_tokens ?? 0 }}t</span>
+            <span class="debug__caps">cache read</span>
+            <span class="debug__head-mono">{{ selected.stats.cached_input_tokens ?? 0 }}t</span>
+            <span class="debug__caps">cache write</span>
+            <span class="debug__head-mono">{{ selected.stats.cache_creation_tokens ?? 0 }}t</span>
+            <span class="debug__caps">output</span>
+            <span class="debug__head-mono">{{ selected.stats.output_tokens ?? 0 }}t</span>
+            <span class="debug__caps">hit</span>
+            <span class="debug__head-mono">{{ cacheHitPct(selected.stats) }}</span>
+            <span v-if="selected.stats.cost_usd != null" class="debug__caps">cost</span>
+            <span v-if="selected.stats.cost_usd != null" class="debug__head-mono">
+              ${{ selected.stats.cost_usd.toFixed(4) }}
+            </span>
+          </div>
         </header>
+
+        <section
+          v-if="findingsForRun(selected.id).length > 0"
+          class="debug__lints"
+        >
+          <header class="debug__lints-head">
+            <span class="debug__caps">lint findings</span>
+            <span class="debug__lints-counts">
+              <span
+                v-if="failCountForRun(selected.id) > 0"
+                class="debug__lint-pill debug__lint-pill--fail"
+              >{{ failCountForRun(selected.id) }} FAIL</span>
+              <span
+                v-if="warnCountForRun(selected.id) > 0"
+                class="debug__lint-pill debug__lint-pill--warn"
+              >{{ warnCountForRun(selected.id) }} WARN</span>
+            </span>
+          </header>
+          <ul class="debug__lints-list">
+            <li
+              v-for="(f, i) in findingsForRun(selected.id)"
+              :key="`${selected.id}_${i}`"
+              class="debug__lint-row"
+              :class="`debug__lint-row--${f.severity}`"
+            >
+              <span class="debug__lint-tag">{{ f.severity.toUpperCase() }}</span>
+              <code class="debug__lint-id">{{ f.id }}</code>
+              <span class="debug__lint-msg">{{ f.message }}</span>
+              <pre v-if="f.evidence" class="debug__lint-ev">{{ f.evidence }}</pre>
+            </li>
+          </ul>
+        </section>
 
         <div class="debug__chat">
           <template v-for="m in messagesForSelected" :key="m.id">
@@ -860,5 +979,117 @@ const messagesForSelected = computed<ChatMessageVm[]>(() => {
   word-break: break-word;
   max-height: 240px;
   overflow-y: auto;
+}
+
+/* Sprint A — lint findings surfacing in the dev panel. */
+.debug__lint-pill {
+  font-family: var(--label);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 3px;
+  border: 1px solid transparent;
+  margin-left: 4px;
+  font-weight: 600;
+}
+
+.debug__lint-pill--fail {
+  color: var(--paper);
+  background: #b6432e;
+  border-color: #8a2f1d;
+}
+
+.debug__lint-pill--warn {
+  color: #6b4d10;
+  background: #f1cd6a;
+  border-color: #c9a541;
+}
+
+.debug__lints {
+  border-top: 1px dashed var(--paper-line);
+  border-bottom: 1px solid var(--paper-line);
+  background: var(--paper-shade);
+  padding: 10px 16px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.debug__lints-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.debug__lints-counts {
+  display: flex;
+  gap: 4px;
+}
+
+.debug__lints-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.debug__lint-row {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 6px;
+  border-left: 3px solid transparent;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.debug__lint-row--fail {
+  border-left-color: #b6432e;
+  background: rgba(182, 67, 46, 0.06);
+}
+
+.debug__lint-row--warn {
+  border-left-color: #c9a541;
+  background: rgba(201, 165, 65, 0.06);
+}
+
+.debug__lint-tag {
+  font-family: var(--label);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  font-weight: 600;
+}
+
+.debug__lint-row--fail .debug__lint-tag { color: #8a2f1d; }
+.debug__lint-row--warn .debug__lint-tag { color: #6b4d10; }
+
+.debug__lint-id {
+  font-family: var(--mono, 'JetBrains Mono', monospace);
+  font-size: 11px;
+  color: var(--ink-soft);
+}
+
+.debug__lint-msg {
+  color: var(--ink);
+}
+
+.debug__lint-ev {
+  grid-column: 1 / -1;
+  margin: 4px 0 0;
+  font-family: var(--mono, 'JetBrains Mono', monospace);
+  font-size: 10px;
+  background: var(--paper);
+  border: 1px dashed var(--paper-line);
+  padding: 4px 6px;
+  border-radius: 2px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 120px;
+  overflow-y: auto;
+  color: var(--ink-soft);
 }
 </style>

@@ -371,7 +371,12 @@ actions.load_build_xml = function(req)
     -- The `build` global is set by HeadlessWrapper at boot to point at
     -- mainObject.main.modes["BUILD"]. loadBuildFromXML mutates that mode
     -- in place, so `build` keeps a valid reference. No re-bind needed.
-    recompute_build()
+    -- Bestel patch (Sprint C2): recompute_build can blow up inside
+    -- vendored UI code (e.g. DropDownControl:GetSelValueByKey on a stale
+    -- selIndex). Wrap it so the crash becomes a typed error instead of
+    -- killing the LuaJIT process.
+    local _, rerr = safe(recompute_build)
+    if rerr then return err_reply("recompute failed after load_build_xml: " .. rerr) end
     ok_reply({})
 end
 
@@ -389,7 +394,8 @@ actions.set_config = function(req)
     if #rejected > 0 then
         return err_reply(table.concat(rejected, "; "))
     end
-    recompute_build()
+    local _, rerr = safe(recompute_build)
+    if rerr then return err_reply("recompute failed after set_config: " .. rerr) end
     ok_reply({})
 end
 
@@ -413,7 +419,8 @@ actions.set_main_selection = function(req)
     if req.skillPart ~= nil then
         build.skillPart = req.skillPart
     end
-    recompute_build()
+    local _, rerr = safe(recompute_build)
+    if rerr then return err_reply("recompute failed after set_main_selection: " .. rerr) end
     ok_reply({})
 end
 

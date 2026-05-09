@@ -143,11 +143,12 @@ impl AnthropicClient {
 
         let mut full_assistant = String::new();
         let mut iterations = 0;
-        // Build a one-line state hint prefixed to the system prompt so the
-        // LLM can see whether a Path of Building file is currently attached
-        // *before* its first turn. Avoids wasting a `get_active_build` tool
-        // call on generic questions when the user has detached their build.
-        // Convention is documented in SYSTEM_PROMPT.md ("Build awareness").
+        // Build a one-line state hint kept OUT of the cached system blocks so
+        // detaching / attaching a build doesn't invalidate the cache. The
+        // string is appended as a final, non-cached system block on every
+        // request. Convention documented in SYSTEM_PROMPT.md ("Build
+        // awareness").
+        let has_active_build = ctx.get().is_some();
         let build_state_line = match ctx.get() {
             Some(b) => format!(
                 "Build state: loaded — {} {} lvl {}",
@@ -157,11 +158,23 @@ impl AnthropicClient {
             ),
             None => "Build state: detached".to_string(),
         };
-        let composed = prompts::load_composed();
-        let with_overrides = prompts::append_overrides(&composed, "anthropic", &self.model);
-        let system_prompt_with_state =
-            format!("[{}]\n\n{}", build_state_line, with_overrides);
-        let tool_ctx = ToolCtx::new(ctx).context("build ToolCtx")?;
+        // Sprint C cache breakpoints: split SYSTEM_PROMPT on `<tool_policy>`
+        // so the persona + runtime contract live in BP2 (rarely changes), the
+        // tool policy + mode router + contracts + failure policy live in BP3
+        // (changes when tools or contracts evolve), and CORE_KNOWLEDGE lives
+        // in BP4 (changes with reference library re-indexing).
+        let (system_block_1, system_block_2, core_knowledge_block) =
+            prompts::load_anthropic_blocks("anthropic", &self.model);
+        let last_user_question: Option<String> = history
+            .iter()
+            .rev()
+            .find(|m| matches!(m.role, super::Role::User))
+            .map(|m| m.content.clone())
+            .filter(|s| !s.trim().is_empty());
+        let mut tool_ctx = ToolCtx::new(ctx).context("build ToolCtx")?;
+        if let Some(q) = last_user_question {
+            tool_ctx = tool_ctx.with_user_question(q);
+        }
         let schemas = cached_tool_schemas();
         let mut wrap_up_done = false;
         let mut total_usage = super::UsageStats::default();
@@ -183,18 +196,61 @@ impl AnthropicClient {
                 }));
             }
 
-            let body = json!({
+            // Build the system array. The first three blocks each carry
+            // `cache_control: ephemeral` with TTL 1h so a desktop session
+            // spanning more than 5 min still benefits from the cache. The
+            // fourth block (build_state) is dynamic — no cache_control, sits
+            // AFTER the cached blocks so flipping a build between turns
+            // doesn't invalidate any cache entry.
+            let mut system_blocks: Vec<Value> = Vec::with_capacity(4);
+            if !system_block_1.is_empty() {
+                system_blocks.push(json!({
+                    "type": "text",
+                    "text": system_block_1,
+                    "cache_control": { "type": "ephemeral", "ttl": "1h" }
+                }));
+            }
+            if !system_block_2.is_empty() {
+                system_blocks.push(json!({
+                    "type": "text",
+                    "text": system_block_2,
+                    "cache_control": { "type": "ephemeral", "ttl": "1h" }
+                }));
+            }
+            if !core_knowledge_block.is_empty() {
+                system_blocks.push(json!({
+                    "type": "text",
+                    "text": core_knowledge_block,
+                    "cache_control": { "type": "ephemeral", "ttl": "1h" }
+                }));
+            }
+            system_blocks.push(json!({
+                "type": "text",
+                "text": format!("[{}]", build_state_line),
+            }));
+
+            // Sprint D — force `get_active_build` on iteration 1 whenever a
+            // build is loaded. Eliminates the "model decides not to call the
+            // build context" failure class that the 2026-05-08 audit found in
+            // 23/24 build runs. After this single forced call, the result is
+            // in the messages array for every subsequent iteration, and we
+            // fall back to `tool_choice: auto` so the model picks freely.
+            let force_build_context =
+                iterations == 1 && !force_finalize && has_active_build;
+            let mut body = json!({
                 "model": self.model,
                 "max_tokens": 8192,
-                "system": [{
-                    "type": "text",
-                    "text": system_prompt_with_state,
-                    "cache_control": { "type": "ephemeral" }
-                }],
+                "system": system_blocks,
                 "tools": if force_finalize { json!([]) } else { json!(schemas) },
                 "stream": true,
                 "messages": messages,
             });
+            if force_build_context {
+                body["tool_choice"] = json!({
+                    "type": "tool",
+                    "name": super::tools::GET_ACTIVE_BUILD,
+                });
+            }
 
             let resp = self
                 .post_with_retry(&body, &deltas)
@@ -527,8 +583,97 @@ impl AnthropicClient {
             total_usage.cost_usd = compute_cost(self.cost_per_mtok, &total_usage);
             let _ = deltas.send(LlmDelta::Usage(total_usage));
         }
+
+        // Sprint G — conditional verifier. Runs only if `should_verify` matches
+        // (numbers / sources / cached / banned phrases / identity / patch /
+        // tier). Latency budget: ~2s typical; never propagates errors back to
+        // the user (a failing verifier is a `pass_with_note`, not a failure).
+        let verified_text = self
+            .run_verifier_pass(&history, &full_assistant, &deltas)
+            .await;
         let _ = deltas.send(LlmDelta::MessageEnd);
-        Ok(full_assistant)
+        Ok(verified_text)
+    }
+
+    async fn run_verifier_pass(
+        &self,
+        history: &[ChatMessage],
+        draft: &str,
+        deltas: &mpsc::UnboundedSender<LlmDelta>,
+    ) -> String {
+        if !super::verifier::should_verify(draft) {
+            return draft.to_string();
+        }
+        let last_user = history
+            .iter()
+            .rev()
+            .find(|m| matches!(m.role, super::Role::User))
+            .map(|m| m.content.as_str())
+            .unwrap_or("");
+        let verdict = super::verifier::verify(
+            &self.http,
+            &self.api_url,
+            &self.api_key,
+            API_VERSION,
+            &self.model,
+            last_user,
+            draft,
+        )
+        .await;
+        let result = match verdict.status {
+            super::verifier::VerdictStatus::Pass => {
+                tracing::info!(
+                    target: "bestel.verifier",
+                    findings = verdict.findings.len(),
+                    "verifier pass"
+                );
+                draft.to_string()
+            }
+            super::verifier::VerdictStatus::Revise => {
+                let rewrite = if verdict.minimal_rewrite.trim().is_empty() {
+                    draft.to_string()
+                } else {
+                    verdict.minimal_rewrite.clone()
+                };
+                tracing::info!(
+                    target: "bestel.verifier",
+                    findings = verdict.findings.len(),
+                    "verifier revise — swapping in minimal_rewrite"
+                );
+                let _ = deltas.send(LlmDelta::TextDelta(format!(
+                    "\n\n[verifier: revised — {} finding(s)]\n",
+                    verdict.findings.len()
+                )));
+                rewrite
+            }
+            super::verifier::VerdictStatus::Fail => {
+                let summary = if verdict.findings.is_empty() {
+                    "no specific findings".to_string()
+                } else {
+                    verdict
+                        .findings
+                        .iter()
+                        .map(|f| format!("{}: {}", f.category, f.issue))
+                        .collect::<Vec<_>>()
+                        .join("; ")
+                };
+                tracing::warn!(
+                    target: "bestel.verifier",
+                    findings = verdict.findings.len(),
+                    summary = %summary,
+                    "verifier FAIL — emitting fallback"
+                );
+                let fallback = format!(
+                    "The chronicler must withhold that answer, exile — the verifier flagged it ({summary}). Ask again with a narrower question, or attach a fresh PoB so the engine can ground the numbers."
+                );
+                let _ = deltas.send(LlmDelta::TextDelta(format!(
+                    "\n\n[verifier: rejected — {summary}]\n"
+                )));
+                fallback
+            }
+        };
+        let _ = deltas.send(LlmDelta::Verifier(verdict));
+        result
     }
 }
 
@@ -552,6 +697,13 @@ impl AnthropicClient {
                 .post(&self.api_url)
                 .header("x-api-key", &self.api_key)
                 .header("anthropic-version", API_VERSION)
+                // Sprint C: enable 1h prompt cache TTL (default is 5 min).
+                // Cache writes are billed at 2× input rate when TTL = 1h, but
+                // Bestel desktop sessions span 30+ min so the per-turn
+                // cache_read savings amortize the write cost across the
+                // session. DeepSeek via Anthropic-compat silently ignores
+                // unknown beta headers.
+                .header("anthropic-beta", "extended-cache-ttl-2025-04-11")
                 .header("content-type", "application/json")
                 .json(body)
                 .send()
@@ -648,9 +800,13 @@ fn cached_tool_schemas() -> Vec<Value> {
     let mut schemas = tool_schemas();
     if let Some(last) = schemas.last_mut() {
         if let Some(obj) = last.as_object_mut() {
+            // `cache_control` on the LAST tool schema caches the entire tools
+            // array per Anthropic API semantics. TTL 1h matches the system
+            // blocks (Sprint C) so desktop sessions longer than 5 min still
+            // hit cache.
             obj.insert(
                 "cache_control".to_string(),
-                json!({ "type": "ephemeral" }),
+                json!({ "type": "ephemeral", "ttl": "1h" }),
             );
         }
     }

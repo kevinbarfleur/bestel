@@ -144,6 +144,13 @@ export interface DebugRunStats {
   tool_calls: number;
   tool_done: number;
   tool_failed: number;
+  // Sprint C cache telemetry. Older persisted runs without these fields
+  // deserialize to 0 / null thanks to serde defaults on the Rust side.
+  input_tokens?: number;
+  cached_input_tokens?: number;
+  cache_creation_tokens?: number;
+  output_tokens?: number;
+  cost_usd?: number | null;
 }
 
 export interface DebugRunAttachment {
@@ -178,6 +185,19 @@ export interface DebugRunDto {
   final_text: string;
   stats: DebugRunStats;
   error: string | null;
+}
+
+export type LintSeverity = 'fail' | 'warn';
+
+export interface LintFinding {
+  id: string;
+  severity: LintSeverity;
+  message: string;
+  evidence: string | null;
+}
+
+export interface LintReport {
+  findings: LintFinding[];
 }
 
 export interface UsageStats {

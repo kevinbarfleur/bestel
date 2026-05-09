@@ -1,0 +1,26 @@
+# Generated from tests/eval/eval_set.toml — do not hand-edit.
+# Category: comparison
+
+name = "comparison_currency_overlap"
+provider = "any"
+applies_to = ["poe2"]
+prompt = """
+does poe2 still have divine orbs and chaos orbs or did they redesign currency
+"""
+timeout_secs = 240
+cost = "low"
+
+[[expectations]]
+must_match = [
+  "PoE2",
+  "divine",
+  "chaos",
+]
+must_not_match = [
+  "only divines",
+  "no chaos in PoE2",
+  "exact same as PoE1",
+]
+must_not_expose_reasoning = true
+must_have_panel_data_first = true
+must_cite_only_fetched_urls = true

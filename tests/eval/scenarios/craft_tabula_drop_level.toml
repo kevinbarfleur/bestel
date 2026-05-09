@@ -1,0 +1,21 @@
+# Generated from tests/eval/eval_set.toml — do not hand-edit.
+# Category: craft
+
+name = "craft_tabula_drop_level"
+provider = "any"
+prompt = """
+what's the drop level of Tabula Rasa right now? someone told me it was 1 but i want to be sure
+"""
+timeout_secs = 240
+cost = "low"
+
+[[expectations]]
+must_match = [
+  "drop level",
+]
+must_not_match = [
+  "drop level 1, the wiki says drop level 3",
+]
+must_not_expose_reasoning = true
+must_have_panel_data_first = true
+must_cite_only_fetched_urls = true

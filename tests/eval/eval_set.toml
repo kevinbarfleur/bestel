@@ -1,0 +1,509 @@
+# Bestel — eval set (60 questions across 6 categories).
+#
+# Each entry below is split by the `eval_split` example into a standalone
+# scenario file under `tests/eval/scenarios/<id>.toml` so the existing
+# `bestel run-battery` harness can drive them. The judge step
+# (`bestel eval-judge`) reads `expected_signals` / `forbidden_signals`
+# from the original entry to grade the run.
+#
+# Voice is preserved (real Reddit / forum / Maxroll comment shape).
+#
+# Categories:
+#   - mechanic (12)        small targeted PoE1 mechanic questions
+#   - craft (12)           crafting / itemisation lookups
+#   - build (15)           build-diagnosis, most need a loaded PoB
+#   - mapping (12)         endgame / atlas / currency / boss
+#   - comparison (5)       PoE1↔PoE2 cross-game (must NOT contaminate)
+#   - refusal (4)          off-topic; must refuse in-character
+#
+# `needs_build` entries set `build_fixture` so run-battery loads the
+# corresponding PoB XML. `applies_to` defaults to ["poe1", "poe2"];
+# Sprint H tags PoE2-specific entries with applies_to=["poe2"] so the
+# RAG layer's `array_has(applies_to, 'poe2')` filter can isolate PoE2
+# scenarios for the `zero PoE1↔PoE2 contamination` exit criterion.
+
+# ---------------------------------------------------------------------------
+# Category: mechanic (10)
+# ---------------------------------------------------------------------------
+
+[[entry]]
+id = "mech_spell_suppression_max"
+category = "mechanic"
+prompt = "what's the actual cap on spell suppression in poe1 right now? i keep seeing 50% but my friend says 40%"
+expected_signals = ["100%", "100", "cap", "100% cap"]
+forbidden_signals = ["fandom"]
+
+[[entry]]
+id = "mech_medium_cluster_socket_count"
+category = "mechanic"
+prompt = "if i have a Medium Cluster Jewel, how many Small Cluster Jewel sockets does it actually create"
+expected_signals = ["one", "1 small", "single small"]
+forbidden_signals = ["two", "three"]
+
+[[entry]]
+id = "mech_voices_total_clusters"
+category = "mechanic"
+prompt = "how many cluster jewels total can i fit in my tree if i drop one Voices? the wiki and the build guide give me different numbers"
+expected_signals = ["large", "medium", "small", "Voices"]
+forbidden_signals = ["Luminous Trove", "9 cluster", "drop level 1"]
+
+[[entry]]
+id = "mech_eldritch_implicit_slots"
+category = "mechanic"
+prompt = "which gear slots can take eldritch implicits? i want to know before i start farming searing exarch"
+expected_signals = ["body armour", "helmet", "gloves", "boots"]
+forbidden_signals = ["weapon", "amulet", "ring", "belt"]
+
+[[entry]]
+id = "mech_pantheon_solaris_ailment"
+category = "mechanic"
+prompt = "does Soul of Solaris reduce ailment damage or just hit damage? i can't find a clear answer"
+expected_signals = ["physical", "Solaris", "hits"]
+forbidden_signals = ["all damage from ailments"]
+
+[[entry]]
+id = "mech_trade_pseudo_stats_aggregation"
+category = "mechanic"
+prompt = "how do the pseudo stats actually work on the trade site? do they search across my whole gear or just one item"
+expected_signals = ["item", "single item", "listed item"]
+forbidden_signals = ["whole build", "all gear", "every slot"]
+
+[[entry]]
+id = "mech_resolute_technique_crit"
+category = "mechanic"
+prompt = "if i take Resolute Technique can i still crit with spells? or is it total"
+expected_signals = ["cannot crit", "no crit", "can't crit"]
+forbidden_signals = ["spells can still crit", "yes you can crit"]
+
+[[entry]]
+id = "mech_conversion_double_chain"
+category = "mechanic"
+prompt = "if my gear converts 35% phys to lightning and a support adds 100% phys to fire, what's my final damage type breakdown"
+expected_signals = ["35%", "65%", "lightning", "fire"]
+forbidden_signals = ["100% lightning", "100% fire"]
+
+[[entry]]
+id = "mech_poe2_pinnacle_max_life"
+category = "mechanic"
+applies_to = ["poe2"]
+prompt = "what's the rough max hp pool of a poe2 pinnacle boss right now? i want to size my dps target"
+expected_signals = ["pob_calc", "Pinnacle", "0.5"]
+forbidden_signals = ["Eater of Worlds", "Sirus"]
+
+[[entry]]
+id = "mech_poe2_charm_vs_flask"
+category = "mechanic"
+applies_to = ["poe2"]
+prompt = "are charms in poe2 just renamed flasks or do they work differently"
+expected_signals = ["charm", "PoE2"]
+forbidden_signals = ["identical", "same as flasks"]
+
+# ---------------------------------------------------------------------------
+# Category: craft (10)
+# ---------------------------------------------------------------------------
+
+[[entry]]
+id = "craft_marble_amulet_pools"
+category = "craft"
+prompt = "what mod pool can i actually hit on a marble amulet? im trying to chaos roll one for life regen + chaos res but want to know what's possible"
+expected_signals = ["chaos resistance", "life regen", "Marble Amulet"]
+forbidden_signals = ["T1 ilvl 86 spawn weight"]
+
+[[entry]]
+id = "craft_tabula_drop_level"
+category = "craft"
+prompt = "what's the drop level of Tabula Rasa right now? someone told me it was 1 but i want to be sure"
+expected_signals = ["drop level"]
+forbidden_signals = ["drop level 1, the wiki says drop level 3"]
+
+[[entry]]
+id = "craft_mob_mentality_origin"
+category = "craft"
+prompt = "where does the Mob Mentality cluster jewel notable come from? im trying to roll one"
+expected_signals = ["Minion Damage", "cluster", "notable"]
+forbidden_signals = ["amulet", "ring"]
+
+[[entry]]
+id = "craft_synthesised_implicit"
+category = "craft"
+prompt = "whats the difference between a synthesised implicit and a regular implicit on a synthesised item"
+expected_signals = ["synthesis", "implicit", "Cortex"]
+forbidden_signals = []
+
+[[entry]]
+id = "craft_eldritch_chaos_vs_ember"
+category = "craft"
+prompt = "on a body armour, do i lock with eldritch chaos or eldritch ember if i want minion damage"
+expected_signals = ["Searing Exarch", "Eater of Worlds", "minion"]
+forbidden_signals = ["both", "either works"]
+
+[[entry]]
+id = "craft_redeemer_specifically"
+category = "craft"
+prompt = "i have a redeemer influenced ring, how do i specifically force redeemer mods without hitting basic prefixes"
+expected_signals = ["Awakener", "Beastcraft", "Aisling"]
+forbidden_signals = []
+
+[[entry]]
+id = "craft_poe2_essence_lightning"
+category = "craft"
+applies_to = ["poe2"]
+prompt = "in poe2 0.5 which essences add lightning damage on a body armour"
+expected_signals = ["essence", "lightning"]
+forbidden_signals = ["fandom", "PoE1 only"]
+
+[[entry]]
+id = "craft_watchers_eye_aura_rolls"
+category = "craft"
+prompt = "if i have a watcher's eye, can i pre-pick which auras roll their mods or is it fully random"
+expected_signals = ["random", "two auras", "rolls"]
+forbidden_signals = ["pick", "select"]
+
+[[entry]]
+id = "craft_bench_suffix_limits"
+category = "craft"
+prompt = "whats the limit on how many bench-crafted suffixes i can stack on one item"
+expected_signals = ["one", "single", "bench"]
+forbidden_signals = ["two", "three"]
+
+[[entry]]
+id = "craft_fracturing_cost_outcome"
+category = "craft"
+prompt = "fracturing orbs - whats the actual cost and what mod gets locked"
+expected_signals = ["random mod", "Fracturing Orb"]
+forbidden_signals = ["choose", "select"]
+
+# ---------------------------------------------------------------------------
+# Category: build (10) — most need a loaded PoB build
+# ---------------------------------------------------------------------------
+
+[[entry]]
+id = "build_hierophant_weakest_layer"
+category = "build"
+prompt = "looking at this build, whats the weakest defensive layer right now and the cheapest gear-only fix"
+build_fixture = "poe1_hierophant_manastack"
+needs_identity = true
+expected_signals = ["physical mitigation", "Identity:", "armour", "gear"]
+forbidden_signals = ["Granite Flask", "switch ascendancy"]
+
+[[entry]]
+id = "build_molten_strike_swords"
+category = "build"
+prompt = "should i keep both reaver swords or swap one"
+build_fixture = "poe1_molten_strike_juggernaut"
+needs_identity = true
+expected_signals = ["Identity:", "Reaver"]
+forbidden_signals = ["Crown of Eyes", "Rakiata"]
+
+[[entry]]
+id = "build_poe2_druid_damage_source"
+category = "build"
+applies_to = ["poe2"]
+prompt = "where is most of my damage coming from on this druid build right now"
+build_fixture = "poe2_druid"
+needs_identity = true
+expected_signals = ["Identity:", "Druid", "main skill"]
+forbidden_signals = ["cluster jewel", "PoE1"]
+
+[[entry]]
+id = "build_inquisitor_crit_overcap"
+category = "build"
+prompt = "is my crit chance overcapped or under right now"
+build_fixture = "poe1_inquisitor"
+needs_identity = true
+expected_signals = ["Identity:", "crit chance", "%"]
+forbidden_signals = []
+
+[[entry]]
+id = "build_real_dps_pinnacle"
+category = "build"
+prompt = "real dps against pinnacle boss with my current settings"
+build_fixture = "poe1_inquisitor"
+needs_identity = true
+needs_pob_calc = true
+expected_signals = ["Identity:", "active skill", "Pinnacle", "DPS"]
+forbidden_signals = ["real DPS"]
+
+[[entry]]
+id = "build_sustain_weakness"
+category = "build"
+prompt = "whats my biggest sustain weakness, life recovery or es recovery"
+build_fixture = "poe1_inquisitor"
+needs_identity = true
+expected_signals = ["Identity:", "life", "ES"]
+forbidden_signals = []
+
+[[entry]]
+id = "build_single_vs_clear"
+category = "build"
+prompt = "compare my single target dps to my clear dps for this build"
+build_fixture = "poe1_inquisitor"
+needs_identity = true
+expected_signals = ["Identity:", "single target", "clear"]
+forbidden_signals = []
+
+[[entry]]
+id = "build_mageblood_worth"
+category = "build"
+prompt = "is mageblood worth it right now on this build, or am i fine with my current belt"
+build_fixture = "poe1_inquisitor"
+needs_identity = true
+expected_signals = ["Identity:", "Mageblood", "flask"]
+forbidden_signals = []
+
+[[entry]]
+id = "build_glancing_blows_path"
+category = "build"
+prompt = "should i path through glancing blows or stick with spell suppression for this character"
+build_fixture = "poe1_inquisitor"
+needs_identity = true
+expected_signals = ["Identity:", "Glancing Blows", "Suppression"]
+forbidden_signals = []
+
+[[entry]]
+id = "build_next_3div_upgrade"
+category = "build"
+prompt = "with 3 divines what's the single biggest upgrade i can buy for this build"
+build_fixture = "poe1_inquisitor"
+needs_identity = true
+expected_signals = ["Identity:"]
+forbidden_signals = []
+
+# ---------------------------------------------------------------------------
+# Category: mapping (10)
+# ---------------------------------------------------------------------------
+
+[[entry]]
+id = "map_cheapest_div_scarab"
+category = "mapping"
+prompt = "whats the cheapest scarab right now to run if i just want raw divine drops in settlers"
+expected_signals = ["scarab", "divine"]
+forbidden_signals = ["fandom"]
+
+[[entry]]
+id = "map_poe2_voidstones"
+category = "mapping"
+applies_to = ["poe2"]
+prompt = "do voidstones still gate atlas progression in poe2 or did 0.5 change that"
+expected_signals = ["PoE2", "0.5", "atlas"]
+forbidden_signals = ["fandom"]
+
+[[entry]]
+id = "map_pantheon_eater_maps"
+category = "mapping"
+prompt = "which pantheon should i lock for tougher eater of worlds maps"
+expected_signals = ["Pantheon", "Eater"]
+forbidden_signals = []
+
+[[entry]]
+id = "map_breach_layout"
+category = "mapping"
+prompt = "best map layout for breach farming right now"
+expected_signals = ["layout", "breach"]
+forbidden_signals = []
+
+[[entry]]
+id = "map_pinnacle_order"
+category = "mapping"
+prompt = "what order should i fight the pinnacle bosses for the best fragment economy"
+expected_signals = ["Pinnacle", "fragment"]
+forbidden_signals = []
+
+[[entry]]
+id = "map_red_corruption"
+category = "mapping"
+prompt = "red maps versus t14, whats the corruption strategy if i just want maven witnessed"
+expected_signals = ["red maps", "corruption", "Maven"]
+forbidden_signals = []
+
+[[entry]]
+id = "map_poe2_atlas_05"
+category = "mapping"
+applies_to = ["poe2"]
+prompt = "what changed on the poe2 atlas tree between 0.4 and 0.5"
+expected_signals = ["PoE2", "0.5", "atlas"]
+forbidden_signals = ["fandom", "PoE1"]
+
+[[entry]]
+id = "map_ritual_defer"
+category = "mapping"
+prompt = "how does deferring a ritual work mechanically and when should i use it"
+expected_signals = ["defer", "ritual"]
+forbidden_signals = []
+
+[[entry]]
+id = "map_heist_contracts_blueprints"
+category = "mapping"
+prompt = "fresh league - should i farm heist contracts first or jump straight to blueprints"
+expected_signals = ["contract", "blueprint"]
+forbidden_signals = []
+
+[[entry]]
+id = "map_maven_forgotten"
+category = "mapping"
+prompt = "how do i unlock the forgotten maven invitation"
+expected_signals = ["Maven", "invitation"]
+forbidden_signals = []
+
+# ---------------------------------------------------------------------------
+# Sprint H — additional coverage to reach the 60-scenario target.
+# ---------------------------------------------------------------------------
+
+# Mechanic +2 ----------------------------------------------------------------
+
+[[entry]]
+id = "mech_more_vs_increased"
+category = "mechanic"
+prompt = "whats the difference between more and increased damage"
+expected_signals = ["more", "increased", "additive", "multiplicative"]
+forbidden_signals = ["the same", "identical"]
+
+[[entry]]
+id = "mech_rt_ailments"
+category = "mechanic"
+prompt = "can i still ignite with RT or no"
+expected_signals = ["chance to ignite", "Resolute Technique", "non-crit"]
+forbidden_signals = ["no, RT removes ignite", "RT prevents ignite entirely"]
+
+# Craft +2 -------------------------------------------------------------------
+
+[[entry]]
+id = "craft_currency_chase_chaos_to_div"
+category = "craft"
+prompt = "rough chaos-to-divine ratio right now in standard, just for sanity"
+expected_signals = ["divine", "chaos"]
+forbidden_signals = ["fandom", "exact ratio", "guarantee"]
+
+[[entry]]
+id = "craft_eldritch_implicit_slots"
+category = "craft"
+prompt = "which gear slots can take eldritch implicits? i want to know before i start farming searing exarch"
+expected_signals = ["body armour", "helmet", "gloves", "boots"]
+forbidden_signals = ["weapon", "amulet", "ring", "belt"]
+
+# Build +5 — diagnosis without fixture, vague, currency_chase ----------------
+
+[[entry]]
+id = "build_vague_squishy"
+category = "build"
+prompt = "my build feels like ass, what am i doing wrong"
+expected_signals = ["which", "ask"]
+forbidden_signals = ["save your build in PoB", "you should swap"]
+
+[[entry]]
+id = "build_red_map_oneshot"
+category = "build"
+prompt = "keep getting one shot in red maps no idea why"
+expected_signals = ["which", "type", "phys", "ele"]
+forbidden_signals = ["save your build in PoB", "switch ascendancy"]
+
+[[entry]]
+id = "build_30div_upgrade_no_context"
+category = "build"
+prompt = "i have like 30 div what should i upgrade"
+expected_signals = ["which", "ask", "bottleneck"]
+forbidden_signals = ["Mageblood", "Headhunter", "buy"]
+
+[[entry]]
+id = "build_returning_meta"
+category = "build"
+prompt = "coming back after like 4 leagues whats the meta now"
+expected_signals = ["league", "patch"]
+forbidden_signals = ["always", "best meta"]
+
+[[entry]]
+id = "build_diag_ele_oneshot"
+category = "build"
+prompt = "can you look at my char and tell me why i die so much to elemental hits"
+build_fixture = "poe1_inquisitor"
+needs_identity = true
+expected_signals = ["Identity:", "max hit", "resists"]
+forbidden_signals = ["Granite Flask", "switch ascendancy"]
+
+# Mapping +2 -----------------------------------------------------------------
+
+[[entry]]
+id = "map_currency_chase_div_only_atlas"
+category = "mapping"
+prompt = "whats the most divine-printer atlas right now if i can only farm 1 thing"
+expected_signals = ["scarab", "atlas"]
+forbidden_signals = ["fandom", "guarantee"]
+
+[[entry]]
+id = "map_boss_uber_uber"
+category = "mapping"
+prompt = "whats the rough order of difficulty for the uber pinnacle bosses"
+expected_signals = ["Uber", "Pinnacle"]
+forbidden_signals = ["fandom"]
+
+# Comparison +5 — PoE1↔PoE2 contamination tests ------------------------------
+
+[[entry]]
+id = "comparison_cluster_jewels_poe2"
+category = "comparison"
+applies_to = ["poe2"]
+prompt = "do cluster jewels work the same in poe2 as poe1 or did they change them"
+expected_signals = ["PoE2"]
+forbidden_signals = ["Voices", "Large Cluster", "Medium Cluster", "9 cluster", "PoE1 cluster system"]
+
+[[entry]]
+id = "comparison_pantheon_poe2"
+category = "comparison"
+applies_to = ["poe2"]
+prompt = "is there still a pantheon system in poe2 or did they remove it"
+expected_signals = ["PoE2"]
+forbidden_signals = ["Solaris", "Lunaris", "Brine King", "Soul of"]
+
+[[entry]]
+id = "comparison_flasks_charms_difference"
+category = "comparison"
+applies_to = ["poe2"]
+prompt = "what's actually different about charms vs poe1 utility flasks mechanically"
+expected_signals = ["charm", "PoE2"]
+forbidden_signals = ["the same", "identical", "renamed"]
+
+[[entry]]
+id = "comparison_atlas_passives_poe2"
+category = "comparison"
+applies_to = ["poe2"]
+prompt = "are atlas passive points the same idea as poe1 or completely different"
+expected_signals = ["PoE2", "atlas"]
+forbidden_signals = ["just like PoE1", "identical to PoE1", "Voidstones from Conquerors"]
+
+[[entry]]
+id = "comparison_currency_overlap"
+category = "comparison"
+applies_to = ["poe2"]
+prompt = "does poe2 still have divine orbs and chaos orbs or did they redesign currency"
+expected_signals = ["PoE2", "divine", "chaos"]
+forbidden_signals = ["only divines", "no chaos in PoE2", "exact same as PoE1"]
+
+# Refusal +4 — off-topic, must stay in character -----------------------------
+
+[[entry]]
+id = "refusal_world_of_warcraft"
+category = "refusal"
+prompt = "what's the best mage talent build in world of warcraft right now"
+expected_signals = ["chronicler", "Wraeclast", "Path of Exile"]
+forbidden_signals = ["WoW", "Warcraft", "Blizzard"]
+
+[[entry]]
+id = "refusal_general_python"
+category = "refusal"
+prompt = "can you write me a python script that scrapes reddit for me"
+expected_signals = ["chronicler", "Path of Exile"]
+forbidden_signals = ["import requests", "def scrape", "```python"]
+
+[[entry]]
+id = "refusal_personal_advice"
+category = "refusal"
+prompt = "my girlfriend left me last week, any thoughts"
+expected_signals = ["chronicler", "Wraeclast", "Path of Exile"]
+forbidden_signals = ["sorry to hear", "have you tried therapy"]
+
+[[entry]]
+id = "refusal_other_arpg"
+category = "refusal"
+prompt = "is diablo 4 better than path of exile right now"
+expected_signals = ["chronicler", "Path of Exile"]
+forbidden_signals = ["Diablo IV is better", "Diablo 4 wins", "Blizzard"]

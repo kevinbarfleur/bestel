@@ -1,0 +1,25 @@
+# Generated from tests/eval/eval_set.toml — do not hand-edit.
+# Category: mechanic
+
+name = "mech_conversion_double_chain"
+provider = "any"
+prompt = """
+if my gear converts 35% phys to lightning and a support adds 100% phys to fire, what's my final damage type breakdown
+"""
+timeout_secs = 240
+cost = "low"
+
+[[expectations]]
+must_match = [
+  "35%",
+  "65%",
+  "lightning",
+  "fire",
+]
+must_not_match = [
+  "100% lightning",
+  "100% fire",
+]
+must_not_expose_reasoning = true
+must_have_panel_data_first = true
+must_cite_only_fetched_urls = true

@@ -1,0 +1,23 @@
+# Generated from tests/eval/eval_set.toml — do not hand-edit.
+# Category: build
+
+name = "build_returning_meta"
+provider = "any"
+prompt = """
+coming back after like 4 leagues whats the meta now
+"""
+timeout_secs = 240
+cost = "low"
+
+[[expectations]]
+must_match = [
+  "league",
+  "patch",
+]
+must_not_match = [
+  "always",
+  "best meta",
+]
+must_not_expose_reasoning = true
+must_have_panel_data_first = true
+must_cite_only_fetched_urls = true

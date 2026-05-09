@@ -39,9 +39,14 @@ path = "examples/refresh_snapshots.rs"
 name = "probe_repoe_base_items"
 path = "examples/probe_repoe_base_items.rs"
 
+[[example]]
+name = "eval_split"
+path = "examples/eval_split.rs"
+
 [dev-dependencies]
 tokio = { workspace = true }
 toml = "0.8"
+tempfile = "3"
 
 [dependencies]
 tokio = { workspace = true }
@@ -64,3 +69,6 @@ regex = "1"
 zstd = "0.13"
 toml = "0.8"
 bestel-pob-engine = { path = "../bestel-pob-engine" }
+bestel-rag = { path = "../bestel-rag" }
+blake3 = { workspace = true }
+rusqlite = { workspace = true }

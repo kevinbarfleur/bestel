@@ -140,6 +140,15 @@ async fn main() -> anyhow::Result<()> {
             LlmDelta::MessageEnd => {
                 writeln!(log, "MESSAGE_END").ok();
             }
+            LlmDelta::Verifier(v) => {
+                writeln!(
+                    log,
+                    "VERIFIER status={:?} findings={}",
+                    v.status,
+                    v.findings.len()
+                )
+                .ok();
+            }
             LlmDelta::Error(msg) => {
                 error = Some(msg.clone());
                 eprintln!("\n[ERROR] {msg}");

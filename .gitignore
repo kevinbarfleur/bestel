@@ -30,6 +30,12 @@ Thumbs.db
 tmp_*
 *.tmp
 
+# Cargo local config (contains machine-specific paths like protoc.exe)
+.cargo/
+
+# Battery run artifacts (per-machine, per-test outputs)
+tests/eval/runs/
+
 # Design handoff bundles — ephemeral exploration artifacts from
 # claude.ai/design. Extracted locally for reference, not versioned.
 .design-bundle-v*/

@@ -1,0 +1,1576 @@
+{
+  "queries_path": "tests/eval/kb_queries.toml",
+  "embedder": "ollama:bge-small-en-v1.5",
+  "top_k": 5,
+  "total": 30,
+  "passed": 29,
+  "pct": 96.66666666666667,
+  "avg_ms_per_query": 17,
+  "results": [
+    {
+      "id": "kb_001_suppression_cap",
+      "prompt": "what is the spell suppression cap and how does it interact with chance to suppress",
+      "expected_rel_paths": [
+        "08_defence_recovery_survivability.md"
+      ],
+      "passed": true,
+      "rank": 1,
+      "matched_path": "08_defence_recovery_survivability.md",
+      "top_hits": [
+        {
+          "rel_path": "08_defence_recovery_survivability.md",
+          "heading_path": [
+            "08 — Defence, recovery, and survivability",
+            "Spell suppression (PoE1)"
+          ],
+          "score": 0.03306011
+        },
+        {
+          "rel_path": "29_known_mechanics_tripwires.md",
+          "heading_path": [
+            "Known mechanics tripwires — frequently misremembered facts",
+            "Spell suppression — cap"
+          ],
+          "score": 0.03306011
+        },
+        {
+          "rel_path": "31_answer_mode_examples.md",
+          "heading_path": [
+            "Answer mode examples — six canonical answers",
+            "Mode 1 — Brief mechanics"
+          ],
+          "score": 0.032258064
+        },
+        {
+          "rel_path": "08_defence_recovery_survivability.md",
+          "heading_path": [
+            "08 — Defence, recovery, and survivability",
+            "Resistance"
+          ],
+          "score": 0.015873017
+        },
+        {
+          "rel_path": "13_retrieval_playbooks.md",
+          "heading_path": [
+            "13 — Agent retrieval playbooks",
+            "Playbook: mechanic explanation"
+          ],
+          "score": 0.015873017
+        }
+      ],
+      "elapsed_ms": 28
+    },
+    {
+      "id": "kb_002_aspect_of_the_spider",
+      "prompt": "how do hindering ailments stack with aspect of the spider",
+      "expected_rel_paths": [
+        "07_offence_damage_scaling.md",
+        "10_skills_gems_passives_ascendancies.md"
+      ],
+      "passed": true,
+      "rank": 1,
+      "matched_path": "10_skills_gems_passives_ascendancies.md",
+      "top_hits": [
+        {
+          "rel_path": "10_skills_gems_passives_ascendancies.md",
+          "heading_path": [
+            "10 — Skills, gems, passives, and ascendancies",
+            "Synergy sweep"
+          ],
+          "score": 0.016666668
+        },
+        {
+          "rel_path": "16_build_methodology_and_creators.md",
+          "heading_path": [
+            "16 — Build creators and build-crafting methodology",
+            "Part 3 — The build-crafting decision framework",
+            "3.6 Aura and reservation budget"
+          ],
+          "score": 0.016666668
+        },
+        {
+          "rel_path": "29_known_mechanics_tripwires.md",
+          "heading_path": [
+            "Known mechanics tripwires — frequently misremembered facts",
+            "Pantheon — Soul of Solaris damage scope"
+          ],
+          "score": 0.016393442
+        },
+        {
+          "rel_path": "maxroll/poe1_crafting.md",
+          "heading_path": [
+            "Maxroll — Crafting Catalog (Path of Exile 1)",
+            "Crafting Basics — Foundational Guides",
+            "4. Crafting Basics: Beastcrafting"
+          ],
+          "score": 0.016393442
+        },
+        {
+          "rel_path": "08_defence_recovery_survivability.md",
+          "heading_path": [
+            "08 — Defence, recovery, and survivability",
+            "Upgrade priority for weak defence"
+          ],
+          "score": 0.016129032
+        }
+      ],
+      "elapsed_ms": 19
+    },
+    {
+      "id": "kb_003_chaos_resist",
+      "prompt": "what is the default chaos resistance baseline at high level",
+      "expected_rel_paths": [
+        "06_character_stats_and_mechanics.md",
+        "07_offence_damage_scaling.md",
+        "08_defence_recovery_survivability.md"
+      ],
+      "passed": true,
+      "rank": 3,
+      "matched_path": "07_offence_damage_scaling.md",
+      "top_hits": [
+        {
+          "rel_path": "31_answer_mode_examples.md",
+          "heading_path": [
+            "Answer mode examples — six canonical answers",
+            "Mode 3 — Craft lookup"
+          ],
+          "score": 0.032291666
+        },
+        {
+          "rel_path": "05_build_reasoning_framework.md",
+          "heading_path": [
+            "05 — Build reasoning framework",
+            "What a good recommendation contains"
+          ],
+          "score": 0.032258064
+        },
+        {
+          "rel_path": "07_offence_damage_scaling.md",
+          "heading_path": [
+            "07 — Offence and damage scaling",
+            "Enemy resistance and mitigation"
+          ],
+          "score": 0.031498015
+        },
+        {
+          "rel_path": "08_defence_recovery_survivability.md",
+          "heading_path": [
+            "08 — Defence, recovery, and survivability",
+            "Resistance"
+          ],
+          "score": 0.016666668
+        },
+        {
+          "rel_path": "08_defence_recovery_survivability.md",
+          "heading_path": [
+            "08 — Defence, recovery, and survivability",
+            "Upgrade priority for weak defence"
+          ],
+          "score": 0.016393442
+        }
+      ],
+      "elapsed_ms": 19
+    },
+    {
+      "id": "kb_004_eldritch_implicit",
+      "prompt": "which slots can carry eldritch implicits in Path of Exile 1",
+      "expected_rel_paths": [
+        "09_itemisation_crafting.md"
+      ],
+      "passed": true,
+      "rank": 3,
+      "matched_path": "09_itemisation_crafting.md",
+      "top_hits": [
+        {
+          "rel_path": "29_known_mechanics_tripwires.md",
+          "heading_path": [
+            "Known mechanics tripwires — frequently misremembered facts",
+            "Eldritch implicits — eligible slots"
+          ],
+          "score": 0.032795697
+        },
+        {
+          "rel_path": "maxroll/poe1_crafting.md",
+          "heading_path": [
+            "Maxroll — Crafting Catalog (Path of Exile 1)",
+            "Crafting Basics — Foundational Guides",
+            "7. Crafting Basics: Eldritch Implicits"
+          ],
+          "score": 0.032786883
+        },
+        {
+          "rel_path": "09_itemisation_crafting.md",
+          "heading_path": [
+            "09 — Itemisation, crafting, and upgrade logic",
+            "Slot pressure"
+          ],
+          "score": 0.016666668
+        },
+        {
+          "rel_path": "29_known_mechanics_tripwires.md",
+          "heading_path": [
+            "Known mechanics tripwires — frequently misremembered facts",
+            "Synthesised implicit — distinction"
+          ],
+          "score": 0.016129032
+        },
+        {
+          "rel_path": "poe2/04_runes_soul_cores_talismans.md",
+          "heading_path": [
+            "PoE2 — Runes, Soul Cores, Talismans",
+            "Runes [0.1+]"
+          ],
+          "score": 0.015873017
+        }
+      ],
+      "elapsed_ms": 17
+    },
+    {
+      "id": "kb_005_atlas_voidstones",
+      "prompt": "what do the four voidstones unlock on the atlas",
+      "expected_rel_paths": [
+        "18_atlas_and_endgame_mechanics.md"
+      ],
+      "passed": true,
+      "rank": 2,
+      "matched_path": "18_atlas_and_endgame_mechanics.md",
+      "top_hits": [
+        {
+          "rel_path": "maxroll/poe1_bosses.md",
+          "heading_path": [
+            "Maxroll — Bosses Catalog (Path of Exile 1)",
+            "Pinnacle Bosses (Voidstone-granting)"
+          ],
+          "score": 0.032002047
+        },
+        {
+          "rel_path": "18_atlas_and_endgame_mechanics.md",
+          "heading_path": [
+            "18 — Atlas and endgame mechanics",
+            "PoE2 (0.x line)"
+          ],
+          "score": 0.016666668
+        },
+        {
+          "rel_path": "maxroll/poe1_bosses.md",
+          "heading_path": [
+            "Maxroll — Bosses Catalog (Path of Exile 1)",
+            "Recap — Routing matrix"
+          ],
+          "score": 0.016666668
+        },
+        {
+          "rel_path": "maxroll/poe1_bosses.md",
+          "heading_path": [
+            "Maxroll — Bosses Catalog (Path of Exile 1)",
+            "Pre-Pinnacle Eldritch Horrors",
+            "5. The Black Star"
+          ],
+          "score": 0.016393442
+        },
+        {
+          "rel_path": "maxroll/poe1_getting_started.md",
+          "heading_path": [
+            "Maxroll — Getting Started Catalog (Path of Exile 1)",
+            "Toggle 2 — Atlas Guide",
+            "14. The Atlas of Worlds Explained (Atlas Basics)"
+          ],
+          "score": 0.016393442
+        }
+      ],
+      "elapsed_ms": 18
+    },
+    {
+      "id": "kb_006_currency_taxonomy",
+      "prompt": "explain the difference between alteration orb and chaos orb mechanically",
+      "expected_rel_paths": [
+        "21_currency_and_barter_taxonomy.md",
+        "09_itemisation_crafting.md",
+        "31_answer_mode_examples.md"
+      ],
+      "passed": true,
+      "rank": 1,
+      "matched_path": "31_answer_mode_examples.md",
+      "top_hits": [
+        {
+          "rel_path": "31_answer_mode_examples.md",
+          "heading_path": [
+            "Answer mode examples — six canonical answers",
+            "Mode 3 — Craft lookup"
+          ],
+          "score": 0.016666668
+        },
+        {
+          "rel_path": "maxroll/poe1_getting_started.md",
+          "heading_path": [
+            "Maxroll — Getting Started Catalog (Path of Exile 1)",
+            "Toggle 1 — Beginner Guides",
+            "9. Trading Guide for Beginners"
+          ],
+          "score": 0.016666668
+        },
+        {
+          "rel_path": "29_known_mechanics_tripwires.md",
+          "heading_path": [
+            "Known mechanics tripwires — frequently misremembered facts",
+            "Fracturing Orb — outcome"
+          ],
+          "score": 0.016393442
+        },
+        {
+          "rel_path": "12_vocabulary_glossary.md",
+          "heading_path": [
+            "12 — Vocabulary glossary (PoE1 + PoE2)",
+            "Cross-game traps"
+          ],
+          "score": 0.016393442
+        },
+        {
+          "rel_path": "29_known_mechanics_tripwires.md",
+          "heading_path": [
+            "Known mechanics tripwires — frequently misremembered facts",
+            "Marble Amulet — mod pool"
+          ],
+          "score": 0.016129032
+        }
+      ],
+      "elapsed_ms": 18
+    },
+    {
+      "id": "kb_007_ssf_constraints",
+      "prompt": "what are the trade restrictions in solo self found",
+      "expected_rel_paths": [
+        "23_hardcore_softcore_ssf_mode_differences.md"
+      ],
+      "passed": true,
+      "rank": 2,
+      "matched_path": "23_hardcore_softcore_ssf_mode_differences.md",
+      "top_hits": [
+        {
+          "rel_path": "02_arpg_foundations.md",
+          "heading_path": [
+            "02 — Action RPG foundations",
+            "8. Trade economy archetypes"
+          ],
+          "score": 0.03306011
+        },
+        {
+          "rel_path": "23_hardcore_softcore_ssf_mode_differences.md",
+          "heading_path": [],
+          "score": 0.032795697
+        },
+        {
+          "rel_path": "12_vocabulary_glossary.md",
+          "heading_path": [
+            "12 — Vocabulary glossary (PoE1 + PoE2)",
+            "1. Cross-game vocabulary",
+            "Game modes"
+          ],
+          "score": 0.016393442
+        },
+        {
+          "rel_path": "03_ggg_design_philosophy.md",
+          "heading_path": [
+            "03 — GGG design philosophy",
+            "3. Trade friction is intentional"
+          ],
+          "score": 0.016129032
+        },
+        {
+          "rel_path": "03_ggg_design_philosophy.md",
+          "heading_path": [
+            "03 — GGG design philosophy",
+            "8. Ruthless and the meta-statement it makes"
+          ],
+          "score": 0.015873017
+        }
+      ],
+      "elapsed_ms": 17
+    },
+    {
+      "id": "kb_008_pob_calc_failures",
+      "prompt": "what should I do when pob_calc returns a failure",
+      "expected_rel_paths": [
+        "28_tool_failure_policy.md"
+      ],
+      "passed": true,
+      "rank": 1,
+      "matched_path": "28_tool_failure_policy.md",
+      "top_hits": [
+        {
+          "rel_path": "28_tool_failure_policy.md",
+          "heading_path": [
+            "Tool failure policy — taxonomy and recovery per tool",
+            "Per-tool failure modes",
+            "`pob_calc`"
+          ],
+          "score": 0.03306011
+        },
+        {
+          "rel_path": "31_answer_mode_examples.md",
+          "heading_path": [
+            "Answer mode examples — six canonical answers",
+            "Mode 2b — Build diagnosis (engine failed)"
+          ],
+          "score": 0.032522473
+        },
+        {
+          "rel_path": "27_response_contracts.md",
+          "heading_path": [
+            "Response contracts — output schemas and length targets per answer mode",
+            "Strict tool-output schemas (anti-laziness contracts)",
+            "`pob_calc` — must echo"
+          ],
+          "score": 0.032002047
+        },
+        {
+          "rel_path": "28_tool_failure_policy.md",
+          "heading_path": [
+            "Tool failure policy — taxonomy and recovery per tool",
+            "Per-tool failure modes",
+            "`pob_calc`",
+            "Cache disclaimer — the exact phrasing"
+          ],
+          "score": 0.016666668
+        },
+        {
+          "rel_path": "25_pob_engine_integration.md",
+          "heading_path": [
+            "25 — PoB engine integration",
+            "What to do today (no engine available)"
+          ],
+          "score": 0.015873017
+        }
+      ],
+      "elapsed_ms": 19
+    },
+    {
+      "id": "kb_009_resolute_technique_scope",
+      "prompt": "what does resolute technique disable and what does it not affect",
+      "expected_rel_paths": [
+        "29_known_mechanics_tripwires.md"
+      ],
+      "passed": true,
+      "rank": 3,
+      "matched_path": "29_known_mechanics_tripwires.md",
+      "top_hits": [
+        {
+          "rel_path": "07_offence_damage_scaling.md",
+          "heading_path": [
+            "07 — Offence and damage scaling",
+            "Enemy resistance and mitigation"
+          ],
+          "score": 0.03175403
+        },
+        {
+          "rel_path": "08_defence_recovery_survivability.md",
+          "heading_path": [
+            "08 — Defence, recovery, and survivability",
+            "Spell suppression (PoE1)"
+          ],
+          "score": 0.016666668
+        },
+        {
+          "rel_path": "29_known_mechanics_tripwires.md",
+          "heading_path": [
+            "Known mechanics tripwires — frequently misremembered facts",
+            "Resolute Technique — scope of \"cannot crit\""
+          ],
+          "score": 0.016666668
+        },
+        {
+          "rel_path": "poe2/03_trials_sekhemas_chaos.md",
+          "heading_path": [
+            "PoE2 — Trials of the Sekhemas + Chaos",
+            "Sekhemas characteristics"
+          ],
+          "score": 0.016393442
+        },
+        {
+          "rel_path": "06_character_stats_and_mechanics.md",
+          "heading_path": [
+            "06 — Player, character stats, and mechanical vocabulary",
+            "Practical stat checklist"
+          ],
+          "score": 0.016393442
+        }
+      ],
+      "elapsed_ms": 17
+    },
+    {
+      "id": "kb_010_voices_cluster_math",
+      "prompt": "how many small passives do voices clusters give versus normal large clusters",
+      "expected_rel_paths": [
+        "29_known_mechanics_tripwires.md"
+      ],
+      "passed": true,
+      "rank": 1,
+      "matched_path": "29_known_mechanics_tripwires.md",
+      "top_hits": [
+        {
+          "rel_path": "29_known_mechanics_tripwires.md",
+          "heading_path": [
+            "Known mechanics tripwires — frequently misremembered facts",
+            "Voices — total clusters in one tree"
+          ],
+          "score": 0.03306011
+        },
+        {
+          "rel_path": "10_skills_gems_passives_ascendancies.md",
+          "heading_path": [
+            "10 — Skills, gems, passives, and ascendancies",
+            "Passive tree"
+          ],
+          "score": 0.032539684
+        },
+        {
+          "rel_path": "29_known_mechanics_tripwires.md",
+          "heading_path": [
+            "Known mechanics tripwires — frequently misremembered facts",
+            "Medium cluster jewel — Small cluster sockets"
+          ],
+          "score": 0.03226646
+        },
+        {
+          "rel_path": "maxroll/poe1_getting_started.md",
+          "heading_path": [
+            "Maxroll — Getting Started Catalog (Path of Exile 1)",
+            "Toggle 1 — Beginner Guides",
+            "7. Passive Skill Tree Guide for Beginners"
+          ],
+          "score": 0.016129032
+        },
+        {
+          "rel_path": "16_build_methodology_and_creators.md",
+          "heading_path": [
+            "16 — Build creators and build-crafting methodology",
+            "Part 4 — Vocabulary and patterns shared across builds"
+          ],
+          "score": 0.016129032
+        }
+      ],
+      "elapsed_ms": 17
+    },
+    {
+      "id": "kb_011_panel_grammar",
+      "prompt": "what does the panel-data marker look like and where does it go",
+      "expected_rel_paths": [
+        "30_panel_marker_grammar.md"
+      ],
+      "passed": true,
+      "rank": 1,
+      "matched_path": "30_panel_marker_grammar.md",
+      "top_hits": [
+        {
+          "rel_path": "30_panel_marker_grammar.md",
+          "heading_path": [
+            "Side panel markers — `⟦panel:type:name⟧`",
+            "Sidecar block — emit FIRST, before any prose"
+          ],
+          "score": 0.03306011
+        },
+        {
+          "rel_path": "30_panel_marker_grammar.md",
+          "heading_path": [
+            "Side panel markers — `⟦panel:type:name⟧`",
+            "Don't go overboard"
+          ],
+          "score": 0.032258064
+        },
+        {
+          "rel_path": "30_panel_marker_grammar.md",
+          "heading_path": [
+            "Side panel markers — `⟦panel:type:name⟧`",
+            "Optional click-to-open markers"
+          ],
+          "score": 0.03201844
+        },
+        {
+          "rel_path": "30_panel_marker_grammar.md",
+          "heading_path": [
+            "Side panel markers — `⟦panel:type:name⟧`"
+          ],
+          "score": 0.016666668
+        },
+        {
+          "rel_path": "30_panel_marker_grammar.md",
+          "heading_path": [
+            "Side panel markers — `⟦panel:type:name⟧`",
+            "Worked examples"
+          ],
+          "score": 0.015873017
+        }
+      ],
+      "elapsed_ms": 17
+    },
+    {
+      "id": "kb_012_brief_mechanics_mode",
+      "prompt": "what does the brief mechanics answer mode look like with example",
+      "expected_rel_paths": [
+        "31_answer_mode_examples.md"
+      ],
+      "passed": true,
+      "rank": 4,
+      "matched_path": "31_answer_mode_examples.md",
+      "top_hits": [
+        {
+          "rel_path": "27_response_contracts.md",
+          "heading_path": [
+            "Response contracts — output schemas and length targets per answer mode",
+            "When the question doesn't fit any mode"
+          ],
+          "score": 0.03306011
+        },
+        {
+          "rel_path": "27_response_contracts.md",
+          "heading_path": [
+            "Response contracts — output schemas and length targets per answer mode",
+            "Length targets per model and mode"
+          ],
+          "score": 0.032002047
+        },
+        {
+          "rel_path": "27_response_contracts.md",
+          "heading_path": [
+            "Response contracts — output schemas and length targets per answer mode"
+          ],
+          "score": 0.016666668
+        },
+        {
+          "rel_path": "31_answer_mode_examples.md",
+          "heading_path": [
+            "Answer mode examples — six canonical answers"
+          ],
+          "score": 0.016393442
+        },
+        {
+          "rel_path": "31_answer_mode_examples.md",
+          "heading_path": [
+            "Answer mode examples — six canonical answers",
+            "Mode 1 — Brief mechanics"
+          ],
+          "score": 0.016129032
+        }
+      ],
+      "elapsed_ms": 16
+    },
+    {
+      "id": "kb_013_off_topic_refusal",
+      "prompt": "show me the canonical off-topic refusal example",
+      "expected_rel_paths": [
+        "31_answer_mode_examples.md"
+      ],
+      "passed": true,
+      "rank": 1,
+      "matched_path": "31_answer_mode_examples.md",
+      "top_hits": [
+        {
+          "rel_path": "31_answer_mode_examples.md",
+          "heading_path": [
+            "Answer mode examples — six canonical answers",
+            "Mode 6 — Off-topic refusal"
+          ],
+          "score": 0.033333335
+        },
+        {
+          "rel_path": "31_answer_mode_examples.md",
+          "heading_path": [
+            "Answer mode examples — six canonical answers"
+          ],
+          "score": 0.032786883
+        },
+        {
+          "rel_path": "14_validation_and_failure_modes.md",
+          "heading_path": [
+            "14 — Validation and failure modes",
+            "Failure mode 9: over-answering without a decision"
+          ],
+          "score": 0.016129032
+        },
+        {
+          "rel_path": "22_trade_etiquette_and_scams.md",
+          "heading_path": [
+            "22 — Trade etiquette and scams",
+            "Common scams"
+          ],
+          "score": 0.016129032
+        },
+        {
+          "rel_path": "26_validation_and_self_correction.md",
+          "heading_path": [
+            "26 — Validation and self-correction",
+            "Self-consistency loop"
+          ],
+          "score": 0.015873017
+        }
+      ],
+      "elapsed_ms": 18
+    },
+    {
+      "id": "kb_014_build_archetypes",
+      "prompt": "what are the three archetype axes Bestel uses for builds",
+      "expected_rel_paths": [
+        "17_build_archetype_taxonomy.md"
+      ],
+      "passed": true,
+      "rank": 1,
+      "matched_path": "17_build_archetype_taxonomy.md",
+      "top_hits": [
+        {
+          "rel_path": "17_build_archetype_taxonomy.md",
+          "heading_path": [],
+          "score": 0.032786883
+        },
+        {
+          "rel_path": "17_build_archetype_taxonomy.md",
+          "heading_path": [
+            "17 — Build archetype taxonomy"
+          ],
+          "score": 0.016666668
+        },
+        {
+          "rel_path": "27_response_contracts.md",
+          "heading_path": [
+            "Response contracts — output schemas and length targets per answer mode",
+            "Build identity card — extended grammar",
+            "Pre-formatted `identity_line` (Sprint D)"
+          ],
+          "score": 0.016666668
+        },
+        {
+          "rel_path": "17_build_archetype_taxonomy.md",
+          "heading_path": [
+            "17 — Build archetype taxonomy",
+            "PoE2 archetypes"
+          ],
+          "score": 0.016129032
+        },
+        {
+          "rel_path": "00_README.md",
+          "heading_path": [
+            "Path of Exile reference documentation"
+          ],
+          "score": 0.016129032
+        }
+      ],
+      "elapsed_ms": 17
+    },
+    {
+      "id": "kb_015_creators_methodology",
+      "prompt": "which creators does Bestel quote and how to attribute their builds",
+      "expected_rel_paths": [
+        "16_build_methodology_and_creators.md"
+      ],
+      "passed": true,
+      "rank": 1,
+      "matched_path": "16_build_methodology_and_creators.md",
+      "top_hits": [
+        {
+          "rel_path": "16_build_methodology_and_creators.md",
+          "heading_path": [
+            "16 — Build creators and build-crafting methodology",
+            "Part 1 — Creator profiles"
+          ],
+          "score": 0.032795697
+        },
+        {
+          "rel_path": "16_build_methodology_and_creators.md",
+          "heading_path": [
+            "16 — Build creators and build-crafting methodology"
+          ],
+          "score": 0.03226646
+        },
+        {
+          "rel_path": "creators_registry/00_README.md",
+          "heading_path": [],
+          "score": 0.016666668
+        },
+        {
+          "rel_path": "creators_registry/darthmicrotransaction.md",
+          "heading_path": [],
+          "score": 0.016393442
+        },
+        {
+          "rel_path": "16_build_methodology_and_creators.md",
+          "heading_path": [
+            "16 — Build creators and build-crafting methodology",
+            "Part 2 — Anatomy of a high-quality build guide",
+            "What the agent should look for"
+          ],
+          "score": 0.016129032
+        }
+      ],
+      "elapsed_ms": 18
+    },
+    {
+      "id": "kb_016_source_tier_blocked",
+      "prompt": "which seo blogs are on the blocked tier and why",
+      "expected_rel_paths": [
+        "15_source_registry.md"
+      ],
+      "passed": true,
+      "rank": 3,
+      "matched_path": "15_source_registry.md",
+      "top_hits": [
+        {
+          "rel_path": "01_source_policy.md",
+          "heading_path": [
+            "01 — Source policy and retrieval workflow",
+            "Sources to block or strongly downgrade"
+          ],
+          "score": 0.032795697
+        },
+        {
+          "rel_path": "28_tool_failure_policy.md",
+          "heading_path": [
+            "Tool failure policy — taxonomy and recovery per tool",
+            "Per-tool failure modes",
+            "`web_fetch`"
+          ],
+          "score": 0.016666668
+        },
+        {
+          "rel_path": "15_source_registry.md",
+          "heading_path": [],
+          "score": 0.016393442
+        },
+        {
+          "rel_path": "00_README.md",
+          "heading_path": [
+            "Path of Exile reference documentation",
+            "Hierarchy of trusted sources (summary)"
+          ],
+          "score": 0.016393442
+        },
+        {
+          "rel_path": "15_source_registry.md",
+          "heading_path": [
+            "15 — Source registry",
+            "Blocked / degraded sources"
+          ],
+          "score": 0.016129032
+        }
+      ],
+      "elapsed_ms": 17
+    },
+    {
+      "id": "kb_017_validation_self_correction",
+      "prompt": "how should Bestel self-correct after a wrong recall",
+      "expected_rel_paths": [
+        "26_validation_and_self_correction.md"
+      ],
+      "passed": true,
+      "rank": 1,
+      "matched_path": "26_validation_and_self_correction.md",
+      "top_hits": [
+        {
+          "rel_path": "26_validation_and_self_correction.md",
+          "heading_path": [
+            "26 — Validation and self-correction",
+            "Self-consistency loop"
+          ],
+          "score": 0.033333335
+        },
+        {
+          "rel_path": "26_validation_and_self_correction.md",
+          "heading_path": [
+            "26 — Validation and self-correction",
+            "Staleness rule"
+          ],
+          "score": 0.03175403
+        },
+        {
+          "rel_path": "28_tool_failure_policy.md",
+          "heading_path": [
+            "Tool failure policy — taxonomy and recovery per tool",
+            "Headline rules — applies to every tool"
+          ],
+          "score": 0.016393442
+        },
+        {
+          "rel_path": "29_known_mechanics_tripwires.md",
+          "heading_path": [
+            "Known mechanics tripwires — frequently misremembered facts"
+          ],
+          "score": 0.016393442
+        },
+        {
+          "rel_path": "26_validation_and_self_correction.md",
+          "heading_path": [
+            "26 — Validation and self-correction"
+          ],
+          "score": 0.016129032
+        }
+      ],
+      "elapsed_ms": 16
+    },
+    {
+      "id": "kb_018_validation_failure_modes",
+      "prompt": "what are the common validation failure modes for build advice",
+      "expected_rel_paths": [
+        "14_validation_and_failure_modes.md"
+      ],
+      "passed": true,
+      "rank": 1,
+      "matched_path": "14_validation_and_failure_modes.md",
+      "top_hits": [
+        {
+          "rel_path": "14_validation_and_failure_modes.md",
+          "heading_path": [
+            "14 — Validation and failure modes",
+            "Failure mode 4: vague build advice"
+          ],
+          "score": 0.033333335
+        },
+        {
+          "rel_path": "14_validation_and_failure_modes.md",
+          "heading_path": [],
+          "score": 0.016393442
+        },
+        {
+          "rel_path": "14_validation_and_failure_modes.md",
+          "heading_path": [
+            "14 — Validation and failure modes",
+            "Failure mode 3: source misuse"
+          ],
+          "score": 0.016393442
+        },
+        {
+          "rel_path": "14_validation_and_failure_modes.md",
+          "heading_path": [
+            "14 — Validation and failure modes",
+            "Failure mode 6: wrong support recommendation"
+          ],
+          "score": 0.016129032
+        },
+        {
+          "rel_path": "14_validation_and_failure_modes.md",
+          "heading_path": [
+            "14 — Validation and failure modes",
+            "Failure mode 5: ignoring PoB config"
+          ],
+          "score": 0.016129032
+        }
+      ],
+      "elapsed_ms": 17
+    },
+    {
+      "id": "kb_019_pob_engine_integration",
+      "prompt": "how does Bestel call the headless pob engine and what are the limits",
+      "expected_rel_paths": [
+        "25_pob_engine_integration.md"
+      ],
+      "passed": true,
+      "rank": 1,
+      "matched_path": "25_pob_engine_integration.md",
+      "top_hits": [
+        {
+          "rel_path": "25_pob_engine_integration.md",
+          "heading_path": [],
+          "score": 0.03306011
+        },
+        {
+          "rel_path": "28_tool_failure_policy.md",
+          "heading_path": [
+            "Tool failure policy — taxonomy and recovery per tool",
+            "Per-tool failure modes",
+            "`pob_calc`"
+          ],
+          "score": 0.03125
+        },
+        {
+          "rel_path": "29_known_mechanics_tripwires.md",
+          "heading_path": [
+            "Known mechanics tripwires — frequently misremembered facts",
+            "PoE2 — pinnacle boss life"
+          ],
+          "score": 0.016666668
+        },
+        {
+          "rel_path": "25_pob_engine_integration.md",
+          "heading_path": [
+            "25 — PoB engine integration"
+          ],
+          "score": 0.016393442
+        },
+        {
+          "rel_path": "31_answer_mode_examples.md",
+          "heading_path": [
+            "Answer mode examples — six canonical answers",
+            "Mode 2b — Build diagnosis (engine failed)"
+          ],
+          "score": 0.016129032
+        }
+      ],
+      "elapsed_ms": 18
+    },
+    {
+      "id": "kb_020_retrieval_playbooks",
+      "prompt": "what is the playbook for crafting questions vs build questions",
+      "expected_rel_paths": [
+        "13_retrieval_playbooks.md"
+      ],
+      "passed": true,
+      "rank": 1,
+      "matched_path": "13_retrieval_playbooks.md",
+      "top_hits": [
+        {
+          "rel_path": "13_retrieval_playbooks.md",
+          "heading_path": [],
+          "score": 0.032795697
+        },
+        {
+          "rel_path": "13_retrieval_playbooks.md",
+          "heading_path": [
+            "13 — Agent retrieval playbooks",
+            "Playbook: applied / step-by-step questions"
+          ],
+          "score": 0.03226646
+        },
+        {
+          "rel_path": "16_build_methodology_and_creators.md",
+          "heading_path": [
+            "16 — Build creators and build-crafting methodology",
+            "Part 2 — Anatomy of a high-quality build guide",
+            "What the agent should look for"
+          ],
+          "score": 0.03175403
+        },
+        {
+          "rel_path": "16_build_methodology_and_creators.md",
+          "heading_path": [
+            "16 — Build creators and build-crafting methodology",
+            "Part 3 — The build-crafting decision framework",
+            "3.1 Define the goal"
+          ],
+          "score": 0.016666668
+        },
+        {
+          "rel_path": "16_build_methodology_and_creators.md",
+          "heading_path": [
+            "16 — Build creators and build-crafting methodology",
+            "Part 2 — Anatomy of a high-quality build guide"
+          ],
+          "score": 0.016393442
+        }
+      ],
+      "elapsed_ms": 16
+    },
+    {
+      "id": "kb_021_glossary_lookup",
+      "prompt": "what does pseudo APS mean and how is it used as a breakpoint shorthand",
+      "expected_rel_paths": [
+        "12_vocabulary_glossary.md",
+        "07_offence_damage_scaling.md"
+      ],
+      "passed": false,
+      "rank": null,
+      "matched_path": null,
+      "top_hits": [
+        {
+          "rel_path": "27_response_contracts.md",
+          "heading_path": [
+            "Response contracts — output schemas and length targets per answer mode",
+            "Strict tool-output schemas (anti-laziness contracts)",
+            "`trade_resolve_stats` — must echo"
+          ],
+          "score": 0.016666668
+        },
+        {
+          "rel_path": "16_build_methodology_and_creators.md",
+          "heading_path": [
+            "16 — Build creators and build-crafting methodology",
+            "Part 2 — Anatomy of a high-quality build guide",
+            "What the agent should look for"
+          ],
+          "score": 0.016666668
+        },
+        {
+          "rel_path": "26_validation_and_self_correction.md",
+          "heading_path": [],
+          "score": 0.016393442
+        },
+        {
+          "rel_path": "13_retrieval_playbooks.md",
+          "heading_path": [
+            "13 — Agent retrieval playbooks",
+            "Playbook: trade / price check"
+          ],
+          "score": 0.016393442
+        },
+        {
+          "rel_path": "creators_registry/pohx.md",
+          "heading_path": [
+            "Pohx",
+            "Signature quirks"
+          ],
+          "score": 0.016129032
+        }
+      ],
+      "elapsed_ms": 17
+    },
+    {
+      "id": "kb_022_response_contracts",
+      "prompt": "what is the identity card grammar and where is it specified",
+      "expected_rel_paths": [
+        "27_response_contracts.md"
+      ],
+      "passed": true,
+      "rank": 1,
+      "matched_path": "27_response_contracts.md",
+      "top_hits": [
+        {
+          "rel_path": "27_response_contracts.md",
+          "heading_path": [
+            "Response contracts — output schemas and length targets per answer mode",
+            "Build identity card — extended grammar"
+          ],
+          "score": 0.032795697
+        },
+        {
+          "rel_path": "27_response_contracts.md",
+          "heading_path": [
+            "Response contracts — output schemas and length targets per answer mode",
+            "Build identity card — extended grammar",
+            "Card template"
+          ],
+          "score": 0.032539684
+        },
+        {
+          "rel_path": "27_response_contracts.md",
+          "heading_path": [
+            "Response contracts — output schemas and length targets per answer mode",
+            "Build identity card — extended grammar",
+            "Pre-formatted `identity_line` (Sprint D)"
+          ],
+          "score": 0.032522473
+        },
+        {
+          "rel_path": "27_response_contracts.md",
+          "heading_path": [
+            "Response contracts — output schemas and length targets per answer mode",
+            "Build identity card — extended grammar",
+            "Defining uniques"
+          ],
+          "score": 0.03226646
+        },
+        {
+          "rel_path": "27_response_contracts.md",
+          "heading_path": [
+            "Response contracts — output schemas and length targets per answer mode",
+            "Build identity card — extended grammar",
+            "Required keys"
+          ],
+          "score": 0.015625
+        }
+      ],
+      "elapsed_ms": 17
+    },
+    {
+      "id": "kb_023_endgame_trade",
+      "prompt": "how do bulk trade tabs work for currency exchanges",
+      "expected_rel_paths": [
+        "11_endgame_economy_trade_leagues.md",
+        "21_currency_and_barter_taxonomy.md"
+      ],
+      "passed": true,
+      "rank": 1,
+      "matched_path": "21_currency_and_barter_taxonomy.md",
+      "top_hits": [
+        {
+          "rel_path": "21_currency_and_barter_taxonomy.md",
+          "heading_path": [],
+          "score": 0.032786883
+        },
+        {
+          "rel_path": "maxroll/poe1_getting_started.md",
+          "heading_path": [
+            "Maxroll — Getting Started Catalog (Path of Exile 1)",
+            "Toggle 1 — Beginner Guides",
+            "9. Trading Guide for Beginners"
+          ],
+          "score": 0.032291666
+        },
+        {
+          "rel_path": "21_currency_and_barter_taxonomy.md",
+          "heading_path": [
+            "21 — Currency and barter taxonomy"
+          ],
+          "score": 0.016666668
+        },
+        {
+          "rel_path": "thresholds/red_maps.md",
+          "heading_path": [
+            "Thresholds — Red maps",
+            "Notes"
+          ],
+          "score": 0.016129032
+        },
+        {
+          "rel_path": "maxroll/poe1_currency.md",
+          "heading_path": [
+            "Maxroll — Currency Catalog (Path of Exile 1)",
+            "League-Start Strategies",
+            "2. Legion League Start Strategy"
+          ],
+          "score": 0.016129032
+        }
+      ],
+      "elapsed_ms": 16
+    },
+    {
+      "id": "kb_024_skill_gems_overview",
+      "prompt": "what are vaal skills and how do souls accumulate",
+      "expected_rel_paths": [
+        "10_skills_gems_passives_ascendancies.md"
+      ],
+      "passed": true,
+      "rank": 1,
+      "matched_path": "10_skills_gems_passives_ascendancies.md",
+      "top_hits": [
+        {
+          "rel_path": "10_skills_gems_passives_ascendancies.md",
+          "heading_path": [
+            "10 — Skills, gems, passives, and ascendancies",
+            "PoE1 gems"
+          ],
+          "score": 0.016666668
+        },
+        {
+          "rel_path": "maxroll/poe1_bosses.md",
+          "heading_path": [
+            "Maxroll — Bosses Catalog (Path of Exile 1)",
+            "Recap — Routing matrix"
+          ],
+          "score": 0.016666668
+        },
+        {
+          "rel_path": "10_skills_gems_passives_ascendancies.md",
+          "heading_path": [
+            "10 — Skills, gems, passives, and ascendancies",
+            "PoE2 gems"
+          ],
+          "score": 0.016393442
+        },
+        {
+          "rel_path": "maxroll/poe1_getting_started.md",
+          "heading_path": [
+            "Maxroll — Getting Started Catalog (Path of Exile 1)",
+            "Recap — Routing matrix"
+          ],
+          "score": 0.016393442
+        },
+        {
+          "rel_path": "06_character_stats_and_mechanics.md",
+          "heading_path": [
+            "06 — Player, character stats, and mechanical vocabulary",
+            "Resources",
+            "PoE2"
+          ],
+          "score": 0.016129032
+        }
+      ],
+      "elapsed_ms": 15
+    },
+    {
+      "id": "kb_025_basetype_identity",
+      "prompt": "what defines the identity of a base type for crafting choice",
+      "expected_rel_paths": [
+        "20_item_basetype_identity.md"
+      ],
+      "passed": true,
+      "rank": 1,
+      "matched_path": "20_item_basetype_identity.md",
+      "top_hits": [
+        {
+          "rel_path": "20_item_basetype_identity.md",
+          "heading_path": [],
+          "score": 0.033333335
+        },
+        {
+          "rel_path": "13_retrieval_playbooks.md",
+          "heading_path": [
+            "13 — Agent retrieval playbooks",
+            "Playbook: crafting"
+          ],
+          "score": 0.032002047
+        },
+        {
+          "rel_path": "20_item_basetype_identity.md",
+          "heading_path": [
+            "20 — Item basetype identity"
+          ],
+          "score": 0.016393442
+        },
+        {
+          "rel_path": "20_item_basetype_identity.md",
+          "heading_path": [
+            "20 — Item basetype identity",
+            "PoE2 highlights"
+          ],
+          "score": 0.016393442
+        },
+        {
+          "rel_path": "16_build_methodology_and_creators.md",
+          "heading_path": [
+            "16 — Build creators and build-crafting methodology",
+            "Part 3 — The build-crafting decision framework",
+            "3.2 Choose a skill identity"
+          ],
+          "score": 0.016129032
+        }
+      ],
+      "elapsed_ms": 17
+    },
+    {
+      "id": "kb_026_combat_animation",
+      "prompt": "what affects animation cancel windows in combat",
+      "expected_rel_paths": [
+        "19_combat_movement_animation.md"
+      ],
+      "passed": true,
+      "rank": 1,
+      "matched_path": "19_combat_movement_animation.md",
+      "top_hits": [
+        {
+          "rel_path": "19_combat_movement_animation.md",
+          "heading_path": [
+            "19 — Combat, movement, animation",
+            "PoE2"
+          ],
+          "score": 0.033333335
+        },
+        {
+          "rel_path": "19_combat_movement_animation.md",
+          "heading_path": [],
+          "score": 0.032786883
+        },
+        {
+          "rel_path": "02_arpg_foundations.md",
+          "heading_path": [
+            "02 — Action RPG foundations",
+            "6. Action economy"
+          ],
+          "score": 0.031498015
+        },
+        {
+          "rel_path": "08_defence_recovery_survivability.md",
+          "heading_path": [
+            "08 — Defence, recovery, and survivability",
+            "Spell suppression (PoE1)"
+          ],
+          "score": 0.016129032
+        },
+        {
+          "rel_path": "19_combat_movement_animation.md",
+          "heading_path": [
+            "19 — Combat, movement, animation",
+            "PoE1"
+          ],
+          "score": 0.016129032
+        }
+      ],
+      "elapsed_ms": 17
+    },
+    {
+      "id": "kb_027_trade_scams",
+      "prompt": "what scams should I watch out for when trading",
+      "expected_rel_paths": [
+        "22_trade_etiquette_and_scams.md"
+      ],
+      "passed": true,
+      "rank": 1,
+      "matched_path": "22_trade_etiquette_and_scams.md",
+      "top_hits": [
+        {
+          "rel_path": "22_trade_etiquette_and_scams.md",
+          "heading_path": [],
+          "score": 0.032539684
+        },
+        {
+          "rel_path": "22_trade_etiquette_and_scams.md",
+          "heading_path": [
+            "22 — Trade etiquette and scams",
+            "Common scams"
+          ],
+          "score": 0.016666668
+        },
+        {
+          "rel_path": "22_trade_etiquette_and_scams.md",
+          "heading_path": [
+            "22 — Trade etiquette and scams",
+            "Standards"
+          ],
+          "score": 0.016393442
+        },
+        {
+          "rel_path": "creators_registry/goratha.md",
+          "heading_path": [],
+          "score": 0.016393442
+        },
+        {
+          "rel_path": "22_trade_etiquette_and_scams.md",
+          "heading_path": [
+            "22 — Trade etiquette and scams",
+            "Whisper templates"
+          ],
+          "score": 0.016129032
+        }
+      ],
+      "elapsed_ms": 17
+    },
+    {
+      "id": "kb_028_patch_history",
+      "prompt": "give me a quick history of major poe1 expansion patches",
+      "expected_rel_paths": [
+        "24_patch_history_meta.md"
+      ],
+      "passed": true,
+      "rank": 2,
+      "matched_path": "24_patch_history_meta.md",
+      "top_hits": [
+        {
+          "rel_path": "poe2/00_version_pinning.md",
+          "heading_path": [],
+          "score": 0.016666668
+        },
+        {
+          "rel_path": "24_patch_history_meta.md",
+          "heading_path": [
+            "24 — Patch history meta",
+            "PoE2 major shifts (concept-level)"
+          ],
+          "score": 0.016666668
+        },
+        {
+          "rel_path": "31_answer_mode_examples.md",
+          "heading_path": [
+            "Answer mode examples — six canonical answers",
+            "Mode 5 — Patch-current"
+          ],
+          "score": 0.016393442
+        },
+        {
+          "rel_path": "24_patch_history_meta.md",
+          "heading_path": [
+            "24 — Patch history meta",
+            "PoE1 major reworks (concept-level)"
+          ],
+          "score": 0.016393442
+        },
+        {
+          "rel_path": "13_retrieval_playbooks.md",
+          "heading_path": [
+            "13 — Agent retrieval playbooks",
+            "Playbook: applied / step-by-step questions"
+          ],
+          "score": 0.016129032
+        }
+      ],
+      "elapsed_ms": 18
+    },
+    {
+      "id": "kb_029_arpg_foundations",
+      "prompt": "what are the foundational concepts of an arpg loot loop",
+      "expected_rel_paths": [
+        "02_arpg_foundations.md"
+      ],
+      "passed": true,
+      "rank": 1,
+      "matched_path": "02_arpg_foundations.md",
+      "top_hits": [
+        {
+          "rel_path": "02_arpg_foundations.md",
+          "heading_path": [
+            "02 — Action RPG foundations",
+            "1. The aRPG contract"
+          ],
+          "score": 0.033333335
+        },
+        {
+          "rel_path": "maxroll/poe1_getting_started.md",
+          "heading_path": [
+            "Maxroll — Getting Started Catalog (Path of Exile 1)",
+            "Toggle 1 — Beginner Guides",
+            "10. Loot Filter Guide (Basics)"
+          ],
+          "score": 0.032002047
+        },
+        {
+          "rel_path": "01_source_policy.md",
+          "heading_path": [
+            "01 — Source policy and retrieval workflow",
+            "Core principle"
+          ],
+          "score": 0.016393442
+        },
+        {
+          "rel_path": "02_arpg_foundations.md",
+          "heading_path": [
+            "02 — Action RPG foundations",
+            "9. The campaign-vs-endgame split"
+          ],
+          "score": 0.016393442
+        },
+        {
+          "rel_path": "02_arpg_foundations.md",
+          "heading_path": [
+            "02 — Action RPG foundations",
+            "10. Build-thinking discipline (transferable from other aRPGs)"
+          ],
+          "score": 0.016129032
+        }
+      ],
+      "elapsed_ms": 17
+    },
+    {
+      "id": "kb_030_ggg_philosophy",
+      "prompt": "explain GGG's design philosophy on power and friction",
+      "expected_rel_paths": [
+        "03_ggg_design_philosophy.md"
+      ],
+      "passed": true,
+      "rank": 1,
+      "matched_path": "03_ggg_design_philosophy.md",
+      "top_hits": [
+        {
+          "rel_path": "03_ggg_design_philosophy.md",
+          "heading_path": [
+            "03 — GGG design philosophy",
+            "2. The \"Vision\""
+          ],
+          "score": 0.03306011
+        },
+        {
+          "rel_path": "03_ggg_design_philosophy.md",
+          "heading_path": [
+            "03 — GGG design philosophy"
+          ],
+          "score": 0.032539684
+        },
+        {
+          "rel_path": "03_ggg_design_philosophy.md",
+          "heading_path": [],
+          "score": 0.03201844
+        },
+        {
+          "rel_path": "03_ggg_design_philosophy.md",
+          "heading_path": [
+            "03 — GGG design philosophy",
+            "3. Trade friction is intentional"
+          ],
+          "score": 0.016129032
+        },
+        {
+          "rel_path": "03_ggg_design_philosophy.md",
+          "heading_path": [
+            "03 — GGG design philosophy",
+            "Application to agent reasoning"
+          ],
+          "score": 0.016129032
+        }
+      ],
+      "elapsed_ms": 16
+    }
+  ]
+}

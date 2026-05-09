@@ -1,0 +1,30 @@
+[package]
+name = "bestel-rag"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Bestel hybrid embedded knowledge-base search (LanceDB + Tantivy + RRF)."
+
+[dependencies]
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+reqwest = { workspace = true }
+futures-util = { workspace = true }
+dirs = { workspace = true }
+sha2 = { workspace = true }
+lancedb = { workspace = true }
+arrow-array = { workspace = true }
+arrow-schema = { workspace = true }
+lance-index = { workspace = true }
+blake3 = { workspace = true }
+tiktoken-rs = { workspace = true }
+chrono = { version = "0.4", features = ["clock", "serde"] }
+
+[dev-dependencies]
+tempfile = "3"

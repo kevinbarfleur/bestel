@@ -8,6 +8,7 @@ import type {
   DebugRunDto,
   DetectionDto,
   KeyStatusDto,
+  LintReport,
   LlmDeltaEvent,
   ModelProfileDto,
   PobBuildDto,
@@ -98,6 +99,8 @@ export const getDebugRun = (id: string): Promise<DebugRunDto | null> =>
 export const deleteDebugRun = (id: string): Promise<void> =>
   invoke('delete_debug_run', { id });
 export const deleteAllDebugRuns = (): Promise<number> => invoke('delete_all_debug_runs');
+export const lintDebugRun = (id: string): Promise<LintReport | null> =>
+  invoke('lint_debug_run', { id });
 
 export const listApiKeys = (): Promise<KeyStatusDto[]> => invoke('list_api_keys');
 export const setApiKey = (envName: string, value: string): Promise<void> =>

@@ -82,6 +82,10 @@ pub struct Scenario {
     pub name: String,
     pub provider: ProviderChoice,
     pub build_fixture: Option<String>,
+    /// Sprint H — game scope tags (`["poe1"]`, `["poe2"]`, or both). Used
+    /// by the judge step to filter the contamination-free PoE2 subset.
+    /// Defaults to `["poe1", "poe2"]` if absent in the scenario file.
+    pub applies_to: Vec<String>,
     pub prompt: String,
     pub timeout_secs: u64,
     pub cost: Cost,
@@ -135,6 +139,33 @@ pub struct Expectation {
     pub min_final_text_len: usize,
     /// Minimum number of tool invocations during the turn.
     pub min_tool_calls: usize,
+
+    // Sprint A — specialised assertions wired to `response_lint` rules. When
+    // true, the scenario expects the corresponding lint not to FAIL on the
+    // recorded run. All default to `false` so existing scenarios keep their
+    // current semantics.
+    /// `BUILD_IDENTITY_REQUIRED` — when `get_active_build` succeeds the answer
+    /// must lead with the identity card.
+    pub must_have_identity_card_if_build: bool,
+    /// `NO_THINKING_TAGS` — disallow `<thinking>` / `</thinking>` in the
+    /// user-facing answer.
+    pub must_not_expose_reasoning: bool,
+    /// `PANEL_DATA_FIRST` — when panel markers are emitted, the message must
+    /// open with the `⟦panel-data⟧` sidecar.
+    pub must_have_panel_data_first: bool,
+    /// `SOURCES_FETCHED_ONLY` — every URL listed in a Sources section must
+    /// resolve to a host actually fetched this turn.
+    pub must_cite_only_fetched_urls: bool,
+    /// `CALCS_ECHO_REQUIRED` — when `pob_calc` succeeds the answer must
+    /// surface the Calcs echo (boss / Pinnacle / active skill / config).
+    pub must_surface_calcs_echo_if_pob_calc: bool,
+    /// `POB_CALC_FAILURE_NO_REAL_NUMBER` — when `pob_calc` fails the answer
+    /// must not claim a "real DPS" number without a cache/stale disclaimer.
+    pub must_not_claim_real_number_if_pob_calc_failed: bool,
+    /// `FAILED_RAW_DATA_NO_TABLE` — when `repoe_lookup` / `wiki_cargo` /
+    /// `wiki_parse` / `web_fetch` fails the answer must not print an exact
+    /// tier/ilvl mod table without an uncertainty marker.
+    pub must_not_fabricate_mod_table_after_raw_source_failure: bool,
 }
 
 impl Expectation {
@@ -148,6 +179,38 @@ impl Expectation {
     pub fn must_not_match_compiled(&self) -> Result<Vec<Regex>> {
         compile_regexes(&self.must_not_match)
     }
+
+    /// Map each Sprint A specialised assertion to the `response_lint` rule IDs
+    /// it is wired to. Used by the battery harness to fail a scenario when an
+    /// opt-in expectation correlates with a `Fail` lint finding on the run.
+    pub fn required_lints(&self) -> Vec<&'static str> {
+        let mut ids: Vec<&'static str> = Vec::new();
+        if self.must_have_identity_card_if_build {
+            ids.push("BUILD_IDENTITY_REQUIRED");
+        }
+        if self.must_not_expose_reasoning {
+            ids.push("NO_THINKING_TAGS");
+        }
+        if self.must_have_panel_data_first {
+            ids.push("PANEL_DATA_FIRST");
+            ids.push("PANEL_MARKER_PAYLOAD_MATCH");
+        }
+        if self.must_cite_only_fetched_urls {
+            ids.push("SOURCES_FETCHED_ONLY");
+            ids.push("NO_INTERNAL_DOC_AS_FINAL_SOURCE");
+            ids.push("NO_BLOCKED_SOURCE");
+        }
+        if self.must_surface_calcs_echo_if_pob_calc {
+            ids.push("CALCS_ECHO_REQUIRED");
+        }
+        if self.must_not_claim_real_number_if_pob_calc_failed {
+            ids.push("POB_CALC_FAILURE_NO_REAL_NUMBER");
+        }
+        if self.must_not_fabricate_mod_table_after_raw_source_failure {
+            ids.push("FAILED_RAW_DATA_NO_TABLE");
+        }
+        ids
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -155,6 +218,8 @@ struct RawScenario {
     name: Option<String>,
     provider: Option<String>,
     build_fixture: Option<String>,
+    #[serde(default)]
+    applies_to: Vec<String>,
     /// Single-prompt shape (legacy / simple scenarios). Either this or
     /// `[[turn]]` blocks must be present; if both are set, `[[turn]]`
     /// wins and `prompt` is ignored.
@@ -193,6 +258,21 @@ struct RawExpectation {
     min_final_text_len: Option<usize>,
     #[serde(default)]
     min_tool_calls: Option<usize>,
+
+    #[serde(default)]
+    must_have_identity_card_if_build: bool,
+    #[serde(default)]
+    must_not_expose_reasoning: bool,
+    #[serde(default)]
+    must_have_panel_data_first: bool,
+    #[serde(default)]
+    must_cite_only_fetched_urls: bool,
+    #[serde(default)]
+    must_surface_calcs_echo_if_pob_calc: bool,
+    #[serde(default)]
+    must_not_claim_real_number_if_pob_calc_failed: bool,
+    #[serde(default)]
+    must_not_fabricate_mod_table_after_raw_source_failure: bool,
 }
 
 pub fn load_scenario(path: &Path) -> Result<Scenario> {
@@ -236,6 +316,15 @@ pub fn load_scenario(path: &Path) -> Result<Scenario> {
             forbid_tool: raw_exp.forbid_tool,
             min_final_text_len: raw_exp.min_final_text_len.unwrap_or(0),
             min_tool_calls: raw_exp.min_tool_calls.unwrap_or(0),
+            must_have_identity_card_if_build: raw_exp.must_have_identity_card_if_build,
+            must_not_expose_reasoning: raw_exp.must_not_expose_reasoning,
+            must_have_panel_data_first: raw_exp.must_have_panel_data_first,
+            must_cite_only_fetched_urls: raw_exp.must_cite_only_fetched_urls,
+            must_surface_calcs_echo_if_pob_calc: raw_exp.must_surface_calcs_echo_if_pob_calc,
+            must_not_claim_real_number_if_pob_calc_failed: raw_exp
+                .must_not_claim_real_number_if_pob_calc_failed,
+            must_not_fabricate_mod_table_after_raw_source_failure: raw_exp
+                .must_not_fabricate_mod_table_after_raw_source_failure,
         });
     }
 
@@ -258,10 +347,17 @@ pub fn load_scenario(path: &Path) -> Result<Scenario> {
         }
     };
 
+    let applies_to = if raw.applies_to.is_empty() {
+        vec!["poe1".to_string(), "poe2".to_string()]
+    } else {
+        raw.applies_to
+    };
+
     Ok(Scenario {
         name,
         provider,
         build_fixture: raw.build_fixture,
+        applies_to,
         prompt,
         turns,
         timeout_secs,

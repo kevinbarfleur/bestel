@@ -1,0 +1,24 @@
+# Generated from tests/eval/eval_set.toml — do not hand-edit.
+# Category: mechanic
+
+name = "mech_resolute_technique_crit"
+provider = "any"
+prompt = """
+if i take Resolute Technique can i still crit with spells? or is it total
+"""
+timeout_secs = 240
+cost = "low"
+
+[[expectations]]
+must_match = [
+  "cannot crit",
+  "no crit",
+  "can't crit",
+]
+must_not_match = [
+  "spells can still crit",
+  "yes you can crit",
+]
+must_not_expose_reasoning = true
+must_have_panel_data_first = true
+must_cite_only_fetched_urls = true

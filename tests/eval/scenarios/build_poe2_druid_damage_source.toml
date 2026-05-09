@@ -1,0 +1,27 @@
+# Generated from tests/eval/eval_set.toml — do not hand-edit.
+# Category: build
+
+name = "build_poe2_druid_damage_source"
+provider = "any"
+build_fixture = "poe2_druid"
+applies_to = ["poe2"]
+prompt = """
+where is most of my damage coming from on this druid build right now
+"""
+timeout_secs = 240
+cost = "low"
+
+[[expectations]]
+must_match = [
+  "Identity:",
+  "Druid",
+  "main skill",
+]
+must_not_match = [
+  "cluster jewel",
+  "PoE1",
+]
+must_not_expose_reasoning = true
+must_have_panel_data_first = true
+must_cite_only_fetched_urls = true
+must_have_identity_card_if_build = true

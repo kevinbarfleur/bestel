@@ -47,6 +47,21 @@ fn main() {
                 run_battery(rest);
                 return;
             }
+            "eval-judge" => {
+                let rest: Vec<String> = args.collect();
+                run_eval_judge(rest);
+                return;
+            }
+            "kb-eval" => {
+                let rest: Vec<String> = args.collect();
+                run_kb_eval(rest);
+                return;
+            }
+            "db" => {
+                let rest: Vec<String> = args.collect();
+                run_db(rest);
+                return;
+            }
             "--version" | "-V" => {
                 println!("bestel {}", env!("CARGO_PKG_VERSION"));
                 return;
@@ -84,6 +99,21 @@ fn print_help() {
     println!("    [--model <id>] [--out <dir>]");
     println!("    [--filter-name <substring>]");
     println!("    [--pob-fixture <name|path>]");
+    println!("    [--strict]                              exit non-zero on lint FAIL findings");
+    println!("  bestel eval-judge --runs-dir <dir> --eval-set <path>");
+    println!("    [--judge-model <id>]                    default: claude-sonnet-4-5");
+    println!("    [--out <baseline.json>]                 default: <runs-dir>/baseline.json");
+    println!("    [--filter-id <substring>]               grade only matching scenario ids");
+    println!("  bestel kb-eval --queries <path>");
+    println!("    [--top-k <int>]                         default: 5");
+    println!("    [--filter-id <substring>]               run only matching ids");
+    println!("    [--out <baseline.json>]                 write per-query results");
+    println!("  bestel db <subcommand>                  SQLite mirror inspection");
+    println!("    db migrate                              run pending migrations");
+    println!("    db stats                                row counts + schema version");
+    println!("    db import [--backup]                    import ~/.bestel/runtime/debug-chats/*.json");
+    println!("    db query --sql \"<SELECT ...>\"           raw SQL passthrough");
+    println!("    db bench [--n <count>]                  seed N runs and time identity-fail query");
     println!("  bestel --version / --help");
 }
 
@@ -108,20 +138,26 @@ async fn run_battery_inner(raw_args: Vec<String>) -> i32 {
 
     use bestel_core::llm::detect::build_provider_for_profile;
     use bestel_core::llm::models::find_profile;
-    use bestel_core::llm::recorder::{save_run, Recorder};
+    use bestel_core::llm::recorder::{mirror_lint_findings, save_run, Recorder};
     use bestel_core::llm::tools::BuildContext;
     use bestel_core::llm::{ChatMessage, LlmDelta, Provider, Role};
     use bestel_core::pob::parser::parse_file as parse_pob_file;
-    use bestel_core::test_runner::{load_scenarios, Scenario};
+    use bestel_core::test_runner::{lint_run, load_scenarios, FindingSeverity, Scenario};
     use tokio::sync::mpsc;
 
     bestel_core::llm::keys::apply_to_env();
+    match bestel_core::llm::kb::bootstrap_global().await {
+        Ok(true) => eprintln!("bestel: KB engine bootstrapped (background ingest spawned)"),
+        Ok(false) => eprintln!("bestel: KB engine disabled (no embedding backend or corpus)"),
+        Err(e) => eprintln!("bestel: KB bootstrap error (continuing without KB): {e}"),
+    }
 
     let mut scenarios_dir: Option<PathBuf> = None;
     let mut model_id = "deepseek-v3-2".to_string();
     let mut out_dir: Option<PathBuf> = None;
     let mut filter_name: Option<String> = None;
     let mut pob_fixture: Option<String> = None;
+    let mut strict_lint = false;
 
     let mut i = 0;
     while i < raw_args.len() {
@@ -149,6 +185,9 @@ async fn run_battery_inner(raw_args: Vec<String>) -> i32 {
                 if let Some(v) = raw_args.get(i) {
                     pob_fixture = Some(v.clone());
                 }
+            }
+            "--strict" => {
+                strict_lint = true;
             }
             other if !other.starts_with("--") && scenarios_dir.is_none() => {
                 scenarios_dir = Some(PathBuf::from(other));
@@ -217,6 +256,14 @@ async fn run_battery_inner(raw_args: Vec<String>) -> i32 {
     );
     println!("Model:     {} ({})", profile.display_name, profile.id);
     println!("Provider:  {provider_label}");
+    println!(
+        "Lint mode: {}",
+        if strict_lint {
+            "strict (exit non-zero on FAIL)"
+        } else {
+            "warn-only"
+        }
+    );
     if let Some(fix) = &pob_fixture {
         println!("Fixture:   {fix}");
     }
@@ -233,6 +280,9 @@ async fn run_battery_inner(raw_args: Vec<String>) -> i32 {
     let mut total_errors = 0usize;
     let mut total_text = 0usize;
     let mut total_tools = 0usize;
+    let mut total_lint_warn = 0usize;
+    let mut total_lint_fail = 0usize;
+    let mut scenarios_with_lint_fail = 0usize;
 
     for (idx, scenario) in scenarios.iter().enumerate() {
         let n = idx + 1;
@@ -382,9 +432,47 @@ async fn run_battery_inner(raw_args: Vec<String>) -> i32 {
                     tool_calls,
                 );
                 let run = recorder.finish(last_assistant);
+                let lint_report = lint_run(&run);
+                if !lint_report.findings.is_empty() {
+                    let warn_n = lint_report.warn_count();
+                    let fail_n = lint_report.fail_count();
+                    total_lint_warn += warn_n;
+                    total_lint_fail += fail_n;
+                    if fail_n > 0 {
+                        scenarios_with_lint_fail += 1;
+                    }
+                    println!(
+                        "    lint: {} fail · {} warn",
+                        fail_n, warn_n,
+                    );
+                    for f in &lint_report.findings {
+                        let tag = match f.severity {
+                            FindingSeverity::Fail => "FAIL",
+                            FindingSeverity::Warn => "WARN",
+                        };
+                        println!(
+                            "      [{tag}] {} — {}",
+                            f.id, truncate_for_log(&f.message, 100),
+                        );
+                    }
+                }
                 if let Err(e) = save_run(&run) {
                     eprintln!("    save_run failed: {e}");
                 }
+                let mirror_rows: Vec<bestel_core::persistence::LintFindingRow> = lint_report
+                    .findings
+                    .iter()
+                    .map(|f| bestel_core::persistence::LintFindingRow {
+                        run_id: run.id.clone(),
+                        rule: f.id.clone(),
+                        severity: match f.severity {
+                            FindingSeverity::Fail => "fail".to_string(),
+                            FindingSeverity::Warn => "warn".to_string(),
+                        },
+                        message: f.message.clone(),
+                    })
+                    .collect();
+                mirror_lint_findings(&run.id, mirror_rows);
                 if let Some(dir) = &out_dir {
                     let path = dir.join(format!("{}.json", scenario.name));
                     match serde_json::to_vec_pretty(&run) {
@@ -394,6 +482,10 @@ async fn run_battery_inner(raw_args: Vec<String>) -> i32 {
                             }
                         }
                         Err(e) => eprintln!("    serialize run: {e}"),
+                    }
+                    let lint_path = dir.join(format!("{}.lint.json", scenario.name));
+                    if let Ok(b) = serde_json::to_vec_pretty(&lint_report) {
+                        let _ = std::fs::write(&lint_path, b);
                     }
                 }
             }
@@ -421,12 +513,250 @@ async fn run_battery_inner(raw_args: Vec<String>) -> i32 {
         total_text,
         total_errors,
     );
+    println!(
+        "Lint summary: {} FAIL · {} WARN · {}/{} scenarios with at least one FAIL ({} mode)",
+        total_lint_fail,
+        total_lint_warn,
+        scenarios_with_lint_fail,
+        scenarios.len(),
+        if strict_lint { "strict" } else { "warn-only" },
+    );
 
     if total_errors > 0 {
-        1
-    } else {
-        0
+        return 1;
     }
+    if strict_lint && total_lint_fail > 0 {
+        return 1;
+    }
+    0
+}
+
+fn run_eval_judge(args: Vec<String>) {
+    let rt = match tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(rt) => rt,
+        Err(e) => {
+            eprintln!("bestel: failed to start tokio runtime: {e}");
+            std::process::exit(1);
+        }
+    };
+    let exit_code = rt.block_on(async { run_eval_judge_inner(args).await });
+    std::process::exit(exit_code);
+}
+
+async fn run_eval_judge_inner(raw_args: Vec<String>) -> i32 {
+    use std::path::PathBuf;
+    use std::time::Instant;
+
+    use bestel_core::eval::judge::{
+        judge_one, load_eval_set, load_persisted_runs, summarise, Baseline, JudgeRecord,
+        SkippedRun,
+    };
+
+    bestel_core::llm::keys::apply_to_env();
+
+    let mut runs_dir: Option<PathBuf> = None;
+    let mut eval_set_path: Option<PathBuf> = None;
+    let mut out_path: Option<PathBuf> = None;
+    let mut judge_model = "claude-sonnet-4-5".to_string();
+    let mut filter_id: Option<String> = None;
+
+    let mut i = 0;
+    while i < raw_args.len() {
+        match raw_args[i].as_str() {
+            "--runs-dir" => {
+                i += 1;
+                if let Some(v) = raw_args.get(i) {
+                    runs_dir = Some(PathBuf::from(v));
+                }
+            }
+            "--eval-set" => {
+                i += 1;
+                if let Some(v) = raw_args.get(i) {
+                    eval_set_path = Some(PathBuf::from(v));
+                }
+            }
+            "--out" => {
+                i += 1;
+                if let Some(v) = raw_args.get(i) {
+                    out_path = Some(PathBuf::from(v));
+                }
+            }
+            "--judge-model" => {
+                i += 1;
+                if let Some(v) = raw_args.get(i) {
+                    judge_model = v.clone();
+                }
+            }
+            "--filter-id" => {
+                i += 1;
+                if let Some(v) = raw_args.get(i) {
+                    filter_id = Some(v.clone());
+                }
+            }
+            other => {
+                eprintln!("bestel eval-judge: unknown arg '{other}'");
+                return 2;
+            }
+        }
+        i += 1;
+    }
+
+    let Some(runs_dir) = runs_dir else {
+        eprintln!("bestel eval-judge: --runs-dir is required");
+        return 2;
+    };
+    let Some(eval_set_path) = eval_set_path else {
+        eprintln!("bestel eval-judge: --eval-set is required");
+        return 2;
+    };
+    let out_path = out_path.unwrap_or_else(|| runs_dir.join("baseline.json"));
+
+    let api_key = match std::env::var("ANTHROPIC_API_KEY") {
+        Ok(k) if !k.is_empty() => k,
+        _ => {
+            eprintln!("bestel eval-judge: ANTHROPIC_API_KEY not set");
+            return 1;
+        }
+    };
+
+    let eval_map = match load_eval_set(&eval_set_path) {
+        Ok(m) => m,
+        Err(e) => {
+            eprintln!("bestel eval-judge: load eval_set failed: {e}");
+            return 1;
+        }
+    };
+
+    let runs = match load_persisted_runs(&runs_dir) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("bestel eval-judge: load runs failed: {e}");
+            return 1;
+        }
+    };
+
+    let runs_filtered: Vec<_> = match &filter_id {
+        Some(needle) => runs
+            .into_iter()
+            .filter(|(stem, _, _)| stem.to_lowercase().contains(&needle.to_lowercase()))
+            .collect(),
+        None => runs,
+    };
+
+    if runs_filtered.is_empty() {
+        eprintln!("bestel eval-judge: no PersistedRun *.json files matched in {}", runs_dir.display());
+        return 1;
+    }
+
+    println!("=== bestel eval-judge ===");
+    println!("Runs dir:    {} ({} runs)", runs_dir.display(), runs_filtered.len());
+    println!("Eval set:    {} ({} entries)", eval_set_path.display(), eval_map.len());
+    println!("Judge model: {judge_model}");
+    println!("Out:         {}", out_path.display());
+    println!();
+
+    let http = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(180))
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("bestel eval-judge: build http client: {e}");
+            return 1;
+        }
+    };
+
+    let started = Instant::now();
+    let mut records: Vec<JudgeRecord> = Vec::new();
+    let mut skipped: Vec<SkippedRun> = Vec::new();
+    let mut judge_errors = 0usize;
+
+    for (idx, (stem, path, run)) in runs_filtered.iter().enumerate() {
+        let n = idx + 1;
+        let total = runs_filtered.len();
+        let entry = match eval_map.get(stem) {
+            Some(e) => e,
+            None => {
+                println!("[{n}/{total}] {stem} — SKIP (no eval_set entry)");
+                skipped.push(SkippedRun {
+                    run_file: path.display().to_string(),
+                    reason: "no eval_set entry for id".into(),
+                });
+                continue;
+            }
+        };
+
+        print!("[{n}/{total}] {stem} ({}) … ", entry.category);
+        let _ = std::io::Write::flush(&mut std::io::stdout());
+        let t = Instant::now();
+        match judge_one(&http, &api_key, &judge_model, entry, run).await {
+            Ok(r) => {
+                println!("score {} (in {:.1}s)", r.score, t.elapsed().as_secs_f64());
+                let sidecar = path.with_extension("judge.json");
+                if let Ok(b) = serde_json::to_vec_pretty(&r) {
+                    let _ = std::fs::write(&sidecar, b);
+                }
+                records.push(r);
+            }
+            Err(e) => {
+                judge_errors += 1;
+                println!("ERROR: {e}");
+                skipped.push(SkippedRun {
+                    run_file: path.display().to_string(),
+                    reason: format!("{e}"),
+                });
+            }
+        }
+    }
+
+    let summary = summarise(&records, judge_errors);
+    let baseline = Baseline {
+        eval_set_path: eval_set_path.display().to_string(),
+        runs_dir: runs_dir.display().to_string(),
+        judge_model: judge_model.clone(),
+        judged_at: chrono::Utc::now().to_rfc3339(),
+        summary: summary.clone(),
+        records,
+        skipped,
+    };
+
+    match serde_json::to_vec_pretty(&baseline) {
+        Ok(b) => {
+            if let Some(parent) = out_path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            if let Err(e) = std::fs::write(&out_path, b) {
+                eprintln!("bestel eval-judge: write baseline {} failed: {e}", out_path.display());
+                return 1;
+            }
+        }
+        Err(e) => {
+            eprintln!("bestel eval-judge: serialize baseline: {e}");
+            return 1;
+        }
+    }
+
+    println!();
+    println!(
+        "Done in {:.1}s · {} graded · {} skipped · {} judge errors",
+        started.elapsed().as_secs_f64(),
+        baseline.records.len(),
+        baseline.skipped.len(),
+        judge_errors,
+    );
+    println!("Avg score: {:.1}/100", summary.avg_score);
+    for (cat, stats) in &summary.by_category {
+        println!("  {cat:10} n={} avg={:.1}", stats.n, stats.avg_score);
+    }
+    println!("Baseline: {}", out_path.display());
+
+    if judge_errors > 0 {
+        return 1;
+    }
+    0
 }
 
 fn truncate_for_log(s: &str, max: usize) -> String {
@@ -454,6 +784,676 @@ fn workspace_root_for_battery() -> std::path::PathBuf {
     std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
 }
 
+fn run_kb_eval(args: Vec<String>) {
+    let rt = match tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(rt) => rt,
+        Err(e) => {
+            eprintln!("bestel: failed to start tokio runtime: {e}");
+            std::process::exit(1);
+        }
+    };
+    let exit_code = rt.block_on(async { run_kb_eval_inner(args).await });
+    std::process::exit(exit_code);
+}
+
+async fn run_kb_eval_inner(raw_args: Vec<String>) -> i32 {
+    use bestel_rag::{detect_default, IngestConfig, KbEngine, LanceIndex};
+    use serde::{Deserialize, Serialize};
+    use std::path::PathBuf;
+    use std::sync::Arc;
+    use std::time::Instant;
+
+    bestel_core::llm::keys::apply_to_env();
+
+    let mut queries_path: Option<PathBuf> = None;
+    let mut top_k: usize = 5;
+    let mut filter_id: Option<String> = None;
+    let mut out_path: Option<PathBuf> = None;
+
+    let mut i = 0;
+    while i < raw_args.len() {
+        match raw_args[i].as_str() {
+            "--queries" => {
+                i += 1;
+                if let Some(v) = raw_args.get(i) {
+                    queries_path = Some(PathBuf::from(v));
+                }
+            }
+            "--top-k" => {
+                i += 1;
+                if let Some(v) = raw_args.get(i) {
+                    if let Ok(n) = v.parse::<usize>() {
+                        top_k = n.clamp(1, 20);
+                    }
+                }
+            }
+            "--filter-id" => {
+                i += 1;
+                if let Some(v) = raw_args.get(i) {
+                    filter_id = Some(v.clone());
+                }
+            }
+            "--out" => {
+                i += 1;
+                if let Some(v) = raw_args.get(i) {
+                    out_path = Some(PathBuf::from(v));
+                }
+            }
+            other => {
+                eprintln!("bestel kb-eval: unknown arg '{other}'");
+                return 2;
+            }
+        }
+        i += 1;
+    }
+
+    let queries_path = match queries_path {
+        Some(p) => p,
+        None => {
+            eprintln!("bestel kb-eval: --queries is required (e.g. tests/eval/kb_queries.toml)");
+            return 2;
+        }
+    };
+
+    #[derive(Debug, Deserialize)]
+    struct QueryFile {
+        #[serde(default)]
+        query: Vec<QueryEntry>,
+    }
+    #[derive(Debug, Deserialize, Serialize)]
+    struct QueryEntry {
+        id: String,
+        prompt: String,
+        /// Any one of these paths counts as a hit (suffix match). Lets a
+        /// query name multiple legitimate target files when knowledge
+        /// crosses references.
+        expected_rel_paths: Vec<String>,
+        #[serde(default)]
+        notes: Option<String>,
+    }
+    let toml_text = match std::fs::read_to_string(&queries_path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("bestel kb-eval: read {queries_path:?} failed: {e}");
+            return 1;
+        }
+    };
+    let parsed: QueryFile = match toml::from_str(&toml_text) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("bestel kb-eval: parse {queries_path:?} failed: {e}");
+            return 1;
+        }
+    };
+    let mut queries: Vec<QueryEntry> = parsed.query;
+    if let Some(needle) = &filter_id {
+        let needle_lower = needle.to_lowercase();
+        queries.retain(|q| q.id.to_lowercase().contains(&needle_lower));
+    }
+    if queries.is_empty() {
+        eprintln!("bestel kb-eval: no queries to run after filter");
+        return 1;
+    }
+
+    println!("=== bestel kb-eval ===");
+    println!("queries: {}", queries.len());
+    println!("top-k:   {}", top_k);
+
+    // Synchronous bootstrap so the index is ready when search() runs.
+    let home = match dirs::home_dir() {
+        Some(h) => h,
+        None => {
+            eprintln!("bestel kb-eval: home dir not resolvable");
+            return 1;
+        }
+    };
+    let bestel_dir = home.join(".bestel");
+    let corpus_root = bestel_dir.join("prompts").join("references");
+    if !corpus_root.exists() {
+        eprintln!(
+            "bestel kb-eval: corpus root missing at {corpus_root:?} — launch the desktop app once to seed prompts"
+        );
+        return 1;
+    }
+    let index_dir = bestel_dir.join("index").join("kb.lance");
+    let http = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(60))
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("bestel kb-eval: http client build failed: {e}");
+            return 1;
+        }
+    };
+    let embedder = match detect_default(http).await {
+        Ok(e) => e,
+        Err(err) => {
+            eprintln!("bestel kb-eval: no embedding backend: {err}");
+            return 1;
+        }
+    };
+    let label = embedder.label();
+    let dim = bestel_rag::EmbeddingProvider::dim(&embedder);
+    let index = match LanceIndex::open_or_create(&index_dir, dim).await {
+        Ok(i) => i,
+        Err(err) => {
+            eprintln!("bestel kb-eval: open index failed: {err}");
+            return 1;
+        }
+    };
+    let engine = Arc::new(KbEngine::new(index, embedder));
+    println!("embedder: {}", label);
+    println!("index:    {}", index_dir.display());
+
+    let ingest_started = Instant::now();
+    let cfg = IngestConfig::default();
+    match engine.ingest(&corpus_root, &cfg).await {
+        Ok(stats) => println!(
+            "ingest:   {} files seen, {} indexed, {} skipped, {} chunks ({} ms)",
+            stats.files_seen,
+            stats.files_indexed,
+            stats.files_skipped_unchanged,
+            stats.chunks_emitted,
+            stats.elapsed_ms
+        ),
+        Err(err) => {
+            eprintln!("bestel kb-eval: ingest failed: {err}");
+            return 1;
+        }
+    }
+    let _ = ingest_started;
+    if let Err(err) = engine.ensure_fts_index().await {
+        eprintln!("bestel kb-eval: ensure_fts_index failed: {err}");
+        return 1;
+    }
+
+    #[derive(Debug, Serialize)]
+    struct QueryResult {
+        id: String,
+        prompt: String,
+        expected_rel_paths: Vec<String>,
+        passed: bool,
+        rank: Option<usize>,
+        matched_path: Option<String>,
+        top_hits: Vec<TopHit>,
+        elapsed_ms: u64,
+    }
+    #[derive(Debug, Serialize)]
+    struct TopHit {
+        rel_path: String,
+        heading_path: Vec<String>,
+        score: f32,
+    }
+
+    let mut passed_count = 0usize;
+    let mut total_elapsed_ms = 0u64;
+    let mut results: Vec<QueryResult> = Vec::with_capacity(queries.len());
+    println!();
+    for (idx, q) in queries.iter().enumerate() {
+        let started = Instant::now();
+        let hits = match engine.search(&q.prompt, top_k, None, &[]).await {
+            Ok(h) => h,
+            Err(err) => {
+                eprintln!("[{}/{}] {} — search error: {err}", idx + 1, queries.len(), q.id);
+                continue;
+            }
+        };
+        let elapsed_ms = started.elapsed().as_millis() as u64;
+        total_elapsed_ms += elapsed_ms;
+        let mut rank: Option<usize> = None;
+        let mut matched_path: Option<String> = None;
+        'outer: for (i, h) in hits.iter().enumerate() {
+            for expected in &q.expected_rel_paths {
+                if h.chunk.doc_path.ends_with(expected) {
+                    rank = Some(i + 1);
+                    matched_path = Some(h.chunk.doc_path.clone());
+                    break 'outer;
+                }
+            }
+        }
+        let passed = rank.is_some();
+        if passed {
+            passed_count += 1;
+        }
+        let top_hits: Vec<TopHit> = hits
+            .iter()
+            .take(top_k)
+            .map(|h| TopHit {
+                rel_path: h.chunk.doc_path.clone(),
+                heading_path: h.chunk.heading_path.clone(),
+                score: h.score,
+            })
+            .collect();
+        let marker = if passed { "PASS" } else { "FAIL" };
+        let rank_str = rank
+            .map(|r| format!("rank={}", r))
+            .unwrap_or_else(|| "rank=miss".into());
+        println!(
+            "[{:>2}/{}] {} {} {} ({}ms)  expected={:?}",
+            idx + 1,
+            queries.len(),
+            marker,
+            q.id,
+            rank_str,
+            elapsed_ms,
+            q.expected_rel_paths
+        );
+        if !passed {
+            for (i, h) in top_hits.iter().enumerate().take(3) {
+                println!("        #{} {} {:?}", i + 1, h.rel_path, h.heading_path);
+            }
+        }
+        results.push(QueryResult {
+            id: q.id.clone(),
+            prompt: q.prompt.clone(),
+            expected_rel_paths: q.expected_rel_paths.clone(),
+            passed,
+            rank,
+            matched_path,
+            top_hits,
+            elapsed_ms,
+        });
+    }
+    let total = queries.len();
+    let pct = if total == 0 {
+        0.0
+    } else {
+        100.0 * (passed_count as f64) / (total as f64)
+    };
+    let avg_ms = if total == 0 { 0 } else { total_elapsed_ms / (total as u64) };
+    println!();
+    println!("=== summary ===");
+    println!(
+        "passed: {}/{} ({:.1}%)  avg {} ms/query",
+        passed_count, total, pct, avg_ms
+    );
+    let exit_threshold = 0.90_f64;
+    let exit_code = if (pct / 100.0) >= exit_threshold {
+        println!("PASS — top-{top_k} hit rate >= 90% (Sprint E exit criterion)");
+        0
+    } else {
+        println!("FAIL — top-{top_k} hit rate < 90% (Sprint E exit criterion)");
+        1
+    };
+    if let Some(path) = out_path {
+        #[derive(Serialize)]
+        struct Baseline {
+            queries_path: String,
+            embedder: String,
+            top_k: usize,
+            total: usize,
+            passed: usize,
+            pct: f64,
+            avg_ms_per_query: u64,
+            results: Vec<QueryResult>,
+        }
+        let baseline = Baseline {
+            queries_path: queries_path.to_string_lossy().to_string(),
+            embedder: label,
+            top_k,
+            total,
+            passed: passed_count,
+            pct,
+            avg_ms_per_query: avg_ms,
+            results,
+        };
+        match serde_json::to_string_pretty(&baseline) {
+            Ok(json) => {
+                if let Some(parent) = path.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                if let Err(err) = std::fs::write(&path, json) {
+                    eprintln!("bestel kb-eval: write baseline {path:?} failed: {err}");
+                } else {
+                    println!("baseline written: {}", path.display());
+                }
+            }
+            Err(err) => eprintln!("bestel kb-eval: serialize baseline failed: {err}"),
+        }
+    }
+    exit_code
+}
+
+fn run_db(args: Vec<String>) {
+    let rt = match tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(rt) => rt,
+        Err(e) => {
+            eprintln!("bestel: failed to start tokio runtime: {e}");
+            std::process::exit(1);
+        }
+    };
+    let exit_code = rt.block_on(async { run_db_inner(args).await });
+    std::process::exit(exit_code);
+}
+
+async fn run_db_inner(raw_args: Vec<String>) -> i32 {
+    use bestel_core::persistence::{
+        default_db_path, global_db, query_runs_failing_identity, Db,
+    };
+    use std::path::PathBuf;
+    use std::time::Instant;
+
+    let Some(sub) = raw_args.first().cloned() else {
+        eprintln!("bestel db: missing subcommand (migrate|stats|import|query|bench)");
+        return 2;
+    };
+    let rest: Vec<String> = raw_args.into_iter().skip(1).collect();
+
+    match sub.as_str() {
+        "migrate" => {
+            let path = match default_db_path() {
+                Some(p) => p,
+                None => {
+                    eprintln!("bestel db migrate: no home dir resolvable");
+                    return 1;
+                }
+            };
+            match Db::open(&path) {
+                Ok(_) => {
+                    println!("OK migrated {}", path.display());
+                    0
+                }
+                Err(e) => {
+                    eprintln!("bestel db migrate: {e}");
+                    1
+                }
+            }
+        }
+        "stats" => {
+            let path = default_db_path();
+            let db = match global_db() {
+                Some(d) => d,
+                None => {
+                    eprintln!("bestel db stats: could not open default DB");
+                    return 1;
+                }
+            };
+            match db.stats(path.as_deref()) {
+                Ok(s) => {
+                    println!("schema_version    : {}", s.schema_version);
+                    println!("runs              : {}", s.runs);
+                    println!("lint_findings     : {}", s.lint_findings);
+                    println!("verifier_results  : {}", s.verifier_results);
+                    println!("sessions          : {}", s.sessions);
+                    println!("builds_snapshot   : {}", s.builds_snapshot);
+                    println!("kb_versions       : {}", s.kb_versions);
+                    println!("bytes_on_disk     : {}", s.bytes_on_disk);
+                    0
+                }
+                Err(e) => {
+                    eprintln!("bestel db stats: {e}");
+                    1
+                }
+            }
+        }
+        "import" => {
+            let backup = rest.iter().any(|a| a == "--backup");
+            match db_import(backup).await {
+                Ok((inserted, skipped)) => {
+                    println!("OK imported runs: {inserted} inserted, {skipped} skipped");
+                    0
+                }
+                Err(e) => {
+                    eprintln!("bestel db import: {e}");
+                    1
+                }
+            }
+        }
+        "query" => {
+            let mut sql: Option<String> = None;
+            let mut i = 0;
+            while i < rest.len() {
+                if rest[i] == "--sql" {
+                    i += 1;
+                    if let Some(v) = rest.get(i) {
+                        sql = Some(v.clone());
+                    }
+                } else {
+                    eprintln!("bestel db query: unknown arg '{}'", rest[i]);
+                    return 2;
+                }
+                i += 1;
+            }
+            let Some(sql) = sql else {
+                eprintln!("bestel db query: missing --sql \"<SELECT ...>\"");
+                return 2;
+            };
+            let db = match global_db() {
+                Some(d) => d,
+                None => {
+                    eprintln!("bestel db query: could not open default DB");
+                    return 1;
+                }
+            };
+            match db_query_passthrough(&db, &sql) {
+                Ok(()) => 0,
+                Err(e) => {
+                    eprintln!("bestel db query: {e}");
+                    1
+                }
+            }
+        }
+        "bench" => {
+            let mut n: usize = 1000;
+            let mut i = 0;
+            while i < rest.len() {
+                if rest[i] == "--n" {
+                    i += 1;
+                    if let Some(v) = rest.get(i).and_then(|s| s.parse::<usize>().ok()) {
+                        n = v;
+                    }
+                } else {
+                    eprintln!("bestel db bench: unknown arg '{}'", rest[i]);
+                    return 2;
+                }
+                i += 1;
+            }
+            let path: PathBuf = std::env::temp_dir().join(format!(
+                "bestel-bench-{}.sqlite3",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_millis())
+                    .unwrap_or(0)
+            ));
+            let db = match Db::open(&path) {
+                Ok(d) => d,
+                Err(e) => {
+                    eprintln!("bestel db bench: open {} failed: {e}", path.display());
+                    return 1;
+                }
+            };
+            if let Err(e) = db_bench_seed(&db, n) {
+                eprintln!("bestel db bench: seed failed: {e}");
+                return 1;
+            }
+            let started = Instant::now();
+            let rows = match query_runs_failing_identity(&db) {
+                Ok(rows) => rows,
+                Err(e) => {
+                    eprintln!("bestel db bench: query failed: {e}");
+                    return 1;
+                }
+            };
+            let elapsed = started.elapsed();
+            println!(
+                "OK seeded {n} runs · query 'haiku FAIL identity card' returned {} rows in {:.2} ms",
+                rows.len(),
+                elapsed.as_secs_f64() * 1000.0,
+            );
+            let _ = std::fs::remove_file(&path);
+            let _ = std::fs::remove_file(path.with_extension("sqlite3-wal"));
+            let _ = std::fs::remove_file(path.with_extension("sqlite3-shm"));
+            if elapsed.as_millis() < 100 {
+                0
+            } else {
+                eprintln!(
+                    "WARN query exceeded 100ms ceiling (Sprint G2 exit criterion)"
+                );
+                1
+            }
+        }
+        other => {
+            eprintln!("bestel db: unknown subcommand '{other}'");
+            2
+        }
+    }
+}
+
+async fn db_import(backup: bool) -> anyhow::Result<(usize, usize)> {
+    use bestel_core::llm::recorder::{debug_runs_dir, PersistedRun};
+    use bestel_core::persistence::{global_db, insert_run};
+    use chrono::Utc;
+
+    let dir = match debug_runs_dir() {
+        Some(d) => d,
+        None => return Ok((0, 0)),
+    };
+    if !dir.exists() {
+        return Ok((0, 0));
+    }
+    if backup {
+        let stamp = Utc::now().format("%Y%m%dT%H%M%S").to_string();
+        let backup_root = dir
+            .parent()
+            .ok_or_else(|| anyhow::anyhow!("no parent for {}", dir.display()))?
+            .join("backup")
+            .join(format!("debug-chats-{stamp}"));
+        std::fs::create_dir_all(&backup_root)?;
+        for entry in std::fs::read_dir(&dir)? {
+            let entry = entry?;
+            let p = entry.path();
+            if p.extension().and_then(|s| s.to_str()) == Some("json") {
+                let dst = backup_root.join(p.file_name().unwrap_or_default());
+                std::fs::copy(&p, &dst)?;
+            }
+        }
+        println!("backup copied to {}", backup_root.display());
+    }
+    let Some(db) = global_db() else {
+        return Err(anyhow::anyhow!("could not open SQLite DB"));
+    };
+    let mut inserted = 0usize;
+    let mut skipped = 0usize;
+    for entry in std::fs::read_dir(&dir)? {
+        let entry = entry?;
+        let p = entry.path();
+        if p.extension().and_then(|s| s.to_str()) != Some("json") {
+            continue;
+        }
+        let raw = match std::fs::read_to_string(&p) {
+            Ok(s) => s,
+            Err(_) => {
+                skipped += 1;
+                continue;
+            }
+        };
+        let run: PersistedRun = match serde_json::from_str(&raw) {
+            Ok(r) => r,
+            Err(_) => {
+                skipped += 1;
+                continue;
+            }
+        };
+        if let Err(_) = insert_run(&db, &run) {
+            skipped += 1;
+            continue;
+        }
+        inserted += 1;
+    }
+    Ok((inserted, skipped))
+}
+
+fn db_query_passthrough(
+    db: &bestel_core::persistence::Db,
+    sql: &str,
+) -> anyhow::Result<()> {
+    db.with_conn_rusqlite(|c| {
+        let mut stmt = c.prepare(sql)?;
+        let col_count = stmt.column_count();
+        let col_names: Vec<String> = (0..col_count)
+            .map(|i| stmt.column_name(i).unwrap_or("?").to_string())
+            .collect();
+        println!("{}", col_names.join("\t"));
+        let mut rows = stmt.query([])?;
+        while let Some(row) = rows.next()? {
+            let mut cells: Vec<String> = Vec::with_capacity(col_count);
+            for i in 0..col_count {
+                let v: rusqlite::types::Value = row.get(i)?;
+                cells.push(format_sql_value(&v));
+            }
+            println!("{}", cells.join("\t"));
+        }
+        Ok(())
+    })
+}
+
+fn format_sql_value(v: &rusqlite::types::Value) -> String {
+    use rusqlite::types::Value;
+    match v {
+        Value::Null => "NULL".to_string(),
+        Value::Integer(i) => i.to_string(),
+        Value::Real(r) => r.to_string(),
+        Value::Text(s) => s.clone(),
+        Value::Blob(b) => format!("<blob {} bytes>", b.len()),
+    }
+}
+
+fn db_bench_seed(
+    db: &bestel_core::persistence::Db,
+    n: usize,
+) -> anyhow::Result<()> {
+    use bestel_core::llm::recorder::{ChatStats, PersistedRun};
+    use bestel_core::persistence::{insert_lint_finding, insert_run, LintFindingRow};
+
+    let providers = ["anthropic", "ollama"];
+    let models = [
+        "claude-haiku-4-5",
+        "claude-sonnet-4-6",
+        "claude-opus-4-7",
+        "ollama:qwen3:8b",
+    ];
+    for i in 0..n {
+        let model = models[i % models.len()];
+        let provider = if model.starts_with("ollama") { providers[1] } else { providers[0] };
+        let id = format!("bench-{i:06}");
+        let run = PersistedRun {
+            id: id.clone(),
+            started_at: format!("2026-05-09T10:{:02}:{:02}Z", (i / 60) % 60, i % 60),
+            ended_at: None,
+            source: "bench".into(),
+            provider: provider.into(),
+            model_id: model.into(),
+            model_display_name: model.into(),
+            user_text: "build review".into(),
+            user_attachments: Vec::new(),
+            assistant_segments: Vec::new(),
+            final_text: "draft".into(),
+            stats: ChatStats::default(),
+            error: None,
+        };
+        insert_run(db, &run)?;
+        if model.contains("haiku") && i % 3 == 0 {
+            insert_lint_finding(
+                db,
+                &LintFindingRow {
+                    run_id: id,
+                    rule: "BUILD_IDENTITY_REQUIRED".into(),
+                    severity: "fail".into(),
+                    message: "missing Identity: line".into(),
+                },
+            )?;
+        }
+    }
+    Ok(())
+}
+
 fn run_mcp_serve() {
     let rt = match tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -465,7 +1465,14 @@ fn run_mcp_serve() {
             std::process::exit(1);
         }
     };
-    if let Err(e) = rt.block_on(bestel_core::mcp::run_stdio_server()) {
+    let result: Result<()> = rt.block_on(async {
+        match bestel_core::llm::kb::bootstrap_global().await {
+            Ok(_) => {}
+            Err(e) => eprintln!("bestel mcp-serve: KB bootstrap error (continuing): {e}"),
+        }
+        bestel_core::mcp::run_stdio_server().await
+    });
+    if let Err(e) = result {
         eprintln!("bestel mcp-serve: {e}");
         std::process::exit(1);
     }
@@ -505,6 +1512,7 @@ fn run_tauri() {
                 commands::get_debug_run,
                 commands::delete_debug_run,
                 commands::delete_all_debug_runs,
+                commands::lint_debug_run,
                 commands::dev_export_all_runs,
                 commands::list_api_keys,
                 commands::set_api_key,
@@ -540,6 +1548,15 @@ async fn bootstrap_runtime(app: tauri::AppHandle) {
     boot_prompts_watcher(&app);
     boot_provider_status(&app).await;
     boot_data_refresh();
+    boot_kb_engine().await;
+}
+
+async fn boot_kb_engine() {
+    match bestel_core::llm::kb::bootstrap_global().await {
+        Ok(true) => tracing::info!(target: "bestel", "KB engine bootstrapped"),
+        Ok(false) => tracing::info!(target: "bestel", "KB engine disabled — no embedding backend or corpus"),
+        Err(e) => tracing::warn!(target: "bestel", "KB bootstrap error: {e:?}"),
+    }
 }
 
 /// Spawn background daily refresh tasks for the offline data catalogues:

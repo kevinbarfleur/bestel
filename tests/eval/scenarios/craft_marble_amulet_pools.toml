@@ -1,0 +1,23 @@
+# Generated from tests/eval/eval_set.toml — do not hand-edit.
+# Category: craft
+
+name = "craft_marble_amulet_pools"
+provider = "any"
+prompt = """
+what mod pool can i actually hit on a marble amulet? im trying to chaos roll one for life regen + chaos res but want to know what's possible
+"""
+timeout_secs = 240
+cost = "low"
+
+[[expectations]]
+must_match = [
+  "chaos resistance",
+  "life regen",
+  "Marble Amulet",
+]
+must_not_match = [
+  "T1 ilvl 86 spawn weight",
+]
+must_not_expose_reasoning = true
+must_have_panel_data_first = true
+must_cite_only_fetched_urls = true

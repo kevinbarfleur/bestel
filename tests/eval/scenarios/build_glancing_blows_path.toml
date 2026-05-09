@@ -1,0 +1,22 @@
+# Generated from tests/eval/eval_set.toml — do not hand-edit.
+# Category: build
+
+name = "build_glancing_blows_path"
+provider = "any"
+build_fixture = "poe1_inquisitor"
+prompt = """
+should i path through glancing blows or stick with spell suppression for this character
+"""
+timeout_secs = 240
+cost = "low"
+
+[[expectations]]
+must_match = [
+  "Identity:",
+  "Glancing Blows",
+  "Suppression",
+]
+must_not_expose_reasoning = true
+must_have_panel_data_first = true
+must_cite_only_fetched_urls = true
+must_have_identity_card_if_build = true

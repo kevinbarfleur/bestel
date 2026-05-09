@@ -1,0 +1,184 @@
+# Sprint E P8 — KB retrieval validation set.
+#
+# 30 queries each paired with one or more legitimate target files. The eval
+# scores top-5 hit rate: a query passes if any returned passage has a
+# `rel_path` whose tail matches ANY entry in `expected_rel_paths`. Several
+# queries cross multiple references (e.g. "bulk trade tabs" is documented
+# both in `11_endgame_economy_trade_leagues.md` and
+# `21_currency_and_barter_taxonomy.md`); listing both keeps the metric
+# from punishing semantically-correct retrievals.
+#
+# Schema:
+#   [[query]]
+#   id = "kb_001"
+#   prompt = "what is spell suppression cap"
+#   expected_rel_paths = ["08_defence_recovery_survivability.md"]
+#
+# Exit criteria (ROADMAP § Sprint E): >= 27/30 (90%).
+
+[[query]]
+id = "kb_001_suppression_cap"
+prompt = "what is the spell suppression cap and how does it interact with chance to suppress"
+expected_rel_paths = ["08_defence_recovery_survivability.md"]
+
+[[query]]
+id = "kb_002_aspect_of_the_spider"
+prompt = "how do hindering ailments stack with aspect of the spider"
+expected_rel_paths = [
+  "07_offence_damage_scaling.md",
+  "10_skills_gems_passives_ascendancies.md",
+]
+
+[[query]]
+id = "kb_003_chaos_resist"
+prompt = "what is the default chaos resistance baseline at high level"
+expected_rel_paths = [
+  "06_character_stats_and_mechanics.md",
+  "07_offence_damage_scaling.md",
+  "08_defence_recovery_survivability.md",
+]
+
+[[query]]
+id = "kb_004_eldritch_implicit"
+prompt = "which slots can carry eldritch implicits in Path of Exile 1"
+expected_rel_paths = ["09_itemisation_crafting.md"]
+
+[[query]]
+id = "kb_005_atlas_voidstones"
+prompt = "what do the four voidstones unlock on the atlas"
+expected_rel_paths = ["18_atlas_and_endgame_mechanics.md"]
+
+[[query]]
+id = "kb_006_currency_taxonomy"
+prompt = "explain the difference between alteration orb and chaos orb mechanically"
+expected_rel_paths = [
+  "21_currency_and_barter_taxonomy.md",
+  "09_itemisation_crafting.md",
+  "31_answer_mode_examples.md",
+]
+
+[[query]]
+id = "kb_007_ssf_constraints"
+prompt = "what are the trade restrictions in solo self found"
+expected_rel_paths = ["23_hardcore_softcore_ssf_mode_differences.md"]
+
+[[query]]
+id = "kb_008_pob_calc_failures"
+prompt = "what should I do when pob_calc returns a failure"
+expected_rel_paths = ["28_tool_failure_policy.md"]
+
+[[query]]
+id = "kb_009_resolute_technique_scope"
+prompt = "what does resolute technique disable and what does it not affect"
+expected_rel_paths = ["29_known_mechanics_tripwires.md"]
+
+[[query]]
+id = "kb_010_voices_cluster_math"
+prompt = "how many small passives do voices clusters give versus normal large clusters"
+expected_rel_paths = ["29_known_mechanics_tripwires.md"]
+
+[[query]]
+id = "kb_011_panel_grammar"
+prompt = "what does the panel-data marker look like and where does it go"
+expected_rel_paths = ["30_panel_marker_grammar.md"]
+
+[[query]]
+id = "kb_012_brief_mechanics_mode"
+prompt = "what does the brief mechanics answer mode look like with example"
+expected_rel_paths = ["31_answer_mode_examples.md"]
+
+[[query]]
+id = "kb_013_off_topic_refusal"
+prompt = "show me the canonical off-topic refusal example"
+expected_rel_paths = ["31_answer_mode_examples.md"]
+
+[[query]]
+id = "kb_014_build_archetypes"
+prompt = "what are the three archetype axes Bestel uses for builds"
+expected_rel_paths = ["17_build_archetype_taxonomy.md"]
+
+[[query]]
+id = "kb_015_creators_methodology"
+prompt = "which creators does Bestel quote and how to attribute their builds"
+expected_rel_paths = ["16_build_methodology_and_creators.md"]
+
+[[query]]
+id = "kb_016_source_tier_blocked"
+prompt = "which seo blogs are on the blocked tier and why"
+expected_rel_paths = ["15_source_registry.md"]
+
+[[query]]
+id = "kb_017_validation_self_correction"
+prompt = "how should Bestel self-correct after a wrong recall"
+expected_rel_paths = ["26_validation_and_self_correction.md"]
+
+[[query]]
+id = "kb_018_validation_failure_modes"
+prompt = "what are the common validation failure modes for build advice"
+expected_rel_paths = ["14_validation_and_failure_modes.md"]
+
+[[query]]
+id = "kb_019_pob_engine_integration"
+prompt = "how does Bestel call the headless pob engine and what are the limits"
+expected_rel_paths = ["25_pob_engine_integration.md"]
+
+[[query]]
+id = "kb_020_retrieval_playbooks"
+prompt = "what is the playbook for crafting questions vs build questions"
+expected_rel_paths = ["13_retrieval_playbooks.md"]
+
+[[query]]
+id = "kb_021_glossary_lookup"
+prompt = "what does pseudo APS mean and how is it used as a breakpoint shorthand"
+expected_rel_paths = [
+  "12_vocabulary_glossary.md",
+  "07_offence_damage_scaling.md",
+]
+
+[[query]]
+id = "kb_022_response_contracts"
+prompt = "what is the identity card grammar and where is it specified"
+expected_rel_paths = ["27_response_contracts.md"]
+
+[[query]]
+id = "kb_023_endgame_trade"
+prompt = "how do bulk trade tabs work for currency exchanges"
+expected_rel_paths = [
+  "11_endgame_economy_trade_leagues.md",
+  "21_currency_and_barter_taxonomy.md",
+]
+
+[[query]]
+id = "kb_024_skill_gems_overview"
+prompt = "what are vaal skills and how do souls accumulate"
+expected_rel_paths = ["10_skills_gems_passives_ascendancies.md"]
+
+[[query]]
+id = "kb_025_basetype_identity"
+prompt = "what defines the identity of a base type for crafting choice"
+expected_rel_paths = ["20_item_basetype_identity.md"]
+
+[[query]]
+id = "kb_026_combat_animation"
+prompt = "what affects animation cancel windows in combat"
+expected_rel_paths = ["19_combat_movement_animation.md"]
+
+[[query]]
+id = "kb_027_trade_scams"
+prompt = "what scams should I watch out for when trading"
+expected_rel_paths = ["22_trade_etiquette_and_scams.md"]
+
+[[query]]
+id = "kb_028_patch_history"
+prompt = "give me a quick history of major poe1 expansion patches"
+expected_rel_paths = ["24_patch_history_meta.md"]
+
+[[query]]
+id = "kb_029_arpg_foundations"
+prompt = "what are the foundational concepts of an arpg loot loop"
+expected_rel_paths = ["02_arpg_foundations.md"]
+
+[[query]]
+id = "kb_030_ggg_philosophy"
+prompt = "explain GGG's design philosophy on power and friction"
+expected_rel_paths = ["03_ggg_design_philosophy.md"]
