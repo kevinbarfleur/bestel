@@ -41,7 +41,11 @@ const open = (url?: string) => {
 .art-src__row {
   display: flex;
   gap: 8px;
-  align-items: flex-start;
+  /* baseline so the [N] sits on the same line as `art-src__page`
+   * regardless of font-size / line-height differences between the
+   * number and the body. flex-start would stick the number to the
+   * top of the row's content box, hovering above the page text. */
+  align-items: baseline;
   padding-bottom: 6px;
   border-bottom: 1px solid var(--paper-line);
 }
@@ -53,9 +57,12 @@ const open = (url?: string) => {
   flex: none;
   min-width: 18px;
   font-family: var(--hand-display);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   color: var(--amber);
+  /* match the body's line-height so the [N] sits on the same baseline
+   * as `art-src__page` once `align-items: baseline` is applied. */
+  line-height: 1.5;
 }
 .art-src__body {
   flex: 1;

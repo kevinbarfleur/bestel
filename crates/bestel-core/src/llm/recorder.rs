@@ -176,6 +176,13 @@ impl Recorder {
                 });
                 self.tools.insert(id.clone(), self.segments.len() - 1);
             }
+            LlmDelta::ToolDetailUpdate { id, summary_input } => {
+                if let Some(&idx) = self.tools.get(id) {
+                    if let PersistedSegment::Tool { detail, .. } = &mut self.segments[idx] {
+                        *detail = Some(summary_input.clone());
+                    }
+                }
+            }
             LlmDelta::ToolOutput { id, chunk } => {
                 if let Some(&idx) = self.tools.get(id) {
                     if let PersistedSegment::Tool { outputs, .. } = &mut self.segments[idx] {
@@ -224,6 +231,15 @@ impl Recorder {
             }
             LlmDelta::Verifier(v) => {
                 self.stats.verifier_verdict = Some(v.clone());
+            }
+            LlmDelta::SheetDraftUpdate { .. }
+            | LlmDelta::SheetAskUser { .. }
+            | LlmDelta::SheetInterviewOpen { .. }
+            | LlmDelta::SheetFinalized { .. }
+            | LlmDelta::SheetLoaded { .. } => {
+                // Sheet UI events — not persisted in the run JSON. The
+                // sheet itself lives in `build_sheets` (SQLite mirror), and
+                // the chat run only references it by id.
             }
             LlmDelta::Error(msg) => {
                 self.error = Some(msg.clone());

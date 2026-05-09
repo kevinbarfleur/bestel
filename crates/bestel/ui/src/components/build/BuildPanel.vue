@@ -351,6 +351,13 @@ const tipMainDps = (): string => {
       <!-- Scrollable body — every section in leader-dot grammar -->
       <div class="bp-body runic-scrollbar">
 
+        <!-- Slot for cards that are tied to the build identity but live
+             outside this component (Build Sheet drafting / linked-sheet
+             card). Rendered as the FIRST item inside the scrollable body
+             so it sits right under the sticky header (class + ascendancy)
+             and above the vitals/resists/skills sections. -->
+        <slot name="after-header" />
+
         <!-- Vitals — 2×2 BIG numbers (life, es, mana, spirit/evasion) -->
         <section class="bp-section">
           <div class="bp-h">

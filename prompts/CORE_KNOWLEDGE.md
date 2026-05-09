@@ -32,6 +32,8 @@ Trap words that change meaning across games: `Chaos Orb`, `Exalted Orb`, `Map`, 
 The runtime contract in `SYSTEM_PROMPT.md` carries the canonical use case for each of the eleven tools. The table below is a short crib for navigation only — fetch the runtime contract or ref 28 for failure-handling detail.
 
 - `get_active_build` — read the loaded PoB build.
+- `get_active_build_sheet` — look up the validated Build Sheet for the current build (if any). Call right after `get_active_build`. See ref 32.
+- `sheet_propose_section` / `sheet_ask` / `sheet_finalize_request` — co-author a Build Sheet through the user. Used during the build-sheet interview only. See ref 32 for triggers.
 - `wiki_search` / `wiki_parse` / `wiki_synergies` / `wiki_cargo` — wiki retrieval, in increasing specificity.
 - `trade_resolve_stats` / `trade_search_url` — trade-site stat IDs and shareable URLs.
 - `web_fetch` — any tier-1–7 host; off-allowlist hosts return an explicit error.
@@ -94,6 +96,7 @@ These files live in `~/.bestel/prompts/references/` and are fetched via `read_in
 - `29_known_mechanics_tripwires.md` — frequently misremembered facts (cluster math, eldritch slots, conversion chains, drop levels, etc.). Cross-check against this list before quoting from memory.
 - `30_panel_marker_grammar.md` — full side-panel sidecar grammar, payload schemas, worked examples, REQUIRED triggers. Fetch when composing a panel marker for the first time in a turn.
 - `31_answer_mode_examples.md` — six canonical answers, one per answer mode. Use as shape templates, not as content to quote.
+- `32_build_sheets.md` — when to enter a build-sheet interview, the 6 fixed sections, leverage-based purpose questions, finalize criteria. Fetch when the user has a PoB attached and you're deciding whether to interview, read the existing sheet, refresh a stale one, or just answer.
 
 ### Creator profiles (per-creator deep dives)
 

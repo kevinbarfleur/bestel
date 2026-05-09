@@ -134,8 +134,23 @@ impl AnthropicClient {
                         }));
                     }
                 }
-                if !m.content.is_empty() || blocks.is_empty() {
+                if !m.content.trim().is_empty() {
                     blocks.push(json!({"type": "text", "text": m.content}));
+                } else if blocks.is_empty() {
+                    // 2026-05-09 — Anthropic rejects messages whose only
+                    // content block is `{type: "text", text: ""}` AND
+                    // also rejects whitespace-only text blocks
+                    // ("text content blocks must contain non-whitespace
+                    // text"). This happens when an assistant turn ended
+                    // on a forced tool_use (e.g. sheet_open_interview)
+                    // without emitting any final text — the history then
+                    // stored `content: ""`. The placeholder must be
+                    // non-whitespace; an ellipsis is short, semantically
+                    // neutral, and the model treats it as a no-op
+                    // continuation cue. Whitespace-only `m.content`
+                    // values from upstream go through the same trim,
+                    // so they hit this branch too.
+                    blocks.push(json!({"type": "text", "text": "…"}));
                 }
                 json!({"role": role, "content": blocks})
             })
@@ -158,6 +173,102 @@ impl AnthropicClient {
             ),
             None => "Build state: detached".to_string(),
         };
+        // Pre-compute the Build Sheet status so the model sees it AT TURN
+        // START rather than having to remember to call `get_active_build_sheet`
+        // and branch on the result. The 2026-05-09 audit showed the
+        // skill-text/system-prompt approach failing — the model loaded the
+        // build-review skill *after* doing wiki_parse, so the STEP 0 pivot
+        // never fired. Surfacing the status as a runtime tag means the rules
+        // can reference observable state instead of relying on the model to
+        // probe.
+        //
+        // Format:
+        //   "Build sheet: absent (fingerprint=…)"            — no validated sheet
+        //   "Build sheet: validated, fresh (id=N)"           — sheet found, hash matches
+        //   "Build sheet: stale-since-Xd (id=N)"             — sheet found, hash drift
+        //   "" (empty)                                       — no build / no DB
+        //
+        // `sheet_status_kind` is used downstream to gate the iter-2 forced
+        // tool_choice (see force_pivot_to_sheet below).
+        #[derive(Clone, Copy, PartialEq, Eq)]
+        enum SheetStatusKind {
+            Absent,
+            Fresh,
+            Stale,
+            Unknown,
+        }
+        // Pre-compute fingerprint + canonical hash + sheet lookup once per
+        // turn. Results feed both the runtime system tag (so the agent
+        // sees them without recomputing) and the iter > 8 deferred-force
+        // logic below. `sheet_pob_hash_for_prompt` is the CURRENT PoB
+        // hash — the agent passes it to `sheet_finalize_request` (and to
+        // `get_active_build_sheet` when checking staleness manually).
+        let (
+            build_sheet_line,
+            sheet_fingerprint_for_prompt,
+            sheet_pob_hash_for_prompt,
+            sheet_status_kind,
+        ) = match ctx.get() {
+            Some(b) => match crate::sheets::compute_fingerprint_from_pob(&b) {
+                Some(fp) => {
+                    let canonical = serde_json::to_string(&b).unwrap_or_default();
+                    let current_hash = crate::sheets::compute_pob_hash(&canonical);
+                    match crate::persistence::global_db() {
+                        Some(db) => match crate::sheets::store::find_by_fingerprint(&db, &fp) {
+                            Ok(Some(row)) => {
+                                if current_hash == row.pob_hash {
+                                    (
+                                        format!("Build sheet: validated, fresh (id={})", row.id),
+                                        Some(fp),
+                                        Some(current_hash),
+                                        SheetStatusKind::Fresh,
+                                    )
+                                } else {
+                                    (
+                                        format!(
+                                            "Build sheet: stale (id={}, hash drift since authoring)",
+                                            row.id
+                                        ),
+                                        Some(fp),
+                                        Some(current_hash),
+                                        SheetStatusKind::Stale,
+                                    )
+                                }
+                            }
+                            Ok(None) => (
+                                format!("Build sheet: absent (fingerprint={fp})"),
+                                Some(fp),
+                                Some(current_hash),
+                                SheetStatusKind::Absent,
+                            ),
+                            Err(e) => {
+                                tracing::warn!(error = ?e, "find_by_fingerprint failed");
+                                (String::new(), None, None, SheetStatusKind::Unknown)
+                            }
+                        },
+                        None => (String::new(), None, None, SheetStatusKind::Unknown),
+                    }
+                }
+                None => (String::new(), None, None, SheetStatusKind::Unknown),
+            },
+            None => (String::new(), None, None, SheetStatusKind::Unknown),
+        };
+
+        // Detect the structured `[INTERVIEW SUBMISSION ...]` cue emitted
+        // by the frontend when the user clicks Submit on a one-shot
+        // interview panel. Used downstream to (a) inject a runtime
+        // directive that overrides the `Build sheet: absent` flow into
+        // a finalize-and-answer flow, and (b) force tool_choice to
+        // `sheet_finalize_request` at iter 2 of that turn so the agent
+        // cannot re-launch the interview by mistake. Without this, the
+        // model loops the interview each time the user submits — the
+        // 2026-05-09 audit reproduced this exact failure twice.
+        let last_user_was_interview_submission = history
+            .iter()
+            .rev()
+            .find(|m| matches!(m.role, super::Role::User))
+            .map(|m| m.content.contains("[INTERVIEW SUBMISSION"))
+            .unwrap_or(false);
         // Sprint C cache breakpoints: split SYSTEM_PROMPT on `<tool_policy>`
         // so the persona + runtime contract live in BP2 (rarely changes), the
         // tool policy + mode router + contracts + failure policy live in BP3
@@ -172,6 +283,7 @@ impl AnthropicClient {
             .map(|m| m.content.clone())
             .filter(|s| !s.trim().is_empty());
         let mut tool_ctx = ToolCtx::new(ctx).context("build ToolCtx")?;
+        tool_ctx = tool_ctx.with_deltas(deltas.clone());
         if let Some(q) = last_user_question {
             tool_ctx = tool_ctx.with_user_question(q);
         }
@@ -228,6 +340,86 @@ impl AnthropicClient {
                 "type": "text",
                 "text": format!("[{}]", build_state_line),
             }));
+            if !build_sheet_line.is_empty() {
+                let mut tag = format!("[{build_sheet_line}]");
+                // Embed the lookup fingerprint right next to the status so
+                // the model never has to recompute it (and risk a mismatch
+                // with the deterministic server-side computation). `sheet_*`
+                // tools accept `fingerprint=…` verbatim — copying this string
+                // is the cheapest possible path.
+                if let Some(fp) = &sheet_fingerprint_for_prompt {
+                    tag.push_str(&format!("\n[Build fingerprint: {fp}]"));
+                }
+                if let Some(hash) = &sheet_pob_hash_for_prompt {
+                    tag.push_str(&format!("\n[Build pob_hash: {hash}]"));
+                }
+                if last_user_was_interview_submission {
+                    // Highest-priority directive: when the previous user
+                    // turn was an interview submission, the only valid
+                    // next move is to finalize. Surfaced before any
+                    // status-specific directive so the model can't get
+                    // confused by `Build sheet: absent` and re-launch the
+                    // interview.
+                    tag.push_str(
+                        "\n[Submission directive: the user has just SUBMITTED a one-shot Build \
+                         Sheet interview (their last message starts with `[INTERVIEW \
+                         SUBMISSION ...]`). Your VERY NEXT tool call (after the iter-1 forced \
+                         get_active_build) MUST be `sheet_finalize_request`. Pass the canonical \
+                         hash from the `Build pob_hash:` tag above as the `pob_hash` field, the \
+                         fingerprint from `Build fingerprint:` as the `fingerprint` field, and \
+                         the section bodies from the `## Sections` block of the user message as \
+                         the `sections[]` array (each entry: id + label + body + confirmed=true). \
+                         Derive `defining_items[]`, `intent[]`, and `known_gaps[]` from the user's \
+                         answers + your earlier analysis. After the call returns, answer the \
+                         user's ORIGINAL question (the one they asked before the interview pivot) \
+                         citing the persisted sheet — `read_from_sheet · key1 · key2` italic at \
+                         the end. Do NOT call sheet_open_interview again under any circumstance \
+                         in this turn — the user already submitted, looping is the bug we're \
+                         fixing.]",
+                    );
+                } else if matches!(sheet_status_kind, SheetStatusKind::Absent) {
+                    tag.push_str(
+                        "\n[Sheet directive: a build is loaded but has no validated Build Sheet. \
+                         If the user's question is build-specific (review / why-do-I-die / defence \
+                         audit / itemisation / next-upgrade / content-feasibility), enter the \
+                         one-shot interview flow: (1) deep analysis cap ~7 tool calls — \
+                         pob_calc(defence), pob_calc(offence), read_internal_reference(\"thresholds/<tier>.md\"), \
+                         and 2-3 wiki_parse / kb_search on the main skill + defining uniques; then \
+                         (2) ONE call to sheet_open_interview with all 6 sections pre-drafted + 3-7 \
+                         leverage questions across sections + a notes_prompt; then (3) end your \
+                         turn silently — no prose. The user fills the panel in one round and the \
+                         submission arrives next turn as a `[INTERVIEW SUBMISSION]` user message; \
+                         parse it, call sheet_finalize_request once, then answer the original \
+                         question citing the sheet. Do NOT use sheet_propose_section or sheet_ask \
+                         for authoring — those are follow-up-edit tools only. Override only if the \
+                         user explicitly says 'skip the sheet' or 'audit me from scratch'. See \
+                         ref 32 for the full procedure.]",
+                    );
+                } else if matches!(sheet_status_kind, SheetStatusKind::Fresh) {
+                    tag.push_str(
+                        "\n[Sheet directive: a validated, fresh Build Sheet exists for this build. \
+                         For build-specific questions, call get_active_build_sheet once with the \
+                         fingerprint above (copy verbatim) to fetch the body, then read from the \
+                         sheet's sections (identity / archetype / damage / defense / items / intent) \
+                         as the source of truth. Skip pob_calc and threshold lookups unless the \
+                         sheet does not cover the question. End the answer with \
+                         `read_from_sheet · key1 · key2` in italic.]",
+                    );
+                } else if matches!(sheet_status_kind, SheetStatusKind::Stale) {
+                    tag.push_str(
+                        "\n[Sheet directive: a Build Sheet exists but the PoB hash differs since \
+                         authoring (gear / gem swaps). Surface the drift in plain prose before \
+                         answering, then default to use-as-is unless the user explicitly asks to \
+                         refresh. Only re-author the sheet (re-run sheet_open_interview with fresh \
+                         analysis) when the change clearly invalidates the framing — e.g. a \
+                         different main skill or ascendancy.]",
+                    );
+                }
+                system_blocks.push(json!({
+                    "type": "text",
+                    "text": tag,
+                }));
+            }
 
             // Sprint D — force `get_active_build` on iteration 1 whenever a
             // build is loaded. Eliminates the "model decides not to call the
@@ -237,6 +429,41 @@ impl AnthropicClient {
             // fall back to `tool_choice: auto` so the model picks freely.
             let force_build_context =
                 iterations == 1 && !force_finalize && has_active_build;
+            // Sprint UX-2 — deferred force on `sheet_open_interview`. The
+            // legacy iter-2 force on `sheet_propose_section` was dropped
+            // because the new flow requires the model to do deep analysis
+            // FIRST (pob_calc, threshold lookup, wiki_parse on uniques)
+            // before opening the one-shot interview. Forcing the interview
+            // tool too early would skip that analysis and the panel's
+            // pre-drafted bodies would be generic guesses. So we let the
+            // model run analysis freely and only escalate if it stalls past
+            // iter 8 without ever calling `sheet_open_interview`. The
+            // `sheet_open_interview_emitted_already` scan walks the
+            // messages array to detect a prior tool_use of that name so the
+            // force fires at most once and never after a successful call.
+            let sheet_open_interview_emitted_already =
+                messages_contain_tool_use(&messages, super::sheet_tools::SHEET_OPEN_INTERVIEW);
+            let force_pivot_to_sheet = iterations > 8
+                && !force_finalize
+                && has_active_build
+                && matches!(sheet_status_kind, SheetStatusKind::Absent)
+                && !sheet_open_interview_emitted_already
+                && !last_user_was_interview_submission;
+            // 2026-05-09 — when the previous user turn was an interview
+            // submission and the agent has just received the build context
+            // (iter 2 of the post-submission turn), force
+            // `sheet_finalize_request` directly. The bug we're patching:
+            // even with a strong runtime directive in the system prompt,
+            // the model occasionally re-launched `sheet_open_interview`
+            // because `Build sheet: absent` was still true (the sheet
+            // wasn't persisted yet). tool_choice closes that loophole.
+            let sheet_finalize_emitted_already =
+                messages_contain_tool_use(&messages, super::sheet_tools::SHEET_FINALIZE_REQUEST);
+            let force_finalize_after_submission = iterations == 2
+                && !force_finalize
+                && has_active_build
+                && last_user_was_interview_submission
+                && !sheet_finalize_emitted_already;
             let mut body = json!({
                 "model": self.model,
                 "max_tokens": 8192,
@@ -249,6 +476,16 @@ impl AnthropicClient {
                 body["tool_choice"] = json!({
                     "type": "tool",
                     "name": super::tools::GET_ACTIVE_BUILD,
+                });
+            } else if force_finalize_after_submission {
+                body["tool_choice"] = json!({
+                    "type": "tool",
+                    "name": crate::llm::sheet_tools::SHEET_FINALIZE_REQUEST,
+                });
+            } else if force_pivot_to_sheet {
+                body["tool_choice"] = json!({
+                    "type": "tool",
+                    "name": crate::llm::sheet_tools::SHEET_OPEN_INTERVIEW,
                 });
             }
 
@@ -422,6 +659,18 @@ impl AnthropicClient {
                                 .and_then(|i| i.as_u64())
                                 .unwrap_or(0) as usize;
                             if let Some(t) = current_tool_index.remove(&idx) {
+                                if let Ok(input_value) =
+                                    serde_json::from_str::<Value>(&t.input_json)
+                                {
+                                    if let Some(summary_input) =
+                                        super::util::summarize_tool_args(&t.name, &input_value)
+                                    {
+                                        let _ = deltas.send(LlmDelta::ToolDetailUpdate {
+                                            id: t.id.clone(),
+                                            summary_input,
+                                        });
+                                    }
+                                }
                                 tool_uses.push(t);
                             }
                             if thinking_open {
@@ -640,10 +889,9 @@ impl AnthropicClient {
                     findings = verdict.findings.len(),
                     "verifier revise — swapping in minimal_rewrite"
                 );
-                let _ = deltas.send(LlmDelta::TextDelta(format!(
-                    "\n\n[verifier: revised — {} finding(s)]\n",
-                    verdict.findings.len()
-                )));
+                // Verdict surfaces only via `LlmDelta::Verifier` (consumed
+                // by the dev panel badge). Appending a `[verifier: …]`
+                // TextDelta would leak into the visible chat reply.
                 rewrite
             }
             super::verifier::VerdictStatus::Fail => {
@@ -663,13 +911,13 @@ impl AnthropicClient {
                     summary = %summary,
                     "verifier FAIL — emitting fallback"
                 );
-                let fallback = format!(
+                // Same reasoning as the Revise arm: dev panel learns
+                // about the rejection through `LlmDelta::Verifier`; we
+                // do not emit a `[verifier: rejected — …]` block into
+                // the visible reply.
+                format!(
                     "The chronicler must withhold that answer, exile — the verifier flagged it ({summary}). Ask again with a narrower question, or attach a fresh PoB so the engine can ground the numbers."
-                );
-                let _ = deltas.send(LlmDelta::TextDelta(format!(
-                    "\n\n[verifier: rejected — {summary}]\n"
-                )));
-                fallback
+                )
             }
         };
         let _ = deltas.send(LlmDelta::Verifier(verdict));
@@ -770,6 +1018,38 @@ fn accumulate_usage(total: &mut super::UsageStats, usage: &Value) {
     if let Some(v) = usage.get("output_tokens").and_then(|x| x.as_u64()) {
         total.output_tokens += v;
     }
+}
+
+/// Walk the assembled `messages` array and return true when ANY assistant
+/// message has already produced a `tool_use` block whose `name` equals the
+/// supplied tool name. Used by the Sprint UX-2 deferred-force logic in the
+/// agent loop: we only force `sheet_open_interview` when the model has not
+/// already shipped one, so the escalation is a safety net rather than a
+/// repeat-call on every iteration past the cap.
+///
+/// The shape we match is Anthropic's request body convention:
+/// `messages[i].role == "assistant"` AND `messages[i].content` is an array
+/// of content blocks AND at least one block has `type == "tool_use"` AND
+/// `name == <target>`.
+fn messages_contain_tool_use(messages: &[Value], tool_name: &str) -> bool {
+    for m in messages {
+        if m.get("role").and_then(|v| v.as_str()) != Some("assistant") {
+            continue;
+        }
+        let Some(content) = m.get("content").and_then(|v| v.as_array()) else {
+            continue;
+        };
+        for block in content {
+            let is_tool_use = block.get("type").and_then(|v| v.as_str()) == Some("tool_use");
+            if !is_tool_use {
+                continue;
+            }
+            if block.get("name").and_then(|v| v.as_str()) == Some(tool_name) {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 /// Compute USD cost using Anthropic's standard 5m-cache pricing recipe.

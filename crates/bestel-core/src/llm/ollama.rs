@@ -76,7 +76,9 @@ impl OllamaClient {
         ctx: BuildContext,
         deltas: mpsc::UnboundedSender<LlmDelta>,
     ) -> Result<String> {
-        let tool_ctx = ToolCtx::new(ctx.clone()).context("build ToolCtx")?;
+        let tool_ctx = ToolCtx::new(ctx.clone())
+            .context("build ToolCtx")?
+            .with_deltas(deltas.clone());
         // Local 7-8B models drown in 8 tools — drop the niche ones (cargo,
         // trade pair, find_synergies legacy alias) to reduce selection
         // confusion. Anthropic / MCP keep the full surface untouched.
@@ -295,12 +297,18 @@ impl OllamaClient {
                 // show "wiki_parse(title=Resolute Technique)" instead of
                 // just a bare badge. Mirrors the visibility Anthropic
                 // already gives via its native tool_use blocks.
-                let detail = summarize_tool_args(&arguments);
+                let summary_input = super::util::summarize_tool_args(&name, &arguments);
                 let _ = deltas.send(LlmDelta::ToolBegin {
                     id: id.clone(),
                     name: name.clone(),
-                    detail,
+                    detail: summary_input.clone(),
                 });
+                if let Some(s) = summary_input.clone() {
+                    let _ = deltas.send(LlmDelta::ToolDetailUpdate {
+                        id: id.clone(),
+                        summary_input: s,
+                    });
+                }
 
                 let (result, status) = match dispatch(&name, &arguments, &tool_ctx).await {
                     Ok(s) => (s, ToolStatus::Done),
@@ -343,45 +351,6 @@ impl OllamaClient {
         let _ = deltas.send(LlmDelta::MessageEnd);
         Ok(full_assistant)
     }
-}
-
-/// Format the tool call arguments as a compact human-readable detail
-/// string for the delta stream. Used to give the UI parity with
-/// Anthropic which surfaces `tool_use.input` natively.
-fn summarize_tool_args(args: &Value) -> Option<String> {
-    let obj = args.as_object()?;
-    if obj.is_empty() {
-        return None;
-    }
-    let mut parts: Vec<String> = Vec::new();
-    for (k, v) in obj.iter() {
-        let val_str = match v {
-            Value::String(s) => {
-                let s = s.trim();
-                if s.len() > 60 {
-                    format!("\"{}…\"", &s[..59])
-                } else {
-                    format!("\"{s}\"")
-                }
-            }
-            Value::Number(n) => n.to_string(),
-            Value::Bool(b) => b.to_string(),
-            Value::Null => "null".to_string(),
-            other => {
-                let s = other.to_string();
-                if s.len() > 60 {
-                    format!("{}…", &s[..59])
-                } else {
-                    s
-                }
-            }
-        };
-        parts.push(format!("{k}={val_str}"));
-        if parts.len() == 3 {
-            break;
-        }
-    }
-    Some(parts.join(", "))
 }
 
 /// Compress a tool dispatch result into a short summary line for the

@@ -25,6 +25,11 @@ export const useUiStore = defineStore('ui', () => {
    *  or null when no link viewer is mounted. */
   const linkViewerUrl = ref<string | null>(null);
 
+  /** Whether the full-sheet modal (Sprint UX-2.8) is currently open. The
+   *  modal renders the entire validated Build Sheet read-only — opened
+   *  from `BSLinkedSheetCard`'s `View full` button. */
+  const sheetModalOpen = ref(false);
+
   /** Stack of artifacts promoted to the right adaptive panel. The top of
    *  the stack is the visible one. Pop on `goBack()`. Empty stack = panel
    *  is closed. */
@@ -65,6 +70,13 @@ export const useUiStore = defineStore('ui', () => {
     linkViewerUrl.value = null;
   };
 
+  const openSheetModal = () => {
+    sheetModalOpen.value = true;
+  };
+  const closeSheetModal = () => {
+    sheetModalOpen.value = false;
+  };
+
   /** Push an artifact onto the panel stack — opens the panel if closed,
    *  pushes on top of the current one if already open (history grows). */
   const openPanel = (artifact: PanelArtifact) => {
@@ -92,6 +104,7 @@ export const useUiStore = defineStore('ui', () => {
   return {
     picker,
     linkViewerUrl,
+    sheetModalOpen,
     panelArtifact,
     panelHasHistory,
     panelStack,
@@ -102,6 +115,8 @@ export const useUiStore = defineStore('ui', () => {
     close,
     openLinkViewer,
     closeLinkViewer,
+    openSheetModal,
+    closeSheetModal,
     openPanel,
     goBackPanel,
     closePanel,

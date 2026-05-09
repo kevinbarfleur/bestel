@@ -20,6 +20,34 @@ trigger_examples = [
 
 This skill bundles the full Build diagnosis answer-mode checklist. Bestel's normal SYSTEM_PROMPT has a two-line dispatcher; load this skill only when the question matches the triggers above. Length target: 8–18 sentences in 4 paragraphs when the engine succeeded; 4–8 sentences when it failed.
 
+## STEP 0 — Build Sheet check (mandatory, runs before everything else)
+
+Read the runtime tag `Build sheet:` injected into your system context. Three branches.
+
+### `Build sheet: validated, fresh (id=N)`
+
+A sheet already exists and the PoB hash matches. Call `get_active_build_sheet` once with the fingerprint surfaced in the adjacent `Build fingerprint:` tag (copy verbatim — do NOT recompute) to fetch the body. Read `payload.sections.{identity, archetype, damage, defense, items, intent}` BEFORE reaching for any other tool — at finalize time the agent that authored this sheet did the deep analysis and embedded its `pob_calc` numbers, threshold lookups, wiki facts on the defining uniques, and intent constraints into the section bodies. If those sections already answer the user's question, cite them and don't re-derive. If the question goes beyond what the sheet covers — a number that was not computed at authoring (different tier, different mod set, a what-if), a mechanic the sheet does not name, a recent patch impact, fresh engine numbers because the user explicitly asks — do exactly the missing research with `pob_calc` / `wiki_open` / `kb_search` / `read_internal_reference`. Never skip research the sheet cannot answer; never repeat research the sheet already contains. End with a `read_from_sheet · key1 · key2` caption in italic so the user sees the lineage.
+
+### `Build sheet: stale (id=N, hash drift since authoring)`
+
+A sheet exists but the PoB hash differs (gear / gem swaps since authoring). Open with one short paragraph naming what looks like it changed and offer the user a choice: "use the sheet as-is" (default) or "refresh the affected sections" (V2 will route this to a focused mini-interview; for now, run the full deep analysis + a fresh `sheet_open_interview` if the user explicitly asks to refresh). Do not silently re-author the sheet.
+
+### `Build sheet: absent (fingerprint=...)`
+
+No sheet exists yet. **You MUST do your full analysis first, then ship the interview in one shot. No per-section drip — the user has explicitly told us that flow is too saccadé.**
+
+The sequence:
+
+1. **Deep analysis (cap ~7 tool calls)**: call `pob_calc(category: "defence")`, `pob_calc(category: "offence")`, `read_internal_reference("thresholds/<tier>.md")` for the relevant content tier (red_maps / pinnacle / uber_pinnacle), and 2-3 `wiki_parse` / `kb_search` calls on the build's defining uniques + main skill. This is the same research the legacy build-review flow did before sheets existed; you reuse it.
+2. **One `sheet_open_interview` call**: pre-draft EVERY one of the 6 sections (identity, archetype, damage, defense, items, intent) from your analysis. Pre-populate 3-7 leverage-purpose questions across sections (one or two per section that has real ambiguity; some sections may have zero questions). Provide a one-sentence `notes_prompt` for the freeform Notes textarea at the bottom of the panel.
+3. **End your turn with no prose**. The frontend renders one `BSInterviewPanel`; the user fills the entire form in one round.
+4. **On the next turn**, the user replies with one structured `[INTERVIEW SUBMISSION]` user message. Parse it (every section's body, every question's selected options + Other text, the freeform Notes) and call `sheet_finalize_request` with a merged payload — section bodies come from the submission, `defining_items` / `intent` / `known_gaps` come from your analysis cross-referenced with the user's answers.
+5. **Then answer the user's original question** citing the persisted sheet (`read_from_sheet · key1 · key2` italic caption at the end of the answer).
+
+**Forbidden between steps 1 and 2**: no `sheet_propose_section` (that's the legacy per-section path, kept only for follow-up edits to a finalized sheet), no `sheet_ask` (same — single-question follow-ups only), no answer prose, no narration. Once you ship the interview, stop talking until the user submits.
+
+**Override exception**: if the user explicitly says "skip the sheet" / "audit me from scratch" / "I want fresh numbers, no interview" before you've called `sheet_open_interview`, honor that — skip the interview and run the legacy 4-paragraph diagnostic flow below. Acknowledge the override in plain prose in the first sentence of your answer.
+
 ## Identity card (paragraph 0 — one line, mandatory)
 
 `get_active_build` returns a pre-formatted `identity_line` field. Echo it verbatim — never recompose. The card derives from `archetype.{defense, hit_model, mechanic}`, `defining_uniques[]`, and `conversion_chain` but the runtime already concatenates them in the canonical shape.

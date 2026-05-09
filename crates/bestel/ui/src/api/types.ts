@@ -18,6 +18,27 @@ export interface PobBuildSummaryDto {
   header: string;
 }
 
+/** Lightweight Build Sheet row used by the BuildPicker's sheets pane.
+ *  Mirror of `crates/bestel/src/dto.rs::BuildSheetSummaryDto`. The full
+ *  payload is fetched on demand via `getBuildSheet`. */
+export interface BuildSheetSummaryDto {
+  id: string;
+  fingerprint: string;
+  pob_hash: string;
+  name: string;
+  schema_version: number;
+  authored_at: string;
+  updated_at: string;
+  authored_in_chat: string | null;
+  validated: boolean;
+}
+
+/** Full Build Sheet detail — summary fields + parsed payload (sections,
+ *  defining_items, intent, known_gaps). */
+export interface BuildSheetDetailDto extends BuildSheetSummaryDto {
+  payload: unknown;
+}
+
 export interface ResistanceDto {
   name: 'fire' | 'cold' | 'lightning' | 'chaos';
   value: number | null;
@@ -214,10 +235,65 @@ export type LlmDeltaEvent =
   | { kind: 'reasoning_delta'; session_id: number; text: string }
   | { kind: 'reasoning_end'; session_id: number }
   | { kind: 'tool_begin'; session_id: number; id: string; name: string; detail: string | null }
+  | { kind: 'tool_detail_update'; session_id: number; id: string; summary_input: string }
   | { kind: 'tool_output'; session_id: number; id: string; chunk: string }
   | { kind: 'tool_end'; session_id: number; id: string; status: ToolStatus; summary: string | null }
   | ({ kind: 'usage'; session_id: number } & UsageStats)
   | { kind: 'message_end'; session_id: number }
   | { kind: 'error'; session_id: number; message: string }
   | { kind: 'cancelled'; session_id: number }
-  | { kind: 'completed'; session_id: number };
+  | { kind: 'completed'; session_id: number }
+  | {
+      kind: 'sheet_draft_update';
+      session_id: number;
+      section_id: string;
+      title: string;
+      body: string;
+      confirmed: boolean;
+    }
+  | {
+      kind: 'sheet_ask_user';
+      session_id: number;
+      question_id: string;
+      title: string;
+      subtitle: string | null;
+      options: string[];
+      multi: boolean;
+      has_other: boolean;
+    }
+  | {
+      kind: 'sheet_interview_open';
+      session_id: number;
+      payload: {
+        sections: { id: string; title: string; draft_body: string }[];
+        questions: {
+          question_id: string;
+          section_id: string;
+          title: string;
+          subtitle?: string;
+          options: string[];
+          multi?: boolean;
+          has_other?: boolean;
+        }[];
+        notes_prompt: string;
+      };
+    }
+  | {
+      kind: 'sheet_finalized';
+      session_id: number;
+      sheet_id: string;
+      name: string;
+    }
+  | {
+      kind: 'sheet_loaded';
+      session_id: number;
+      sheet_id: string;
+      fingerprint: string;
+      name: string;
+      pob_hash: string;
+      stale: boolean;
+      authored_at: string;
+      updated_at: string;
+      schema_version: number;
+      payload: unknown;
+    };

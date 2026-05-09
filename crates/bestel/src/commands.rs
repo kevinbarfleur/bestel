@@ -15,8 +15,9 @@ use bestel_core::pob::parser::{parse_file, parse_summary};
 use std::sync::Mutex;
 
 use crate::dto::{
-    summary_dto_from_build, AttachmentDto, BuildEvent, DeltaEvent, DetectionDto, KeyStatusDto,
-    ModelProfileDto, PobBuildDto, PobBuildSummaryDto, ProviderStatusEvent,
+    summary_dto_from_build, AttachmentDto, BuildEvent, BuildSheetDetailDto, BuildSheetSummaryDto,
+    DeltaEvent, DetectionDto, KeyStatusDto, ModelProfileDto, PobBuildDto, PobBuildSummaryDto,
+    ProviderStatusEvent,
 };
 use crate::events::{pump_deltas, LLM_DELTA, POB_BUILD, POB_CLEARED, PROVIDER_STATUS};
 use crate::state::AppState;
@@ -742,5 +743,104 @@ pub async fn prompts_reveal_in_finder(app: AppHandle, path: String) -> Result<()
     app.opener()
         .open_path(target.to_string_lossy().to_string(), None::<&str>)
         .map_err(|e| format!("reveal: {e}"))
+}
+
+/// Resolve the conversation-logs directory under `~/.bestel/runtime/`.
+/// Per-chat JSON files live here and are updated by [`chat_log_persist`]
+/// on every history snapshot. The folder is the source of truth for
+/// debugging — a coding agent can read the latest file to inspect what
+/// happened in a chat without needing the user to copy-paste the timeline.
+fn conversation_logs_dir() -> Result<PathBuf, String> {
+    dirs::home_dir()
+        .map(|h| h.join(".bestel").join("runtime").join("conversation-logs"))
+        .ok_or_else(|| "no home dir".to_string())
+}
+
+#[tauri::command]
+pub fn chat_log_persist(chat_id: String, json: String) -> Result<String, String> {
+    let dir = conversation_logs_dir()?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("create logs dir: {e}"))?;
+    // Sanitize chat_id to avoid path traversal — accept only ascii
+    // alphanumerics, dash, and underscore. Reject anything else outright
+    // rather than silently mangling the filename.
+    if !chat_id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        || chat_id.is_empty()
+    {
+        return Err(format!("invalid chat_id '{chat_id}'"));
+    }
+    let path = dir.join(format!("{chat_id}.json"));
+    std::fs::write(&path, json).map_err(|e| format!("write log: {e}"))?;
+    Ok(path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub fn chat_log_dir() -> Result<String, String> {
+    let dir = conversation_logs_dir()?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("create logs dir: {e}"))?;
+    Ok(dir.to_string_lossy().to_string())
+}
+
+// ─── Build Sheets management commands ─────────────────────────────────
+//
+// Surface the persisted Build Sheets (`build_sheets` table) to the
+// BuildPicker so the user can audit, preview, and delete sheets without
+// going through the agent. Pure CRUD over `bestel_core::sheets::store`.
+
+#[tauri::command]
+pub async fn list_build_sheets() -> Result<Vec<BuildSheetSummaryDto>, String> {
+    let db = bestel_core::persistence::global_db()
+        .ok_or_else(|| "database is not initialized".to_string())?;
+    let rows = bestel_core::sheets::store::list_all_sheets(&db)
+        .map_err(|e| format!("list sheets: {e}"))?;
+    Ok(rows
+        .into_iter()
+        .map(|r| BuildSheetSummaryDto {
+            id: r.id,
+            fingerprint: r.fingerprint,
+            pob_hash: r.pob_hash,
+            name: r.name,
+            schema_version: r.schema_version,
+            authored_at: r.authored_at,
+            updated_at: r.updated_at,
+            authored_in_chat: r.authored_in_chat,
+            validated: r.validated,
+        })
+        .collect())
+}
+
+#[tauri::command]
+pub async fn get_build_sheet(id: String) -> Result<Option<BuildSheetDetailDto>, String> {
+    let db = bestel_core::persistence::global_db()
+        .ok_or_else(|| "database is not initialized".to_string())?;
+    let row = bestel_core::sheets::store::get_by_id(&db, &id)
+        .map_err(|e| format!("get sheet: {e}"))?;
+    let Some(row) = row else { return Ok(None) };
+    let parsed = row
+        .parse_payload()
+        .map_err(|e| format!("parse sheet payload: {e}"))?;
+    let payload = serde_json::to_value(&parsed)
+        .map_err(|e| format!("serialize sheet payload: {e}"))?;
+    Ok(Some(BuildSheetDetailDto {
+        id: row.id,
+        fingerprint: row.fingerprint,
+        pob_hash: row.pob_hash,
+        name: row.name,
+        schema_version: row.schema_version,
+        authored_at: row.authored_at,
+        updated_at: row.updated_at,
+        authored_in_chat: row.authored_in_chat,
+        validated: row.validated,
+        payload,
+    }))
+}
+
+#[tauri::command]
+pub async fn delete_build_sheet(id: String) -> Result<bool, String> {
+    let db = bestel_core::persistence::global_db()
+        .ok_or_else(|| "database is not initialized".to_string())?;
+    bestel_core::sheets::store::delete_sheet(&db, &id)
+        .map_err(|e| format!("delete sheet: {e}"))
 }
 

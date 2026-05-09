@@ -53,8 +53,6 @@ const buildSub = computed(() => {
   return parts.length ? parts.join(' · ') : null;
 });
 
-const isDev = import.meta.env.DEV;
-
 const chatLabel = computed(() => {
   if (!activeChatId.value) return 'New chat';
   const c = chatHistory.findActive();
@@ -122,17 +120,6 @@ const chatLabel = computed(() => {
     >
       <RunicIcon name="gear" :size="16" />
     </button>
-
-    <!-- Debug entry (dev mode only) -->
-    <router-link
-      v-if="isDev"
-      to="/debug"
-      class="topbar__pill topbar__pill--ghost"
-      title="Debug · chat history (dev only)"
-    >
-      <span class="topbar__pill-label">debug</span>
-      <span class="topbar__pill-value">runs</span>
-    </router-link>
 
     <!-- Window controls — Windows / Linux. -->
     <div class="topbar__controls">

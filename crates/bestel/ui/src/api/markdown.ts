@@ -4,6 +4,11 @@ import DOMPurify from 'dompurify';
 
 import type { Game } from './types';
 import type { PanelArtifact, PanelArtifactType } from '../stores/ui';
+import { buildIdentityCardHtml, extractIdentity } from './identity';
+// `parseIdentityLine` is re-exported here so consumers (chat store,
+// finalizers) can probe for an Identity card without pulling the full
+// HTML-replacing helper.
+export { parseIdentityLine } from './identity';
 
 const escapeHtml = (s: string): string =>
   s
@@ -270,10 +275,25 @@ export const renderMarkdown = (
   //    ⟦panel:…⟧ markers stay; they're converted to buttons in step 3.
   //    Also strip an unclosed opening tag in case the model truncated mid
   //    JSON (max_tokens hit) — would otherwise leak the raw JSON dump.
-  const stripped = text
+  const sidecarStripped = text
     .replace(PANEL_SIDECAR_RE, '')
     .replace(PANEL_SIDECAR_UNCLOSED_RE, '')
     .trimEnd();
+
+  // Identity card extraction. The grammar is contract-bound to the
+  // first line per `27_response_contracts.md`, but real-world prompts
+  // sometimes leak a hook sentence above it. `extractIdentity` scans
+  // line-by-line so the card lands wherever the model emits it. The
+  // strict trailing-period match in `parseIdentityLine` keeps streaming
+  // mid-line drafts from flickering a partial card — they fall through
+  // to plain markdown until the period arrives.
+  let identityCardHtml = '';
+  let stripped = sidecarStripped;
+  const identityFound = extractIdentity(sidecarStripped);
+  if (identityFound) {
+    identityCardHtml = buildIdentityCardHtml(identityFound.parsed);
+    stripped = identityFound.textWithoutLine;
+  }
   md.renderer.rules.code_inline = (tokens: ReadonlyArray<{ content: string }>, idx: number) => {
     const raw = tokens[idx].content;
     // 1a. Element / status entity tag (`fire:75%`, `good:capped`, …)
@@ -305,6 +325,12 @@ export const renderMarkdown = (
   // 3. Post-pass: replace ⟦panel:type:name⟧ markers with <button> HTML.
   //    Reset the global regex's lastIndex implicitly via .replace().
   html = html.replace(PANEL_MARKER_RE, renderPanelMarker);
+  // 4. Prepend the Identity card (if any) so it renders above the prose
+  //    as a stylized chip block. Keeping it outside markdown-it avoids
+  //    the html:false escape that would mangle the inline HTML.
+  if (identityCardHtml) {
+    html = identityCardHtml + html;
+  }
   return DOMPurify.sanitize(html, {
     ADD_ATTR: [
       'target',

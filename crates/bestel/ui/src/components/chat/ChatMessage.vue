@@ -1,22 +1,79 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 
 import { openLink } from '../../api/tauri';
 import { renderMarkdown } from '../../api/markdown';
 import { useBuildStore } from '../../stores/build';
-import type { ChatMessageVm, ReasoningSegment, TextSegment, ToolSegment } from '../../stores/chat';
+import { useChatStore } from '../../stores/chat';
+import type {
+  ChatMessageVm,
+  ReasoningSegment,
+  SheetAskSegment,
+  SheetDraftSegment,
+  SheetFinalizedSegment,
+  SheetInterviewSegment,
+  TextSegment,
+  ToolSegment,
+} from '../../stores/chat';
+import { useSheetStore } from '../../stores/sheet';
 import ToolCallBadge from './ToolCallBadge.vue';
 import ArtThinking from './artifacts/ArtThinking.vue';
 import ArtPoBImport from './artifacts/ArtPoBImport.vue';
 import ArtWikiPage from './artifacts/ArtWikiPage.vue';
 import AttachmentChip from './artifacts/AttachmentChip.vue';
+import BSDraftedCard from '../build-sheet/BSDraftedCard.vue';
+import BSAskCard from '../build-sheet/BSAskCard.vue';
+import BSInterviewPanel from '../build-sheet/BSInterviewPanel.vue';
+import BSSheetSavedBanner from '../build-sheet/BSSheetSavedBanner.vue';
 import { useUiStore } from '../../stores/ui';
+
+/**
+ * Threshold for the inter-segment thinking indicator. When the assistant
+ * is streaming and the gap since the last delta exceeds this, the turn
+ * list grows a placeholder turn so the user sees Bestel is still working
+ * (between the last `tool_end` and the next `tool_begin` or final text,
+ * the wire is silent — without this the UI looks frozen). Tune higher to
+ * surface the spinner only during real stalls.
+ */
+const THINKING_GAP_MS = 800;
+const THINKING_TICK_MS = 250;
 
 const props = defineProps<{ message: ChatMessageVm }>();
 
 const buildStore = useBuildStore();
 const ui = useUiStore();
+const chat = useChatStore();
+const sheet = useSheetStore();
 const game = computed(() => buildStore.current?.game ?? 'poe1');
+
+/** Confirm a drafted section. Updates the local sheet store optimistically
+ *  so the card switches to its `confirmed` style immediately, then sends a
+ *  short user message back to the agent so the next turn knows the user
+ *  approved the draft and the interview can advance to the next section
+ *  (or to `sheet_finalize_request` if this was the last one). */
+function onConfirmDraft(seg: SheetDraftSegment) {
+  if (seg.confirmed) return;
+  sheet.confirmSection(seg.sectionId);
+  void chat.send(`Confirmed: ${seg.title} section is correct as drafted.`);
+}
+
+/** Edit a drafted section. Opens a native prompt with the current body so
+ *  the user can revise it inline; the new text is sent back to the agent
+ *  as a corrected user message. The native prompt is intentionally minimal
+ *  — a richer inline editor can land later, but the click handlers are
+ *  what currently block the interview from advancing. */
+function onEditDraft(seg: SheetDraftSegment) {
+  if (seg.confirmed) return;
+  const next = window.prompt(
+    `Edit the ${seg.title} section. Press OK to send the corrected text to Bestel.`,
+    seg.body,
+  );
+  if (next === null) return;
+  const trimmed = next.trim();
+  if (!trimmed) return;
+  sheet.editSection(seg.sectionId, trimmed);
+  void chat.send(`Edited: ${seg.title} section should read instead — ${trimmed}`);
+}
 
 /** Set of entity names that have a side-panel artifact in this message,
  *  collected across ALL text segments. The markdown renderer uses this
@@ -80,6 +137,53 @@ const isThinkingOnly = computed(
   () => isAssistant.value && isStreaming.value && props.message.segments.length === 0,
 );
 
+// Heartbeat used by `isThinkingGap` to re-evaluate the gap-since-last-
+// delta computation. Only ticks while the message is actively streaming;
+// stopped on completion / cancellation / error so an idle viewport
+// doesn't pay the cost.
+const nowTick = ref(Date.now());
+let tickHandle: ReturnType<typeof setInterval> | null = null;
+
+const startTick = () => {
+  if (tickHandle !== null) return;
+  tickHandle = setInterval(() => {
+    nowTick.value = Date.now();
+  }, THINKING_TICK_MS);
+};
+const stopTick = () => {
+  if (tickHandle === null) return;
+  clearInterval(tickHandle);
+  tickHandle = null;
+};
+
+watch(
+  isStreaming,
+  (streaming) => {
+    if (streaming) {
+      nowTick.value = Date.now();
+      startTick();
+    } else {
+      stopTick();
+    }
+  },
+  { immediate: true },
+);
+onBeforeUnmount(stopTick);
+
+/**
+ * True when the assistant has streamed at least one segment and the gap
+ * since the last delta exceeds `THINKING_GAP_MS`. Drives the inter-
+ * segment placeholder turn so the spinner is visible during dead air
+ * between tool calls or before the final text starts streaming.
+ */
+const isThinkingGap = computed(() => {
+  if (!isAssistant.value || !isStreaming.value) return false;
+  if (props.message.segments.length === 0) return false;
+  const last = props.message.lastDeltaAt;
+  if (typeof last !== 'number') return false;
+  return nowTick.value - last > THINKING_GAP_MS;
+});
+
 interface Turn {
   key: string;
   label: string;
@@ -91,8 +195,18 @@ interface Turn {
     | 'tool-pob'
     | 'tool-wiki-page'
     | 'tool-generic'
+    | 'sheet-draft'
+    | 'sheet-ask'
+    | 'sheet-interview'
     | 'placeholder';
-  segment: TextSegment | ReasoningSegment | ToolSegment | null;
+  segment:
+    | TextSegment
+    | ReasoningSegment
+    | ToolSegment
+    | SheetDraftSegment
+    | SheetAskSegment
+    | SheetInterviewSegment
+    | null;
   isLast: boolean;
 }
 
@@ -154,7 +268,9 @@ function isArtifactKind(k: Turn['kind']): boolean {
     k === 'reasoning' ||
     k === 'tool-pob' ||
     k === 'tool-wiki-page' ||
-    k === 'tool-generic'
+    k === 'tool-generic' ||
+    k === 'sheet-draft' ||
+    k === 'sheet-ask'
   );
 }
 
@@ -213,11 +329,18 @@ const turns = computed<Turn[]>(() => {
     const isLast = idx === segs.length - 1;
     if (seg.kind === 'text') {
       const isAnswer = idx === lastTextIdx;
+      // Sprint UX-2 — suppress pre-final text segments entirely. The
+      // model interleaves text with tool_use blocks; the SSE stream cuts
+      // those text blocks at byte boundaries (mid-word). Showing them as
+      // faded narration left long stutter trails in the timeline. Only
+      // render the LAST text segment as the answer; the dead air between
+      // tool calls is covered by the existing thinking-gap placeholder.
+      if (!isAnswer) return;
       out.push({
         key: seg.id,
-        label: isAnswer ? 'bestel' : 'narrating',
-        color: isAnswer ? 'var(--ink)' : 'var(--ink-faint)',
-        kind: isAnswer ? 'text' : 'narration',
+        label: 'bestel',
+        color: 'var(--ink)',
+        kind: 'text',
         segment: seg,
         isLast,
       });
@@ -230,7 +353,43 @@ const turns = computed<Turn[]>(() => {
         segment: seg,
         isLast,
       });
-    } else {
+    } else if (seg.kind === 'sheet_draft') {
+      out.push({
+        key: seg.id,
+        label: 'interview',
+        color: 'var(--amber)',
+        kind: 'sheet-draft',
+        segment: seg,
+        isLast,
+      });
+    } else if (seg.kind === 'sheet_ask') {
+      out.push({
+        key: seg.id,
+        label: 'interview',
+        color: 'var(--amber)',
+        kind: 'sheet-ask',
+        segment: seg,
+        isLast,
+      });
+    } else if (seg.kind === 'sheet_interview') {
+      out.push({
+        key: seg.id,
+        label: 'interview',
+        color: 'var(--amber)',
+        kind: 'sheet-interview',
+        segment: seg,
+        isLast,
+      });
+    } else if (seg.kind === 'sheet_finalized') {
+      out.push({
+        key: seg.id,
+        label: 'sheet',
+        color: 'var(--good)',
+        kind: 'sheet-finalized',
+        segment: seg,
+        isLast,
+      });
+    } else if (seg.kind === 'tool') {
       const meta = toolLabel(seg.name);
       out.push({
         key: seg.id,
@@ -242,7 +401,10 @@ const turns = computed<Turn[]>(() => {
       });
     }
   });
-  if (isThinkingOnly.value) {
+  if (isThinkingOnly.value || isThinkingGap.value) {
+    if (out.length > 0) {
+      out[out.length - 1].isLast = false;
+    }
     out.push({
       key: 'placeholder',
       label: 'bestel',
@@ -344,8 +506,51 @@ const turns = computed<Turn[]>(() => {
           :segment="t.segment as ToolSegment"
         />
 
-        <!-- Placeholder while waiting for first segment -->
-        <span v-else-if="t.kind === 'placeholder'" class="streaming-cursor" aria-hidden="true" />
+        <!-- Build-Sheet drafted-section card. Rendered inline as the
+             agent surfaces each section for confirm/edit. -->
+        <BSDraftedCard
+          v-else-if="t.kind === 'sheet-draft' && t.segment"
+          :title="(t.segment as SheetDraftSegment).title"
+          :status="(t.segment as SheetDraftSegment).confirmed ? 'confirmed' : 'pending'"
+          @confirm="onConfirmDraft(t.segment as SheetDraftSegment)"
+          @edit="onEditDraft(t.segment as SheetDraftSegment)"
+        >
+          <p class="bs-msg__body">{{ (t.segment as SheetDraftSegment).body }}</p>
+        </BSDraftedCard>
+
+        <!-- Build-Sheet questions_v2-style picker. -->
+        <BSAskCard
+          v-else-if="t.kind === 'sheet-ask' && t.segment"
+          :title="(t.segment as SheetAskSegment).title"
+          :subtitle="(t.segment as SheetAskSegment).subtitle ?? undefined"
+          :options="(t.segment as SheetAskSegment).options"
+          :multi="(t.segment as SheetAskSegment).multi"
+          :has-other="(t.segment as SheetAskSegment).hasOther"
+        />
+
+        <!-- Build-Sheet one-shot interview panel (Sprint UX-2). The panel
+             reads its data from the sheet store; the segment is just an
+             anchor so the panel renders inline at the right place in the
+             assistant bubble. -->
+        <BSInterviewPanel
+          v-else-if="t.kind === 'sheet-interview'"
+        />
+
+        <!-- Persistent confirmation banner once `sheet_finalize_request`
+             succeeds. Pure visual marker — the source of truth lives in
+             the SQLite `build_sheets` row. -->
+        <BSSheetSavedBanner
+          v-else-if="t.kind === 'sheet-finalized' && t.segment"
+          :name="(t.segment as SheetFinalizedSegment).name"
+        />
+
+        <!-- Placeholder while waiting for first segment, OR while
+             Bestel sits silent between tool calls / before final text. -->
+        <span v-else-if="t.kind === 'placeholder'" class="thinking-dots" aria-label="Bestel is thinking…">
+          <span class="thinking-dots__dot" />
+          <span class="thinking-dots__dot" />
+          <span class="thinking-dots__dot" />
+        </span>
       </div>
     </article>
 
@@ -367,6 +572,14 @@ const turns = computed<Turn[]>(() => {
   display: flex;
   gap: 14px;
   align-items: baseline;
+  /* Constrain to parent (chat-stream column flex). Without `min-width: 0`
+   * a child with intrinsic min-content larger than the chat width (e.g.
+   * the BSInterviewPanel's chip rows) pushes the article past the right
+   * rail and breaks the layout. The `max-width: 100%` is belt-and-braces;
+   * with `min-width: 0` alone the article still expands beyond the chat
+   * column on Windows + Chrome's flex sizing on certain widths. */
+  min-width: 0;
+  max-width: 100%;
 }
 .turn__gutter {
   width: 72px;
@@ -489,5 +702,14 @@ const turns = computed<Turn[]>(() => {
   text-transform: uppercase;
   color: var(--ink-faint);
   font-weight: var(--fw-medium);
+}
+
+/* Build-Sheet drafted-section body slotted into BSDraftedCard. */
+.bs-msg__body {
+  margin: 0;
+  font-family: var(--hand);
+  font-size: 15px;
+  color: var(--ink);
+  line-height: 1.6;
 }
 </style>

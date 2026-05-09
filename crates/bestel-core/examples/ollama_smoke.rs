@@ -117,6 +117,9 @@ async fn main() -> anyhow::Result<()> {
                 println!("\n[tool→ {name} (id={id}) detail={detail:?}]");
                 writeln!(log, "TOOL_BEGIN {name} id={id} detail={detail:?}").ok();
             }
+            LlmDelta::ToolDetailUpdate { id, summary_input } => {
+                writeln!(log, "TOOL_DETAIL id={id} summary_input={summary_input:?}").ok();
+            }
             LlmDelta::ToolOutput { id, chunk } => {
                 writeln!(log, "TOOL_OUTPUT id={id} chunk={chunk:?}").ok();
             }
@@ -148,6 +151,21 @@ async fn main() -> anyhow::Result<()> {
                     v.findings.len()
                 )
                 .ok();
+            }
+            LlmDelta::SheetDraftUpdate { section_id, .. } => {
+                writeln!(log, "SHEET_DRAFT section_id={section_id}").ok();
+            }
+            LlmDelta::SheetAskUser { question_id, .. } => {
+                writeln!(log, "SHEET_ASK question_id={question_id}").ok();
+            }
+            LlmDelta::SheetInterviewOpen { .. } => {
+                writeln!(log, "SHEET_INTERVIEW_OPEN").ok();
+            }
+            LlmDelta::SheetFinalized { sheet_id, name } => {
+                writeln!(log, "SHEET_FINALIZED sheet_id={sheet_id} name={name}").ok();
+            }
+            LlmDelta::SheetLoaded { sheet_id, name, stale, .. } => {
+                writeln!(log, "SHEET_LOADED sheet_id={sheet_id} name={name} stale={stale}").ok();
             }
             LlmDelta::Error(msg) => {
                 error = Some(msg.clone());

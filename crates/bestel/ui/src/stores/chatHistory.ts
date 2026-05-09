@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
 
+import { chatLogPersist } from '../api/tauri';
 import type { ChatMessageVm } from './chat';
 
 export interface SavedChat {
@@ -95,6 +96,24 @@ export const useChatHistoryStore = defineStore('chatHistory', () => {
       chats.value = sorted.slice(0, MAX_CHATS);
     }
     persist();
+    // localStorage write only — disk write is deferred until end of turn
+    // via `flushToDisk()` so per-token streaming bursts do not trigger
+    // hundreds of fs::write calls per second. See `flushToDisk` below.
+  }
+
+  /** Write the active chat's current state to
+   *  `~/.bestel/runtime/conversation-logs/{id}.json`. Called by the chat
+   *  store at end of turn (setCompleted / setError / setCancelled) so each
+   *  assistant turn produces exactly one disk write per chat — never per
+   *  streamed token. Best-effort: failures are logged but never break UI
+   *  flow. */
+  function flushToDisk(): void {
+    const active = findActive();
+    if (!active) return;
+    const json = JSON.stringify(active, null, 2);
+    void chatLogPersist(active.id, json).catch((e) => {
+      console.warn('chat_log_persist failed', e);
+    });
   }
 
   function startNew(): void {
@@ -127,6 +146,7 @@ export const useChatHistoryStore = defineStore('chatHistory', () => {
     activeId,
     sortedChats,
     snapshot,
+    flushToDisk,
     startNew,
     select,
     remove,

@@ -14,7 +14,9 @@ pub mod ollama;
 pub mod pob_engine;
 pub mod recorder;
 pub mod session_notes;
+pub mod sheet_tools;
 pub mod tools;
+pub mod util;
 pub mod verifier;
 pub mod wiki;
 
@@ -85,6 +87,16 @@ pub enum LlmDelta {
         name: String,
         detail: Option<String>,
     },
+    /// Late-arriving formatted view of the tool call's input arguments.
+    /// Anthropic streams the input JSON across multiple `input_json_delta`
+    /// chunks, so this is emitted at `content_block_stop` once the input
+    /// is fully assembled. Ollama emits it alongside `ToolBegin` for
+    /// shape parity. The string is pre-formatted by `util::summarize_tool_args`
+    /// so the UI can render it inline without per-tool parsing.
+    ToolDetailUpdate {
+        id: String,
+        summary_input: String,
+    },
     ToolOutput {
         id: String,
         chunk: String,
@@ -102,6 +114,74 @@ pub enum LlmDelta {
     /// `pass | revise | fail` plus structured findings; the dev panel
     /// surfaces the badge and the recorder persists it in `ChatStats`.
     Verifier(verifier::VerifierVerdict),
+    /// Build Sheets feature — emitted when the agent calls
+    /// `sheet_propose_section` to draft (or re-draft) a section. The UI
+    /// patches the matching `BSDraftedCard` in place. Multiple updates may
+    /// land for the same `section_id` over the course of an interview as
+    /// the user corrects and the agent re-drafts.
+    SheetDraftUpdate {
+        section_id: String,
+        title: String,
+        body: String,
+        confirmed: bool,
+    },
+    /// Build Sheets feature — emitted when the agent calls `sheet_ask` to
+    /// surface a `questions_v2`-style picker for a personality question
+    /// (purpose of an aura, role of a unique). The UI renders a
+    /// `BSAskCard`; the user's answer comes back through the normal
+    /// composer / chip-click flow as a regular ChatMessage.
+    SheetAskUser {
+        question_id: String,
+        title: String,
+        subtitle: Option<String>,
+        options: Vec<String>,
+        multi: bool,
+        has_other: bool,
+    },
+    /// Build Sheets feature — emitted when the agent calls
+    /// `sheet_open_interview` after deep PoB analysis. The payload contains
+    /// every section's draft body PLUS every leverage-purpose question
+    /// across sections PLUS a notes_prompt, all in one delta. The UI
+    /// renders a single `BSInterviewPanel` and the user fills the entire
+    /// form in one round before submitting; the submission round-trips
+    /// back to the agent as a structured user message (see ref 32 §
+    /// `[INTERVIEW SUBMISSION]` contract). The payload is opaque to the
+    /// runtime — it's a JSON `Value` forwarded verbatim from the model's
+    /// tool input. Schema validation happens at the dispatcher.
+    SheetInterviewOpen {
+        payload: serde_json::Value,
+    },
+    /// Build Sheets feature — emitted when `sheet_finalize_request` has
+    /// successfully persisted a validated sheet to the `build_sheets`
+    /// table. The frontend renders a one-line `BSSheetSavedBanner` segment
+    /// in the chat timeline so the moment of validation is visible and
+    /// permanent (the banner persists in the conversation log just like
+    /// any other segment). The sidebar `BSLinkedSheetCard` is populated by
+    /// the companion `SheetLoaded` delta the same dispatcher emits.
+    SheetFinalized {
+        sheet_id: String,
+        name: String,
+    },
+    /// Build Sheets feature — emitted whenever a validated sheet becomes
+    /// the active sheet for the current chat. Fired from BOTH
+    /// `dispatch_sheet_finalize_request` (right after the row is
+    /// persisted, so the sidebar populates the same turn) and
+    /// `dispatch_get_active_build_sheet` (when the agent looks up an
+    /// existing sheet by fingerprint). The frontend `BSLinkedSheetCard`
+    /// reads from `sheet.activeSheet`, which this delta populates via
+    /// `sheet.loadActiveSheet(...)`. No banner is dropped — that's
+    /// `SheetFinalized`'s job, and only fires for fresh finalizations.
+    SheetLoaded {
+        sheet_id: String,
+        fingerprint: String,
+        name: String,
+        pob_hash: String,
+        stale: bool,
+        authored_at: String,
+        updated_at: String,
+        schema_version: i64,
+        payload: serde_json::Value,
+    },
     MessageEnd,
     Error(String),
 }

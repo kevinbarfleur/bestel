@@ -73,6 +73,9 @@ pub const BUNDLED_REFERENCES: &[(&str, &str)] = &[
     ("29_known_mechanics_tripwires.md", include_str!("../../../prompts/references/29_known_mechanics_tripwires.md")),
     ("30_panel_marker_grammar.md", include_str!("../../../prompts/references/30_panel_marker_grammar.md")),
     ("31_answer_mode_examples.md", include_str!("../../../prompts/references/31_answer_mode_examples.md")),
+    // Build Sheets feature — when to enter the interview, the 6 fixed sections,
+    // leverage-based purpose questions, finalize criteria.
+    ("32_build_sheets.md", include_str!("../../../prompts/references/32_build_sheets.md")),
     // Creators registry — per-creator profiles, indexed by 00_README.
     ("creators_registry/00_README.md", include_str!("../../../prompts/references/creators_registry/00_README.md")),
     ("creators_registry/ben_.md", include_str!("../../../prompts/references/creators_registry/ben_.md")),

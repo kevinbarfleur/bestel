@@ -1,11 +1,12 @@
 import { defineStore } from 'pinia';
-import { computed, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 
 import { chatCancel, chatReset, chatStart } from '../api/tauri';
 import { extractPanelSidecar, tryExtractPanelSidecarPartial } from '../api/markdown';
 import type { AttachmentDto, UsageStats } from '../api/types';
 import { useChatHistoryStore, type SavedChat } from './chatHistory';
 import { useBuildStore } from './build';
+import { useSheetStore } from './sheet';
 import { useUiStore, type PanelArtifact } from './ui';
 
 export type ChatRole = 'user' | 'assistant';
@@ -37,12 +38,100 @@ export interface ToolSegment {
   id: string;
   name: string;
   detail: string | null;
+  /**
+   * Late-arriving formatted view of the tool's input arguments. Anthropic
+   * streams tool input across multiple chunks and emits this once the
+   * input is fully assembled (per `LlmDelta::ToolDetailUpdate`); Ollama
+   * emits it alongside `tool_begin` for shape parity. The badge prefers
+   * `summaryInput` over `detail` when both are present.
+   */
+  summaryInput?: string;
   status: ToolSegmentStatus;
   summary: string | null;
   output: string;
 }
 
-export type Segment = TextSegment | ReasoningSegment | ToolSegment;
+/** Build-Sheet drafted-section segment — emitted by the agent calling
+ *  `sheet_propose_section`. Rendered inline as a `BSDraftedCard` inside an
+ *  interview-styled agent bubble (see `32_build_sheets.md` for the flow). */
+export interface SheetDraftSegment {
+  kind: 'sheet_draft';
+  id: string;
+  sectionId: string;
+  title: string;
+  body: string;
+  confirmed: boolean;
+}
+
+/** Build-Sheet ask-user segment — emitted by the agent calling `sheet_ask`.
+ *  Rendered inline as a `BSAskCard` inside an interview-styled bubble. */
+export interface SheetAskSegment {
+  kind: 'sheet_ask';
+  id: string;
+  questionId: string;
+  title: string;
+  subtitle: string | null;
+  options: string[];
+  multi: boolean;
+  hasOther: boolean;
+}
+
+/** Build-Sheet one-shot interview anchor (Sprint UX-2).
+ *
+ *  The segment carries BOTH the original agent payload (sections,
+ *  questions, notes_prompt — used to rebuild the panel on reload) AND a
+ *  serialized snapshot of the user's in-progress edits (answers,
+ *  sectionEdits, notes, submitted). The sheet store remains the runtime
+ *  source of truth during a session, but its state is mirrored here on
+ *  every mutation so closing the app mid-interview doesn't lose the
+ *  user's work — `loadFromSaved` rehydrates from this snapshot. Both
+ *  fields are optional so older saved chats restore as empty
+ *  read-only segments instead of crashing. */
+export interface SerializedInterviewState {
+  answers: Record<string, { selected: number[]; otherText: string }>;
+  sectionEdits: Record<string, string>;
+  notes: string;
+  submitted: boolean;
+}
+
+export interface SheetInterviewSegment {
+  kind: 'sheet_interview';
+  id: string;
+  payload?: {
+    sections: { id: string; title: string; draft_body: string }[];
+    questions: {
+      question_id: string;
+      section_id: string;
+      title: string;
+      subtitle?: string;
+      options: string[];
+      multi?: boolean;
+      has_other?: boolean;
+    }[];
+    notes_prompt: string;
+  };
+  state?: SerializedInterviewState;
+}
+
+/** Sprint UX-2.7 — small persistent confirmation segment emitted after
+ *  the agent's `sheet_finalize_request` succeeds. Sits in the timeline as
+ *  a centered amber-good banner; reloads with the rest of the
+ *  conversation, just like text/tool/interview segments. */
+export interface SheetFinalizedSegment {
+  kind: 'sheet_finalized';
+  id: string;
+  sheetId: string;
+  name: string;
+}
+
+export type Segment =
+  | TextSegment
+  | ReasoningSegment
+  | ToolSegment
+  | SheetDraftSegment
+  | SheetAskSegment
+  | SheetInterviewSegment
+  | SheetFinalizedSegment;
 
 export interface ChatMessageVm {
   id: string;
@@ -55,6 +144,11 @@ export interface ChatMessageVm {
   /** Token / cost telemetry for this assistant turn. Populated when the
    * provider emits an `LlmDelta::Usage` (Anthropic + DeepSeek today). */
   usage?: UsageStats;
+  /** Wall-clock timestamp (Date.now()) of the most recent streaming
+   * event for this message. Used by ChatMessage.vue to render an
+   * inter-segment thinking indicator when the gap exceeds
+   * THINKING_GAP_MS while status === 'streaming'. */
+  lastDeltaAt?: number;
 }
 
 const segId = () => `s_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -88,6 +182,13 @@ export const useChatStore = defineStore('chat', () => {
   // network jitter. Module-local state — never reactive.
   let streamBuffer = '';
   let rafHandle: number | null = null;
+  /** True while `loadFromSaved` is repopulating in-memory messages from a
+   *  persisted chat. Suppresses the autosave watch so the snapshot taken
+   *  mid-restore (when the build store still holds the *default* build)
+   *  does not overwrite the chat's real `attached_build_path`. ChatView /
+   *  ChatPicker re-align the build via `setActive(...)` after restore;
+   *  the next user message persists the correct path. */
+  let restoreInProgress = false;
 
   // Per-turn flag: ensures the auto-open of the primary panel fires at
   // most once per assistant message, even though the drain loop scans
@@ -136,6 +237,7 @@ export const useChatStore = defineStore('chat', () => {
       status: 'streaming',
       sessionId,
       errorMessage: null,
+      lastDeltaAt: Date.now(),
     });
   }
 
@@ -236,7 +338,9 @@ export const useChatStore = defineStore('chat', () => {
    * composable doesn't need to change.
    */
   function appendText(text: string) {
-    if (!currentAssistant.value) return;
+    const a = currentAssistant.value;
+    if (!a) return;
+    a.lastDeltaAt = Date.now();
     streamBuffer += text;
     if (rafHandle === null) {
       rafHandle = requestAnimationFrame(drainTick);
@@ -265,12 +369,14 @@ export const useChatStore = defineStore('chat', () => {
   function reasoningBegin() {
     const a = currentAssistant.value;
     if (!a) return;
+    a.lastDeltaAt = Date.now();
     a.segments.push({ kind: 'reasoning', id: segId(), text: '', open: true });
   }
 
   function reasoningDelta(text: string) {
     const a = currentAssistant.value;
     if (!a) return;
+    a.lastDeltaAt = Date.now();
     for (let i = a.segments.length - 1; i >= 0; i--) {
       const s = a.segments[i];
       if (s.kind === 'reasoning' && s.open) {
@@ -296,6 +402,7 @@ export const useChatStore = defineStore('chat', () => {
   function toolBegin(id: string, name: string, detail: string | null) {
     const a = currentAssistant.value;
     if (!a) return;
+    a.lastDeltaAt = Date.now();
     a.segments.push({
       kind: 'tool',
       id,
@@ -307,9 +414,18 @@ export const useChatStore = defineStore('chat', () => {
     });
   }
 
+  function toolDetailUpdate(id: string, summaryInput: string) {
+    const a = currentAssistant.value;
+    if (!a) return;
+    a.lastDeltaAt = Date.now();
+    const seg = a.segments.find((s): s is ToolSegment => s.kind === 'tool' && s.id === id);
+    if (seg) seg.summaryInput = summaryInput;
+  }
+
   function toolOutput(id: string, chunk: string) {
     const a = currentAssistant.value;
     if (!a) return;
+    a.lastDeltaAt = Date.now();
     const seg = a.segments.find((s): s is ToolSegment => s.kind === 'tool' && s.id === id);
     if (seg) seg.output += chunk;
   }
@@ -317,11 +433,167 @@ export const useChatStore = defineStore('chat', () => {
   function toolEnd(id: string, status: ToolSegmentStatus, summary: string | null) {
     const a = currentAssistant.value;
     if (!a) return;
+    a.lastDeltaAt = Date.now();
     const seg = a.segments.find((s): s is ToolSegment => s.kind === 'tool' && s.id === id);
     if (seg) {
       seg.status = status;
       seg.summary = summary;
     }
+  }
+
+  /** Append (or update in place) a Build-Sheet drafted section. The agent
+   *  may re-draft an existing section after the user corrects it; we
+   *  overwrite the matching segment instead of pushing a duplicate so the
+   *  card position stays put in the chat scroll. */
+  function sheetDraftUpdate(payload: {
+    sectionId: string;
+    title: string;
+    body: string;
+    confirmed: boolean;
+  }) {
+    const a = currentAssistant.value;
+    if (!a) return;
+    a.lastDeltaAt = Date.now();
+    const existing = a.segments.find(
+      (s): s is SheetDraftSegment => s.kind === 'sheet_draft' && s.sectionId === payload.sectionId,
+    );
+    if (existing) {
+      existing.title = payload.title;
+      existing.body = payload.body;
+      existing.confirmed = payload.confirmed;
+      return;
+    }
+    a.segments.push({
+      kind: 'sheet_draft',
+      id: segId(),
+      sectionId: payload.sectionId,
+      title: payload.title,
+      body: payload.body,
+      confirmed: payload.confirmed,
+    });
+  }
+
+  /** Append a Build-Sheet ask-user picker. Multiple asks can land in a
+   *  single turn in theory; we don't dedupe — each one stays as its own
+   *  segment in the conversation timeline. */
+  function sheetAskUser(payload: {
+    questionId: string;
+    title: string;
+    subtitle: string | null;
+    options: string[];
+    multi: boolean;
+    hasOther: boolean;
+  }) {
+    const a = currentAssistant.value;
+    if (!a) return;
+    a.lastDeltaAt = Date.now();
+    a.segments.push({
+      kind: 'sheet_ask',
+      id: segId(),
+      questionId: payload.questionId,
+      title: payload.title,
+      subtitle: payload.subtitle,
+      options: payload.options,
+      multi: payload.multi,
+      hasOther: payload.hasOther,
+    });
+  }
+
+  /** Anchor a one-shot Build Sheet interview (Sprint UX-2) in the current
+   *  assistant message and stash the original agent payload on the
+   *  segment so a reload can rebuild the panel. Idempotent within a turn:
+   *  if the model emits two sheet_open_interview deltas in a single
+   *  assistant message (shouldn't happen, but safe), the second
+   *  overwrites the first's payload — we always want the latest one. */
+  function sheetInterviewOpen(payload: SheetInterviewSegment['payload']) {
+    const a = currentAssistant.value;
+    if (!a) return;
+    a.lastDeltaAt = Date.now();
+    const existing = a.segments.find(
+      (s): s is SheetInterviewSegment => s.kind === 'sheet_interview',
+    );
+    if (existing) {
+      existing.payload = payload;
+      existing.state = {
+        answers: {},
+        sectionEdits: {},
+        notes: '',
+        submitted: false,
+      };
+      return;
+    }
+    a.segments.push({
+      kind: 'sheet_interview',
+      id: segId(),
+      payload,
+      state: {
+        answers: {},
+        sectionEdits: {},
+        notes: '',
+        submitted: false,
+      },
+    });
+  }
+
+  /** Mirror the sheet store's in-progress interview state onto the most
+   *  recent `sheet_interview` segment. Called by BSInterviewPanel on
+   *  every mutation (chip toggle, Other-text input, body edit, notes
+   *  edit). The deep-watch chat-history snapshot picks the patched
+   *  segment up automatically and persists it; on reload, loadFromSaved
+   *  rehydrates the sheet store from this state. */
+  function updateSheetInterviewState(state: SerializedInterviewState) {
+    for (let i = messages.value.length - 1; i >= 0; i--) {
+      const m = messages.value[i];
+      if (m.role !== 'assistant') continue;
+      for (let j = m.segments.length - 1; j >= 0; j--) {
+        const s = m.segments[j];
+        if (s.kind === 'sheet_interview') {
+          s.state = state;
+          return;
+        }
+      }
+    }
+  }
+
+  /** Anchor the `✓ Build Sheet saved` banner on the current assistant
+   *  message after `sheet_finalize_request` reports success. Idempotent —
+   *  if the agent somehow emits two finalize events in one turn, the
+   *  later one updates the existing segment's name in place rather than
+   *  duplicating the banner. */
+  function sheetFinalized(sheetId: string, name: string) {
+    const a = currentAssistant.value;
+    if (!a) return;
+    a.lastDeltaAt = Date.now();
+    const existing = a.segments.find(
+      (s): s is SheetFinalizedSegment => s.kind === 'sheet_finalized',
+    );
+    if (existing) {
+      existing.sheetId = sheetId;
+      existing.name = name;
+      return;
+    }
+    a.segments.push({
+      kind: 'sheet_finalized',
+      id: segId(),
+      sheetId,
+      name,
+    });
+  }
+
+  /** Find the latest sheet_interview segment that has a payload.
+   *  Used by the chat view + the sheet store's rehydration path. */
+  function findLatestSheetInterviewSegment(): SheetInterviewSegment | null {
+    for (let i = messages.value.length - 1; i >= 0; i--) {
+      const m = messages.value[i];
+      if (m.role !== 'assistant') continue;
+      for (let j = m.segments.length - 1; j >= 0; j--) {
+        const s = m.segments[j];
+        if (s.kind === 'sheet_interview' && s.payload) {
+          return s;
+        }
+      }
+    }
+    return null;
   }
 
   /** Lookup helper used by useStreaming to read a completed tool's output
@@ -367,6 +639,7 @@ export const useChatStore = defineStore('chat', () => {
     }
     finalizeAssistantMessage(currentAssistant.value);
     activeSessionId.value = null;
+    useChatHistoryStore().flushToDisk();
   }
 
   function setCompleted() {
@@ -375,6 +648,7 @@ export const useChatStore = defineStore('chat', () => {
     if (a) a.status = 'complete';
     finalizeAssistantMessage(currentAssistant.value);
     activeSessionId.value = null;
+    useChatHistoryStore().flushToDisk();
   }
 
   function setCancelled() {
@@ -383,6 +657,7 @@ export const useChatStore = defineStore('chat', () => {
     if (a) a.status = 'cancelled';
     finalizeAssistantMessage(currentAssistant.value);
     activeSessionId.value = null;
+    useChatHistoryStore().flushToDisk();
   }
 
   async function send(prompt: string, attachments: AttachmentDto[] = []) {
@@ -423,6 +698,12 @@ export const useChatStore = defineStore('chat', () => {
     }
     messages.value = [];
     activeSessionId.value = null;
+    // Detail panel from a previous chat must not bleed into the new
+    // conversation; resetting the chat resets the right-rail too.
+    useUiStore().closePanel();
+    // Same for the sheet store — interview drafts from a previous chat
+    // would otherwise stay visible in the sidebar / Build Sheets view.
+    useSheetStore().reset();
     // Mark history "new" so the next message starts a fresh saved chat.
     useChatHistoryStore().startNew();
   }
@@ -441,27 +722,66 @@ export const useChatStore = defineStore('chat', () => {
     } catch {
       /* ignore */
     }
-    messages.value = saved.messages.map((m) => ({
-      ...m,
-      // mark restored assistant messages as complete (no live streaming)
-      status: m.status === 'streaming' ? 'complete' : m.status,
-      segments: m.segments.map((s) => ({ ...s })),
-    }));
-    // Re-extract sidecars on every restored assistant text segment. Saved
-    // chats predate panelMap so the field is missing; running the extractor
-    // is cheap and the result is identical for already-stripped text.
-    for (const m of messages.value) {
-      if (m.role === 'assistant') finalizeAssistantMessage(m);
+    restoreInProgress = true;
+    try {
+      messages.value = saved.messages.map((m) => ({
+        ...m,
+        // mark restored assistant messages as complete (no live streaming)
+        status: m.status === 'streaming' ? 'complete' : m.status,
+        segments: m.segments.map((s) => ({ ...s })),
+      }));
+      // Re-extract sidecars on every restored assistant text segment. Saved
+      // chats predate panelMap so the field is missing; running the extractor
+      // is cheap and the result is identical for already-stripped text.
+      for (const m of messages.value) {
+        if (m.role === 'assistant') finalizeAssistantMessage(m);
+      }
+      activeSessionId.value = null;
+      // Detail panel from the previous chat would otherwise stay pinned
+      // to the right rail showing a stale artifact.
+      useUiStore().closePanel();
+      // Sheet store — same logic as in `reset()` above.
+      const sheetStore = useSheetStore();
+      sheetStore.reset();
+      // Sprint UX-2 — rehydrate any in-progress one-shot interview the
+      // user left mid-edit. The latest sheet_interview segment that has
+      // a payload AND has not been submitted is the live one; the
+      // serialized state (answers / sectionEdits / notes / submitted)
+      // re-populates the sheet store so BSInterviewPanel renders with
+      // the user's prior selections intact.
+      const liveInterview = findLatestSheetInterviewSegment();
+      if (liveInterview && liveInterview.payload && !(liveInterview.state?.submitted)) {
+        sheetStore.rehydrateInterview(liveInterview.payload, liveInterview.state ?? null);
+      }
+    } finally {
+      // Release the autosave guard on the next tick so the deep watch's
+      // post-flush observation also sees the lock in place.
+      await nextTick();
+      restoreInProgress = false;
     }
-    activeSessionId.value = null;
   }
 
   // ─── Autosave ──────────────────────────────────────────────────
   // Snapshot the current chat into history whenever the messages
   // settle (deep watch, debounced via the run loop).
+  //
+  // The `restoreInProgress` guard prevents a destructive race during
+  // app boot: ChatView mounts → refreshActive() loads the *default* build
+  // → loadFromSaved() populates messages → the watch below would fire
+  // and snapshot with `attached_build_path = <default build>`, overwriting
+  // the chat's actual associated build. Then `setActive(saved.attached_build_path)`
+  // runs *after* and fixes the in-memory state, but the corrupted snapshot
+  // is already in localStorage. Next app launch reads the corrupted path
+  // and the chat opens with the wrong (default) build forever after.
+  //
+  // Fix: skip snapshots while a chat is being restored — the caller
+  // (ChatView / ChatPicker) is responsible for re-aligning the build via
+  // setActive(), and once that completes the next message OR a manual
+  // re-snapshot will persist the correct path.
   watch(
     messages,
     () => {
+      if (restoreInProgress) return;
       if (messages.value.length === 0) return;
       const buildPath = useBuildStore().current?.source_file ?? null;
       useChatHistoryStore().snapshot(messages.value, buildPath);
@@ -479,8 +799,15 @@ export const useChatStore = defineStore('chat', () => {
     reasoningDelta,
     reasoningEnd,
     toolBegin,
+    toolDetailUpdate,
     toolOutput,
     toolEnd,
+    sheetDraftUpdate,
+    sheetAskUser,
+    sheetInterviewOpen,
+    sheetFinalized,
+    updateSheetInterviewState,
+    findLatestSheetInterviewSegment,
     findToolSegment,
     setUsage,
     setError,

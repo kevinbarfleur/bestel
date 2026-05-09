@@ -13,6 +13,10 @@ import { useSettingsStore } from '../stores/settings';
 import { useUiStore } from '../stores/ui';
 
 import BuildPanel from '../components/build/BuildPanel.vue';
+import BSInviteSidebarCard from '../components/build-sheet/BSInviteSidebarCard.vue';
+import BSInterviewSidebarCard from '../components/build-sheet/BSInterviewSidebarCard.vue';
+import BSLinkedSheetCard from '../components/build-sheet/BSLinkedSheetCard.vue';
+import BSSheetFullModal from '../components/build-sheet/BSSheetFullModal.vue';
 import ChatStream from '../components/chat/ChatStream.vue';
 import ChatComposer from '../components/chat/ChatComposer.vue';
 import PanelView from '../components/panel/PanelView.vue';
@@ -39,6 +43,7 @@ useShortcuts({
   onSettings: () => ui.openSettings(),
   onEscape: () => {
     if (ui.linkViewerUrl) ui.closeLinkViewer();
+    else if (ui.sheetModalOpen) ui.closeSheetModal();
     else if (ui.picker) ui.close();
     else if (panelArtifact.value) ui.closePanel();
     else if (chat.isStreaming) void chat.cancel();
@@ -79,7 +84,15 @@ onMounted(async () => {
     }"
   >
     <div class="chat-view__sidebar">
-      <BuildPanel @open-picker="ui.openBuild()" />
+      <div class="chat-view__sidebar-stack">
+        <BuildPanel @open-picker="ui.openBuild()">
+          <template #after-header>
+            <BSInviteSidebarCard />
+            <BSInterviewSidebarCard />
+            <BSLinkedSheetCard @view-full="ui.openSheetModal()" />
+          </template>
+        </BuildPanel>
+      </div>
     </div>
 
     <div class="chat-view__main">
@@ -90,6 +103,8 @@ onMounted(async () => {
     <div v-if="panelOpen" class="chat-view__panel">
       <PanelView />
     </div>
+
+    <BSSheetFullModal />
   </div>
 </template>
 
@@ -100,6 +115,14 @@ onMounted(async () => {
   flex: 1;
   display: flex;
   min-height: 0;
+  min-width: 0;
+  /* Hard-clamp to the viewport so child flex math NEVER overflows the
+   * window. The outer flex chain (`app-shell` → `app-body` → `chat-view`)
+   * has historically allowed children to push the chat past the window
+   * edge on certain content widths; a viewport-anchored max-width
+   * sidesteps every flex-sizing quirk. */
+  max-width: 100vw;
+  overflow: hidden;
   position: relative;
 }
 .chat-view--collapsed {
@@ -118,9 +141,20 @@ onMounted(async () => {
   transition: width 0.28s ease;
 }
 
-.chat-view__sidebar :deep(.bp) {
+.chat-view__sidebar-stack {
   width: 360px;
   flex: 0 0 360px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* BuildPanel ships with its own 360px declaration; honor it inside the
+ * stack and let BSLinkedSheetCard inherit the same rail. */
+.chat-view__sidebar :deep(.bp) {
+  width: 100%;
+  flex: 0 0 auto;
 }
 
 .chat-view__main {
@@ -129,6 +163,15 @@ onMounted(async () => {
   flex-direction: column;
   min-height: 0;
   min-width: 0;
+  /* `contain: inline-size` — hardware-isolation. The browser treats this
+   * box's inline-size (width) as independent from its content's intrinsic
+   * width. So no matter what a descendant requests as `min-content`, the
+   * chat-view__main stays sized by the flex chain alone. Combined with
+   * `overflow: hidden` (visual clip) and `min-width: 0` (allow flex
+   * shrink), this is the strongest possible containment short of
+   * iframing. Anything wider than this box is clipped, full stop. */
+  contain: inline-size;
+  overflow: hidden;
   background: var(--paper);
 }
 

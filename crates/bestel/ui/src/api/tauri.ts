@@ -5,6 +5,8 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import type {
   AttachmentDto,
   BuildEvent,
+  BuildSheetDetailDto,
+  BuildSheetSummaryDto,
   DebugRunDto,
   DetectionDto,
   KeyStatusDto,
@@ -38,6 +40,13 @@ export const clearActiveBuild = (): Promise<void> => invoke('clear_active_build'
 export const previewBuild = (path: string): Promise<PobBuildDto> =>
   invoke('preview_build', { path });
 
+export const listBuildSheets = (): Promise<BuildSheetSummaryDto[]> =>
+  invoke('list_build_sheets');
+export const getBuildSheet = (id: string): Promise<BuildSheetDetailDto | null> =>
+  invoke('get_build_sheet', { id });
+export const deleteBuildSheet = (id: string): Promise<boolean> =>
+  invoke('delete_build_sheet', { id });
+
 export const chatStart = (
   prompt: string,
   attachments?: AttachmentDto[],
@@ -48,6 +57,17 @@ export const chatStart = (
   });
 export const chatCancel = (): Promise<void> => invoke('chat_cancel');
 export const chatReset = (): Promise<void> => invoke('chat_reset');
+
+/** Write the current chat's full state to `~/.bestel/runtime/conversation-logs/{chatId}.json`.
+ *  Returns the absolute path on success. Used by the autosave watch in
+ *  the chat-history store so a coding agent can pick up the latest log
+ *  for debugging without the user having to copy/paste the timeline. */
+export const chatLogPersist = (chatId: string, json: string): Promise<string> =>
+  invoke('chat_log_persist', { chatId, json });
+
+/** Resolve the absolute path of the conversation-logs directory. Used by
+ *  the debug button to surface the directory in the OS file manager. */
+export const chatLogDir = (): Promise<string> => invoke('chat_log_dir');
 
 export const openExternal = (url: string): Promise<void> => invoke('open_external', { url });
 

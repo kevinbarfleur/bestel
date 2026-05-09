@@ -9,7 +9,7 @@
 use rusqlite::{params, Connection};
 
 #[allow(dead_code)]
-pub const LATEST_VERSION: i64 = 1;
+pub const LATEST_VERSION: i64 = 2;
 
 const SCHEMA_V1: &str = r#"
 CREATE TABLE runs (
@@ -84,7 +84,31 @@ CREATE TABLE kb_versions (
 );
 "#;
 
-const MIGRATIONS: &[(i64, &str)] = &[(1, SCHEMA_V1)];
+/// v2 — Build Sheets feature (co-authored, validated build dossier).
+///
+/// `fingerprint` is the lookup key on PoB attach: ascendancy + main skill +
+/// sorted defining uniques (fingerprint stays stable across gear churn).
+/// `pob_hash` is sha256 of canonical PoB JSON — a hash mismatch with the same
+/// fingerprint surfaces the "stale" state where Bestel proposes a refresh.
+/// `payload` is the full sheet JSON (sections, intent, known_gaps, ...).
+const SCHEMA_V2: &str = r#"
+CREATE TABLE build_sheets (
+    id                  TEXT PRIMARY KEY,
+    fingerprint         TEXT NOT NULL,
+    pob_hash            TEXT NOT NULL,
+    name                TEXT NOT NULL,
+    schema_version      INTEGER NOT NULL DEFAULT 1,
+    payload             TEXT NOT NULL,
+    authored_at         TEXT NOT NULL,
+    updated_at          TEXT NOT NULL,
+    authored_in_chat    TEXT,
+    validated           INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX build_sheets_fingerprint ON build_sheets(fingerprint);
+CREATE INDEX build_sheets_validated   ON build_sheets(validated);
+"#;
+
+const MIGRATIONS: &[(i64, &str)] = &[(1, SCHEMA_V1), (2, SCHEMA_V2)];
 
 pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     let current: i64 = conn

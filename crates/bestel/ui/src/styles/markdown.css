@@ -76,35 +76,32 @@
 .markdown-body ul,
 .markdown-body ol {
   margin: 0 0 10px 0;
-  padding-left: 0;
+  padding-left: 1.6rem;
   line-height: 1.65;
 }
+/* Native list markers (browser-managed baseline alignment). The
+ * previous `::before` hack tried to reproduce a marker with absolute
+ * positioning, but baseline math against EB Garamond at line-height
+ * 1.65 is fragile across font fallbacks. `list-style-type` with a
+ * literal glyph + `::marker` styling lets the layout engine handle the
+ * baseline so the ◆ always sits on the first text line of the li. */
 .markdown-body ul {
-  list-style: none;
-}
-.markdown-body ul > li {
-  position: relative;
-  padding-left: 1.4rem;
-  margin: 0.15rem 0;
-}
-/* Bullet ◆ aligned to the first text line (not the visual center of the
- * whole li). Same line-height as the parent so the ◆ sits on the first
- * line baseline regardless of how many lines the li wraps to. */
-.markdown-body ul > li::before {
-  content: '◆';
-  position: absolute;
-  left: 0.4rem;
-  top: 0;
-  color: var(--amber);
-  font-size: 0.7em;
-  line-height: inherit;
-  opacity: 0.85;
+  list-style: '◆  ' outside;
 }
 .markdown-body ol {
-  padding-left: 1.6rem;
+  list-style: decimal outside;
 }
+.markdown-body ul > li,
 .markdown-body ol > li {
   margin: 0.15rem 0;
+  padding-left: 0.25rem;
+}
+.markdown-body ul > li::marker {
+  color: var(--amber);
+  font-size: 0.78em;
+  /* The literal '◆  ' marker carries trailing spaces for visual gap;
+   * keep the marker text monospace so the gap stays stable per glyph
+   * width across themes/font fallbacks. */
 }
 .markdown-body ol > li::marker {
   color: var(--amber);
@@ -388,3 +385,212 @@
 .hljs-variable,
 .hljs-template-variable { color: var(--el-chaos-deep); }
 .hljs-meta { color: var(--ink-soft); }
+
+/* ── Build identity card ─────────────────────────────────────────────
+ * Rendered by `api/identity.ts::buildIdentityCardHtml` and prepended
+ * into the markdown body before DOMPurify. Three rows of small pills:
+ * axes (defense / hit_model / mechanic), defining uniques (per-category
+ * tint), and conversion chain (when present). Visually distinct from the
+ * surrounding prose — bordered card with subtle paper shade.
+ */
+/* ─── Build Identity card — Claude-Design mockup PbumU6vt
+ *
+ * Compact one-line signature emitted at the top of every build-specific
+ * answer. Three columns of axis tokens (defense / hit / mechanic), a
+ * uniques row with per-role chip styling, and an optional conversion
+ * caption row when the build does damage conversion. The "◆ identity"
+ * marginalia tag overlaps the top border for a hand-drawn feel.
+ *
+ * Roles drive the unique-chip border style:
+ *   engine    — solid amber border, amber-glow background, weight 700
+ *   defining  — solid ink border, weight 600
+ *   amplifier — dashed ink-soft border, weight 500
+ *   enabler   — dotted amber-soft border, weight 500
+ */
+.markdown-body .identity-card {
+  position: relative;
+  margin: 6px 0 16px 0;
+  padding: 14px 16px 12px;
+  border: 1px solid var(--paper-line);
+  border-radius: 5px;
+  background: var(--paper);
+}
+.markdown-body .identity-card__tag {
+  position: absolute;
+  top: -8px;
+  left: 14px;
+  padding: 0 6px;
+  background: var(--paper);
+  font-family: var(--label);
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  font-weight: 700;
+}
+
+/* ─ axis grid ─ */
+.markdown-body .identity-card__axes {
+  display: grid;
+  grid-template-columns: 1fr 1px 1fr 1px 1fr;
+  gap: 16px;
+  align-items: stretch;
+}
+.markdown-body .identity-axis {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.markdown-body .identity-axis__k {
+  font-family: var(--label);
+  font-size: 10.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  font-weight: 700;
+}
+.markdown-body .identity-axis__tokens {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  align-items: center;
+}
+.markdown-body .identity-axis__t {
+  font-family: var(--hand);
+  font-size: 14.5px;
+  font-weight: 500;
+  color: var(--ink);
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.markdown-body .identity-axis__sep-dot {
+  color: var(--ink-ghost);
+  font-size: 13px;
+  line-height: 1;
+}
+.markdown-body .identity-axis__sep {
+  background: var(--paper-line);
+  align-self: stretch;
+}
+
+/* ─ uniques row ─ */
+.markdown-body .identity-card__uniques {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dotted var(--paper-line);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.markdown-body .identity-card__uniques-label {
+  font-family: var(--label);
+  font-size: 10.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  font-weight: 700;
+  margin-right: 4px;
+}
+.markdown-body .identity-unique {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 10px 5px 8px;
+  border: 1px solid var(--ink);
+  border-radius: 4px;
+  background: var(--paper);
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.markdown-body .identity-unique__role {
+  font-family: var(--label);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  font-weight: 700;
+  padding-right: 7px;
+  border-right: 1px solid currentColor;
+}
+.markdown-body .identity-unique__name {
+  font-family: var(--hand);
+  font-size: 14px;
+  color: var(--ink);
+}
+
+/* engine — load-bearing, amber ring */
+.markdown-body .identity-unique--engine {
+  border-color: var(--amber);
+  background: var(--amber-glow);
+}
+.markdown-body .identity-unique--engine .identity-unique__role {
+  color: var(--amber);
+  border-right-color: var(--amber);
+}
+.markdown-body .identity-unique--engine .identity-unique__name {
+  font-weight: 700;
+}
+
+/* defining — solid ink, the "shapes the build" ring */
+.markdown-body .identity-unique--defining {
+  border-color: var(--ink);
+}
+.markdown-body .identity-unique--defining .identity-unique__role {
+  color: var(--ink);
+  border-right-color: var(--ink);
+}
+.markdown-body .identity-unique--defining .identity-unique__name {
+  font-weight: 600;
+}
+
+/* amplifier — dashed soft ring, additive multiplier */
+.markdown-body .identity-unique--amplifier {
+  border-color: var(--ink-soft);
+  border-style: dashed;
+}
+.markdown-body .identity-unique--amplifier .identity-unique__role {
+  color: var(--ink-soft);
+  border-right-color: var(--ink-soft);
+  border-right-style: dashed;
+}
+.markdown-body .identity-unique--amplifier .identity-unique__name {
+  font-weight: 500;
+}
+
+/* enabler — dotted, opens an otherwise-inaccessible mechanic */
+.markdown-body .identity-unique--enabler {
+  border-color: var(--amber-soft);
+  border-style: dotted;
+}
+.markdown-body .identity-unique--enabler .identity-unique__role {
+  color: var(--amber-soft);
+  border-right-color: var(--amber-soft);
+  border-right-style: dotted;
+}
+.markdown-body .identity-unique--enabler .identity-unique__name {
+  font-weight: 500;
+}
+
+/* ─ conversion caption ─ */
+.markdown-body .identity-card__conversion {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dotted var(--paper-line);
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.markdown-body .identity-card__conv-label {
+  font-family: var(--label);
+  font-size: 10.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  font-weight: 700;
+}
+.markdown-body .identity-card__conv-chain {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--ink-soft);
+}

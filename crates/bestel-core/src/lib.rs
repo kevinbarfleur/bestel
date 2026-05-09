@@ -6,6 +6,7 @@ pub mod persistence;
 pub mod pob;
 pub mod prompt;
 pub mod prompts;
+pub mod sheets;
 pub mod skills;
 pub mod sources;
 pub mod test_runner;

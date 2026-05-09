@@ -206,6 +206,32 @@
   50% { opacity: 0; }
 }
 
+/* Thinking-dots — three pulsing amber dots used for inter-segment
+ * thinking placeholders (waiting for the model's first segment, OR
+ * during a gap between two tool calls / before the final text). Same
+ * animation curve as the in-tool spinner; rendered larger so the chat
+ * gutter reads as "still working" without being mistaken for a tool. */
+.thinking-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 0;
+}
+.thinking-dots__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--amber);
+  opacity: 0.35;
+  animation: thinking-pulse 1.1s ease-in-out infinite;
+}
+.thinking-dots__dot:nth-child(2) { animation-delay: 0.18s; }
+.thinking-dots__dot:nth-child(3) { animation-delay: 0.36s; }
+@keyframes thinking-pulse {
+  0%, 80%, 100% { opacity: 0.25; transform: scale(0.85); }
+  40%           { opacity: 1;    transform: scale(1.1); }
+}
+
 /* Runic scrollbar — minimal, stays in mood */
 .runic-scrollbar::-webkit-scrollbar {
   width: 8px;

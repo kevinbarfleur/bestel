@@ -4,7 +4,13 @@ use std::sync::{Arc, RwLock};
 use anyhow::{anyhow, Context, Result};
 use bestel_rag::SharedKbEngine;
 use serde_json::{json, Value};
+use tokio::sync::mpsc;
 
+use crate::llm::sheet_tools::{
+    self, GET_ACTIVE_BUILD_SHEET, SHEET_ASK, SHEET_FINALIZE_REQUEST, SHEET_OPEN_INTERVIEW,
+    SHEET_PROPOSE_SECTION,
+};
+use crate::llm::LlmDelta;
 use crate::pob::semantic::BuildIdentity;
 use crate::pob::{PobBuild, PoeVersion};
 use crate::sources::repoe::{self, Category as RepoeCategory, Game as RepoeGame};
@@ -166,6 +172,10 @@ pub struct ToolCtx {
     /// `get_active_build` (Sprint E P7) can run a server-side `kb_search`
     /// against the same question and pre-attach `relevant_kb` passages.
     pub user_question: Option<String>,
+    /// Delta sender plumbed from the provider so sheet tools can emit
+    /// `SheetDraftUpdate` / `SheetAskUser` directly to the UI. `None` for
+    /// MCP-serve and CLI entry points where no UI is listening.
+    pub deltas: Option<mpsc::UnboundedSender<LlmDelta>>,
 }
 
 impl ToolCtx {
@@ -190,7 +200,16 @@ impl ToolCtx {
             kb_calls_this_turn: Arc::new(AtomicU32::new(0)),
             skill_calls_this_turn: Arc::new(AtomicU32::new(0)),
             user_question: None,
+            deltas: None,
         })
+    }
+
+    /// Attach the per-turn `LlmDelta` sender. Called by the provider so
+    /// sheet tools can emit `SheetDraftUpdate` / `SheetAskUser` events
+    /// directly while a tool is running.
+    pub fn with_deltas(mut self, deltas: mpsc::UnboundedSender<LlmDelta>) -> Self {
+        self.deltas = Some(deltas);
+        self
     }
 
     /// Attach the most recent user message text. The provider should call
@@ -316,7 +335,7 @@ fn strip_html(html: &str) -> String {
 }
 
 pub fn tool_schemas() -> Vec<Value> {
-    vec![
+    let mut schemas = vec![
         json!({
             "name": GET_ACTIVE_BUILD,
             "description": "Returns the exile's currently loaded Path of Building build: game (PoE1/PoE2), class, ascendancy, level, main skill, full skill groups with linked gems, every item with its full text, key defensive stats (life, mana, ES, EHP, armour, evasion, suppression, block, dodge), per-element resistances and max-hit values, charges (power/frenzy/endurance current+max), active buffs (combat/buff/curse lists), config (boss profile, enemy resists, flask uptimes, custom mods), and passive tree summary (class/ascend IDs, version, node and mastery counts, weapon-set node split). The response also includes SEMANTIC FACTS computed from the parsed build: `archetype` (defense/hit_model/mechanic tags — e.g. {defense:[\"life\",\"MoM\"], hit_model:[\"non-crit-EO\"], mechanic:[\"self-cast\"]}), `defining_uniques` (uniques present, each tagged engine|defining|amplifier with an identity hint), and `conversion_chain` (verbatim damage-conversion steps when applicable). Surface archetype tags FIRST when commenting on the build — do NOT guess the archetype from class+ascendancy alone. Never recommend selling an item flagged `category: \"engine\"` without explicit user instruction; engine items collapse the build if removed. Always call this BEFORE making any claim about the exile's character. No arguments.",
@@ -561,7 +580,9 @@ pub fn tool_schemas() -> Vec<Value> {
                 "additionalProperties": false
             }
         }),
-    ]
+    ];
+    schemas.extend(sheet_tools::schemas());
+    schemas
 }
 
 pub async fn dispatch(name: &str, input: &Value, ctx: &ToolCtx) -> Result<String> {
@@ -744,6 +765,11 @@ pub async fn dispatch(name: &str, input: &Value, ctx: &ToolCtx) -> Result<String
         POB_CALC => dispatch_pob_calc(input, ctx).await,
         KB_SEARCH => dispatch_kb_search(input, ctx).await,
         LOAD_SKILL => dispatch_load_skill(input, ctx).await,
+        SHEET_PROPOSE_SECTION => sheet_tools::dispatch_sheet_propose_section(input, &ctx.deltas).await,
+        SHEET_ASK => sheet_tools::dispatch_sheet_ask(input, &ctx.deltas).await,
+        SHEET_OPEN_INTERVIEW => sheet_tools::dispatch_sheet_open_interview(input, &ctx.deltas).await,
+        SHEET_FINALIZE_REQUEST => sheet_tools::dispatch_sheet_finalize_request(input, &ctx.deltas).await,
+        GET_ACTIVE_BUILD_SHEET => sheet_tools::dispatch_get_active_build_sheet(input, &ctx.deltas).await,
         other => Err(anyhow!("unknown tool '{other}'")),
     }
 }
@@ -1320,7 +1346,11 @@ mod tests {
         assert!(names.contains(&POB_CALC));
         assert!(names.contains(&KB_SEARCH));
         assert!(names.contains(&LOAD_SKILL));
-        assert_eq!(schemas.len(), 13);
+        assert!(names.contains(&SHEET_PROPOSE_SECTION));
+        assert!(names.contains(&SHEET_ASK));
+        assert!(names.contains(&SHEET_FINALIZE_REQUEST));
+        assert!(names.contains(&GET_ACTIVE_BUILD_SHEET));
+        assert_eq!(schemas.len(), 17);
     }
 
     #[test]

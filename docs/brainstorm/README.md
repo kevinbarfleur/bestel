@@ -14,3 +14,4 @@ Parking lot for ideas, plans, and feature explorations that are not currently sc
 | File | Status | Summary |
 |---|---|---|
 | [passive-tree-viewer.md](passive-tree-viewer.md) | parked | In-app PoE1 passive tree mini-window with Pixi.js render, search, click-to-detail, allocated nodes highlight. Plan complete, not started. |
+| [build-sheets.md](build-sheets.md) | in-progress | "Bestel learns the build" — co-authored, validated build dossier reused across chats; replaces raw PoB in context. Targets ~85% per-chat cost reduction. Phase 1 UI + Phase 2 backend foundations shipped 2026-05-09; Phases 3-4 (tools + integration) pending. |

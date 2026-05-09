@@ -15,6 +15,40 @@ pub struct AttachmentDto {
     pub data_base64: String,
 }
 
+/// Lightweight summary of a stored Build Sheet — what the BuildPicker
+/// needs to render the row list (name, fingerprint, version, timestamps).
+/// `payload` is intentionally NOT included: full sheet bodies are fetched
+/// on demand via `get_build_sheet` when the user selects a row.
+#[derive(Debug, Clone, Serialize)]
+pub struct BuildSheetSummaryDto {
+    pub id: String,
+    pub fingerprint: String,
+    pub pob_hash: String,
+    pub name: String,
+    pub schema_version: i64,
+    pub authored_at: String,
+    pub updated_at: String,
+    pub authored_in_chat: Option<String>,
+    pub validated: bool,
+}
+
+/// Full Build Sheet detail — summary fields + the parsed payload as a
+/// JSON value. Used by the BuildPicker's right-pane preview and any
+/// future "view full" modal that wants to read sections directly.
+#[derive(Debug, Clone, Serialize)]
+pub struct BuildSheetDetailDto {
+    pub id: String,
+    pub fingerprint: String,
+    pub pob_hash: String,
+    pub name: String,
+    pub schema_version: i64,
+    pub authored_at: String,
+    pub updated_at: String,
+    pub authored_in_chat: Option<String>,
+    pub validated: bool,
+    pub payload: serde_json::Value,
+}
+
 /// Status of one whitelisted API key env var, as exposed to the picker UI.
 /// `masked_preview` is `Some("sk-ant-...4f2c")` when we can safely echo a
 /// short fingerprint, `Some("(from environment)")` for OS-env-only keys
@@ -364,6 +398,11 @@ pub enum DeltaEvent {
         name: String,
         detail: Option<String>,
     },
+    ToolDetailUpdate {
+        session_id: u64,
+        id: String,
+        summary_input: String,
+    },
     ToolOutput {
         session_id: u64,
         id: String,
@@ -403,6 +442,55 @@ pub enum DeltaEvent {
         findings_count: usize,
         findings_summary: String,
     },
+    /// Build Sheets — agent-drafted (or re-drafted) section. Front-end
+    /// patches the matching `BSDraftedCard` in place.
+    SheetDraftUpdate {
+        session_id: u64,
+        section_id: String,
+        title: String,
+        body: String,
+        confirmed: bool,
+    },
+    /// Build Sheets — questions_v2-style picker for a personality question.
+    SheetAskUser {
+        session_id: u64,
+        question_id: String,
+        title: String,
+        subtitle: Option<String>,
+        options: Vec<String>,
+        multi: bool,
+        has_other: bool,
+    },
+    /// Build Sheets — one-shot interview opened by the agent after deep PoB
+    /// analysis. Frontend renders a single `BSInterviewPanel` with all
+    /// sections + questions in one tall card. The payload is opaque JSON
+    /// (validated server-side at dispatch time, see ref 32 for shape).
+    SheetInterviewOpen {
+        session_id: u64,
+        payload: serde_json::Value,
+    },
+    /// Build Sheets — sheet finalized + persisted. Frontend renders a small
+    /// `BSSheetSavedBanner` segment in the chat timeline.
+    SheetFinalized {
+        session_id: u64,
+        sheet_id: String,
+        name: String,
+    },
+    /// Build Sheets — a validated sheet became active for this chat. Fired
+    /// after both finalize and lookup; populates the sidebar
+    /// `BSLinkedSheetCard` via `sheet.loadActiveSheet(...)` on the frontend.
+    SheetLoaded {
+        session_id: u64,
+        sheet_id: String,
+        fingerprint: String,
+        name: String,
+        pob_hash: String,
+        stale: bool,
+        authored_at: String,
+        updated_at: String,
+        schema_version: i64,
+        payload: serde_json::Value,
+    },
 }
 
 impl DeltaEvent {
@@ -417,6 +505,11 @@ impl DeltaEvent {
                 id,
                 name,
                 detail,
+            },
+            LlmDelta::ToolDetailUpdate { id, summary_input } => DeltaEvent::ToolDetailUpdate {
+                session_id,
+                id,
+                summary_input,
             },
             LlmDelta::ToolOutput { id, chunk } => DeltaEvent::ToolOutput {
                 session_id,
@@ -459,6 +552,65 @@ impl DeltaEvent {
                     findings_summary: summary,
                 }
             }
+            LlmDelta::SheetDraftUpdate {
+                section_id,
+                title,
+                body,
+                confirmed,
+            } => DeltaEvent::SheetDraftUpdate {
+                session_id,
+                section_id,
+                title,
+                body,
+                confirmed,
+            },
+            LlmDelta::SheetAskUser {
+                question_id,
+                title,
+                subtitle,
+                options,
+                multi,
+                has_other,
+            } => DeltaEvent::SheetAskUser {
+                session_id,
+                question_id,
+                title,
+                subtitle,
+                options,
+                multi,
+                has_other,
+            },
+            LlmDelta::SheetInterviewOpen { payload } => DeltaEvent::SheetInterviewOpen {
+                session_id,
+                payload,
+            },
+            LlmDelta::SheetFinalized { sheet_id, name } => DeltaEvent::SheetFinalized {
+                session_id,
+                sheet_id,
+                name,
+            },
+            LlmDelta::SheetLoaded {
+                sheet_id,
+                fingerprint,
+                name,
+                pob_hash,
+                stale,
+                authored_at,
+                updated_at,
+                schema_version,
+                payload,
+            } => DeltaEvent::SheetLoaded {
+                session_id,
+                sheet_id,
+                fingerprint,
+                name,
+                pob_hash,
+                stale,
+                authored_at,
+                updated_at,
+                schema_version,
+                payload,
+            },
             LlmDelta::MessageEnd => DeltaEvent::MessageEnd { session_id },
             LlmDelta::Error(message) => DeltaEvent::Error {
                 session_id,
