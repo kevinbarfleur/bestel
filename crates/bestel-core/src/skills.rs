@@ -120,8 +120,18 @@ pub fn parse_skill_md(raw: &str) -> Result<(SkillFrontmatter, String)> {
     let body = after_close
         .trim_start_matches(|c: char| c == '\r' || c == '\n')
         .to_string();
-    let frontmatter: SkillFrontmatter = toml::from_str(frontmatter_text)
-        .with_context(|| format!("parse skill frontmatter:\n{frontmatter_text}"))?;
+    // Normalize CRLF → LF before TOML parse. On Windows checkouts git
+    // converts line endings to CRLF by default ; we found that
+    // `frontmatter_text` ends with a bare `\r` (the `\r\n+++` was
+    // partially consumed: we searched for `\n+++` so the `\n` was the
+    // delimiter and the `\r` stayed in `frontmatter_text`). The TOML
+    // parser rejects a bare `\r` after a closing bracket with
+    // "expected newline". Stripping all `\r` is the simplest fix that
+    // works regardless of where the orphan came from. Linux/LF
+    // checkouts have no `\r` at all so the .replace is a no-op alloc.
+    let frontmatter_normalized = frontmatter_text.replace('\r', "");
+    let frontmatter: SkillFrontmatter = toml::from_str(&frontmatter_normalized)
+        .with_context(|| format!("parse skill frontmatter:\n{frontmatter_normalized}"))?;
     if frontmatter.name.trim().is_empty() {
         return Err(anyhow!("skill `name` must be non-empty"));
     }
