@@ -472,21 +472,32 @@ impl AnthropicClient {
                 "stream": true,
                 "messages": messages,
             });
-            if force_build_context {
-                body["tool_choice"] = json!({
-                    "type": "tool",
-                    "name": super::tools::GET_ACTIVE_BUILD,
-                });
-            } else if force_finalize_after_submission {
-                body["tool_choice"] = json!({
-                    "type": "tool",
-                    "name": crate::llm::sheet_tools::SHEET_FINALIZE_REQUEST,
-                });
-            } else if force_pivot_to_sheet {
-                body["tool_choice"] = json!({
-                    "type": "tool",
-                    "name": crate::llm::sheet_tools::SHEET_OPEN_INTERVIEW,
-                });
+            // Anthropic-compatible third-party endpoints (DeepSeek's
+            // `api.deepseek.com/anthropic`, Z.ai, etc.) frequently route the
+            // request to a backend that rejects the typed `tool_choice` field
+            // ("deepseek-reasoner does not support this tool_choice"). Skip
+            // the force on non-native endpoints; the system-prompt directives
+            // (e.g. always call `get_active_build` before commenting on the
+            // build) still steer the agent toward the right call, just
+            // without the hard guarantee.
+            let supports_forced_tool_choice = self.api_url == API_URL;
+            if supports_forced_tool_choice {
+                if force_build_context {
+                    body["tool_choice"] = json!({
+                        "type": "tool",
+                        "name": super::tools::GET_ACTIVE_BUILD,
+                    });
+                } else if force_finalize_after_submission {
+                    body["tool_choice"] = json!({
+                        "type": "tool",
+                        "name": crate::llm::sheet_tools::SHEET_FINALIZE_REQUEST,
+                    });
+                } else if force_pivot_to_sheet {
+                    body["tool_choice"] = json!({
+                        "type": "tool",
+                        "name": crate::llm::sheet_tools::SHEET_OPEN_INTERVIEW,
+                    });
+                }
             }
 
             let resp = self
@@ -508,6 +519,16 @@ impl AnthropicClient {
             let mut current_text_index_text = std::collections::BTreeMap::<usize, String>::new();
             let mut current_tool_index: std::collections::BTreeMap<usize, ToolUse> =
                 std::collections::BTreeMap::new();
+            // Thinking blocks must round-trip — DeepSeek's reasoner backend
+            // (which `deepseek-v4-flash` maps onto via the Anthropic-compat
+            // endpoint) and Anthropic's extended thinking both reject the
+            // next iteration if the prior assistant turn's thinking content
+            // isn't passed back verbatim. We capture text + signature here
+            // so the replay block is byte-for-byte identical.
+            let mut current_thinking_index: std::collections::BTreeMap<
+                usize,
+                ThinkingCapture,
+            > = std::collections::BTreeMap::new();
             let mut thinking_open: bool = false;
             let mut stop_reason: Option<String> = None;
 
@@ -584,11 +605,29 @@ impl AnthropicClient {
                                 });
                             } else if btype == "text" {
                                 current_text_index_text.entry(idx).or_default();
-                            } else if btype == "thinking" || btype == "redacted_thinking" {
+                            } else if btype == "thinking" {
                                 if !thinking_open {
                                     let _ = deltas.send(LlmDelta::ReasoningBegin);
                                     thinking_open = true;
                                 }
+                                current_thinking_index.entry(idx).or_insert(
+                                    ThinkingCapture::Open {
+                                        text: String::new(),
+                                        signature: String::new(),
+                                    },
+                                );
+                            } else if btype == "redacted_thinking" {
+                                if !thinking_open {
+                                    let _ = deltas.send(LlmDelta::ReasoningBegin);
+                                    thinking_open = true;
+                                }
+                                let data = block
+                                    .get("data")
+                                    .and_then(|d| d.as_str())
+                                    .unwrap_or("")
+                                    .to_string();
+                                current_thinking_index
+                                    .insert(idx, ThinkingCapture::Redacted { data });
                             }
                         }
                         "content_block_delta" => {
@@ -620,8 +659,28 @@ impl AnthropicClient {
                                                 let _ = deltas.send(LlmDelta::ReasoningBegin);
                                                 thinking_open = true;
                                             }
+                                            if let Some(ThinkingCapture::Open {
+                                                text: buf,
+                                                ..
+                                            }) = current_thinking_index.get_mut(&idx)
+                                            {
+                                                buf.push_str(text);
+                                            }
                                             let _ = deltas
                                                 .send(LlmDelta::ReasoningDelta(text.to_string()));
+                                        }
+                                    }
+                                    "signature_delta" => {
+                                        if let Some(sig) =
+                                            d.get("signature").and_then(|s| s.as_str())
+                                        {
+                                            if let Some(ThinkingCapture::Open {
+                                                signature,
+                                                ..
+                                            }) = current_thinking_index.get_mut(&idx)
+                                            {
+                                                signature.push_str(sig);
+                                            }
                                         }
                                     }
                                     "input_json_delta" => {
@@ -740,6 +799,30 @@ impl AnthropicClient {
             full_assistant.push_str(&assistant_text);
 
             let mut assistant_content: Vec<Value> = Vec::new();
+            // Thinking blocks must come first in the replay — Anthropic's
+            // extended thinking spec and DeepSeek's reasoner protocol both
+            // expect them before text/tool_use blocks. Iterating the BTreeMap
+            // by ascending index preserves the original ordering when the
+            // model returns several thinking blocks in a single turn.
+            for (_idx, capture) in &current_thinking_index {
+                let block = match capture {
+                    ThinkingCapture::Open { text, signature } => {
+                        let mut obj = json!({
+                            "type": "thinking",
+                            "thinking": text,
+                        });
+                        if !signature.is_empty() {
+                            obj["signature"] = json!(signature);
+                        }
+                        obj
+                    }
+                    ThinkingCapture::Redacted { data } => json!({
+                        "type": "redacted_thinking",
+                        "data": data,
+                    }),
+                };
+                assistant_content.push(block);
+            }
             if !assistant_text.is_empty() {
                 assistant_content.push(json!({"type":"text","text":assistant_text}));
             }
@@ -1074,6 +1157,20 @@ struct ToolUse {
     id: String,
     name: String,
     input_json: String,
+}
+
+/// Captures a `thinking` or `redacted_thinking` content block during
+/// streaming so it can be replayed verbatim in the next iteration's
+/// assistant message — required by Anthropic extended thinking and by
+/// DeepSeek's reasoner backend.
+#[derive(Debug, Clone)]
+enum ThinkingCapture {
+    /// Plain thinking with optional signature accumulated from
+    /// `signature_delta` events.
+    Open { text: String, signature: String },
+    /// Safety-redacted thinking — opaque `data` payload that must be
+    /// echoed back as-is.
+    Redacted { data: String },
 }
 
 fn cached_tool_schemas() -> Vec<Value> {

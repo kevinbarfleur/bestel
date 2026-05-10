@@ -101,7 +101,7 @@ fn print_help() {
     println!("    [--pob-fixture <name|path>]");
     println!("    [--strict]                              exit non-zero on lint FAIL findings");
     println!("  bestel eval-judge --runs-dir <dir> --eval-set <path>");
-    println!("    [--judge-model <id>]                    default: claude-sonnet-4-5");
+    println!("    [--judge-model <id>]                    default: claude-sonnet-4-6");
     println!("    [--out <baseline.json>]                 default: <runs-dir>/baseline.json");
     println!("    [--filter-id <substring>]               grade only matching scenario ids");
     println!("  bestel kb-eval --queries <path>");
@@ -153,7 +153,7 @@ async fn run_battery_inner(raw_args: Vec<String>) -> i32 {
     }
 
     let mut scenarios_dir: Option<PathBuf> = None;
-    let mut model_id = "deepseek-v3-2".to_string();
+    let mut model_id = "deepseek-v4-flash".to_string();
     let mut out_dir: Option<PathBuf> = None;
     let mut filter_name: Option<String> = None;
     let mut pob_fixture: Option<String> = None;
@@ -560,7 +560,7 @@ async fn run_eval_judge_inner(raw_args: Vec<String>) -> i32 {
     let mut runs_dir: Option<PathBuf> = None;
     let mut eval_set_path: Option<PathBuf> = None;
     let mut out_path: Option<PathBuf> = None;
-    let mut judge_model = "claude-sonnet-4-5".to_string();
+    let mut judge_model = "claude-sonnet-4-6".to_string();
     let mut filter_id: Option<String> = None;
 
     let mut i = 0;

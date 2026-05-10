@@ -103,15 +103,15 @@ const OLLAMA_LIBRARY_URL: &str = "https://ollama.com/library";
 pub fn cloud_profiles() -> Vec<ModelProfile> {
     vec![
         ModelProfile {
-            id: "deepseek-v3-2".into(),
+            id: "deepseek-v4-flash".into(),
             provider: ProviderKind::Anthropic,
-            model_id: "deepseek-chat".into(),
-            display_name: "DeepSeek V3.2".into(),
+            model_id: "deepseek-v4-flash".into(),
+            display_name: "DeepSeek V4-Flash".into(),
             description:
-                "DeepSeek V3.2 via Anthropic-compatible endpoint. ~10x cheaper than Haiku, strong reasoning and tool-calling. Requires DEEPSEEK_API_KEY.".into(),
-            speed: SpeedTier::Balanced,
+                "DeepSeek V4-Flash via Anthropic-compatible endpoint. ~15x cheaper than Haiku, 1M context, agent-tuned with parallel tool calls and dual-mode thinking. Requires DEEPSEEK_API_KEY.".into(),
+            speed: SpeedTier::Fast,
             cost: CostTier::Cheap,
-            cost_per_mtok: Some((0.28, 0.42)),
+            cost_per_mtok: Some((0.14, 0.28)),
             base_url: Some("https://api.deepseek.com/anthropic".into()),
             api_key_env: Some("DEEPSEEK_API_KEY".into()),
             info_url: Some(DEEPSEEK_DOCS_URL.into()),
@@ -135,12 +135,12 @@ pub fn cloud_profiles() -> Vec<ModelProfile> {
             vision_capable: true,
         },
         ModelProfile {
-            id: "anthropic-sonnet-4-5".into(),
+            id: "anthropic-sonnet-4-6".into(),
             provider: ProviderKind::Anthropic,
-            model_id: "claude-sonnet-4-5-20250929".into(),
-            display_name: "Claude Sonnet 4.5".into(),
+            model_id: "claude-sonnet-4-6".into(),
+            display_name: "Claude Sonnet 4.6".into(),
             description:
-                "Anthropic API, balanced research model. Strong tool-calling and synthesis. Use for deeper questions where Haiku falls short.".into(),
+                "Anthropic API, balanced research model. Best-in-class tool calling and 1M context window. Use for deeper questions where Haiku falls short.".into(),
             speed: SpeedTier::Balanced,
             cost: CostTier::Mid,
             cost_per_mtok: Some((3.0, 15.0)),
@@ -448,7 +448,7 @@ mod tests {
 
     #[test]
     fn deepseek_profile_has_endpoint_override() {
-        let p = find_profile("deepseek-v3-2").expect("deepseek profile present");
+        let p = find_profile("deepseek-v4-flash").expect("deepseek profile present");
         assert_eq!(p.api_key_env.as_deref(), Some("DEEPSEEK_API_KEY"));
         assert_eq!(
             p.base_url.as_deref(),
@@ -464,9 +464,9 @@ mod tests {
     #[test]
     fn lookup_cloud_returns_some() {
         assert!(find_profile("anthropic-haiku-4-5").is_some());
-        assert!(find_profile("anthropic-sonnet-4-5").is_some());
+        assert!(find_profile("anthropic-sonnet-4-6").is_some());
         assert!(find_profile("anthropic-opus-4-7").is_some());
-        assert!(find_profile("deepseek-v3-2").is_some());
+        assert!(find_profile("deepseek-v4-flash").is_some());
     }
 
     #[test]

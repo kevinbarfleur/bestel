@@ -703,21 +703,21 @@ function actionLabel(b: PobBuildSummaryDto): string {
       <template v-else-if="mode === 'sheets' && selectedSheet" #actionBar>
         <span
           class="build-picker__hint"
-          :class="{ 'build-picker__hint--danger': pendingDeleteId === selectedSheet.id }"
+          :class="{ 'build-picker__hint--danger': pendingDeleteId === selectedSheet?.id }"
         >
-          <template v-if="pendingDeleteId === selectedSheet.id">
-            <strong>Click again to permanently delete</strong> "{{ selectedSheet.name }}".
+          <template v-if="pendingDeleteId === selectedSheet?.id">
+            <strong>Click again to permanently delete</strong> "{{ selectedSheet?.name }}".
             This cannot be undone.
           </template>
           <template v-else>
-            Deleting <strong>{{ selectedSheet.name }}</strong> removes its row from the
+            Deleting <strong>{{ selectedSheet?.name }}</strong> removes its row from the
             local database. Bestel will re-author from scratch the next time the build is loaded.
           </template>
         </span>
         <RunicButton
           variant="secondary"
           no-runes
-          @click="pendingDeleteId === selectedSheet.id ? (pendingDeleteId = null) : close()"
+          @click="pendingDeleteId === selectedSheet?.id ? (pendingDeleteId = null) : close()"
         >
           Cancel
         </RunicButton>
@@ -728,7 +728,7 @@ function actionLabel(b: PobBuildSummaryDto): string {
           :danger="true"
           @click="onDeleteClick"
         >
-          {{ pendingDeleteId === selectedSheet.id ? 'Confirm delete' : 'Delete sheet' }}
+          {{ pendingDeleteId === selectedSheet?.id ? 'Confirm delete' : 'Delete sheet' }}
         </RunicButton>
       </template>
 

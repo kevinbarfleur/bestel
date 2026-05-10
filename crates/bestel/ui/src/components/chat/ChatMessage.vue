@@ -198,6 +198,7 @@ interface Turn {
     | 'sheet-draft'
     | 'sheet-ask'
     | 'sheet-interview'
+    | 'sheet-finalized'
     | 'placeholder';
   segment:
     | TextSegment
@@ -206,6 +207,7 @@ interface Turn {
     | SheetDraftSegment
     | SheetAskSegment
     | SheetInterviewSegment
+    | SheetFinalizedSegment
     | null;
   isLast: boolean;
 }

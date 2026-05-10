@@ -46,6 +46,9 @@ The agent's load-bearing knowledge layer lives at the workspace root under `prom
 
 ## Build / dev workflow
 
-- `cargo build --release -p bestel -j 1` for release.
-- `cd crates/bestel && cargo tauri dev` for hot-reload Vue + Rust.
-- Kill running `bestel.exe` and rebuild after every code change.
+- `cd crates/bestel && cargo tauri dev` for hot-reload Vue + Rust (default for iteration).
+- For a release `.exe`, choose one — **never `cargo build --release` alone**, it embeds whatever is currently in `ui/dist/`:
+  - `cargo tauri build` — npm build + Rust release + NSIS/MSI installers.
+  - `(cd crates/bestel/ui && npm run build) && cargo build --release -p bestel -j 1` — same effect, no installer, faster iteration.
+- Kill running `bestel.exe` before rebuilding.
+- `vue-tsc` runs only on `npm run build`, not on `npm run dev`. Type errors from missing union variants or null narrowing across `<template v-else-if>` will pass dev and explode at release time.
