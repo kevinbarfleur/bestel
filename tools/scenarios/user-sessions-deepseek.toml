@@ -1,0 +1,91 @@
+name = "user-sessions-deepseek"
+description = """
+Four scripted user sessions covering different prompt profiles, run
+sequentially against DeepSeek V4-Flash. Captures the full chat state
+after each turn for downstream qualitative review:
+
+  Q1 — mechanics_rt_accuracy (simple mechanics, no build needed)
+  Q2 — mechanics_more_vs_increased (conceptual, verify-eligible)
+  Q3 — vague_squishy_build (should trigger clarification reflex)
+  Q4 — diag_ele_oneshot (diagnostic — get_active_build flow)
+
+Each block: new-chat → send → wait-completion-or-crash → eval(dump
+chat-state JSON). The summary.json captures everything so we can
+read the responses directly without scraping the running app.
+"""
+
+# ============================================================
+# Q1 — Pure mechanics, no PoB attached
+# ============================================================
+[[step]]
+type = "new-chat"
+
+[[step]]
+type = "send"
+text = "do i need accuracy if i have resolute technique"
+
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 180000
+
+[[step]]
+type = "eval"
+expr = "JSON.stringify(window.__bestel.getChatState())"
+
+# ============================================================
+# Q2 — Conceptual mechanics, verify pipeline likely to fire
+# ============================================================
+[[step]]
+type = "new-chat"
+
+[[step]]
+type = "send"
+text = "whats the difference between more and increased damage"
+
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 180000
+
+[[step]]
+type = "eval"
+expr = "JSON.stringify(window.__bestel.getChatState())"
+
+# ============================================================
+# Q3 — Vague prompt, should ask for clarification (axis unknown)
+# ============================================================
+[[step]]
+type = "new-chat"
+
+[[step]]
+type = "send"
+text = "my build feels like ass, what am i doing wrong"
+
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 180000
+
+[[step]]
+type = "eval"
+expr = "JSON.stringify(window.__bestel.getChatState())"
+
+# ============================================================
+# Q4 — Diagnosis with PoB attached, exercises agentic loop
+# ============================================================
+[[step]]
+type = "new-chat"
+build = "C:/Users/kbarf/Documents/Path of Building/Builds/3.26/Penance Brand.xml"
+
+[[step]]
+type = "send"
+text = "can you look at my char and tell me why i die so much to elemental hits"
+
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 240000
+
+[[step]]
+type = "eval"
+expr = "JSON.stringify(window.__bestel.getChatState())"
+
+[[step]]
+type = "screenshot"

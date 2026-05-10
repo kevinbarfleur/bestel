@@ -34,16 +34,14 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Context, Result};
-use chromiumoxide::cdp::browser_protocol::inspector::EventTargetCrashed;
 use chromiumoxide::cdp::browser_protocol::page::{
     CaptureScreenshotFormat, CaptureScreenshotParams,
 };
 use chromiumoxide::cdp::js_protocol::runtime::EvaluateParams;
 use chromiumoxide::Page;
-use futures_util::StreamExt;
 use serde::Deserialize;
 use serde_json::{json, Value};
-use tokio::time::{sleep, timeout as tokio_timeout};
+use tokio::time::sleep;
 
 use crate::cdp;
 use crate::session;
@@ -282,46 +280,43 @@ async fn run_step(
     }
 }
 
+/// Polls `window.__bestel.isStreaming()` every 5s until it returns false
+/// or the deadline expires. Tolerates transient CDP timeouts (which
+/// happen under heavy stream traffic) — single failures are logged but
+/// don't abort the wait. The 5s interval is intentional: every CDP
+/// `Runtime.evaluate` wakes the JS main thread and competes for cycles
+/// with the streaming pipeline (delta events emitting from Tauri,
+/// reactive updates, the snapshot deep-watch). Polling more aggressively
+/// (2s, 500ms) creates measurable contention on long DeepSeek+verifier
+/// turns and contributed to the system-wide RAM exhaustion observed
+/// 2026-05-10 (see commit body).
+///
+/// The scenario `crashed` field stays `false` here ; use the standalone
+/// `wait-crash` command for explicit crash listening (it uses a dedicated
+/// event subscription that isn't time-shared with eval polling).
 async fn wait_completion_or_crash(page: &Page, deadline: Duration) -> Result<Value> {
     let started = Instant::now();
-    let mut crash_listener = page.event_listener::<EventTargetCrashed>().await?;
+    let mut consecutive_errors = 0u32;
+    let mut last_error: Option<String> = None;
 
     loop {
         if started.elapsed() > deadline {
             return Ok(json!({
                 "outcome": "timeout",
                 "elapsed_ms": started.elapsed().as_millis(),
+                "consecutive_errors": consecutive_errors,
+                "last_error": last_error,
             }));
         }
 
-        // Race: crash event vs polling interval.
-        let poll = tokio_timeout(Duration::from_millis(500), crash_listener.next()).await;
-
-        match poll {
-            Ok(Some(_evt)) => {
-                return Ok(json!({
-                    "outcome": "crashed",
-                    "crashed": true,
-                    "elapsed_ms": started.elapsed().as_millis(),
-                }));
-            }
-            Ok(None) => {
-                // Stream closed unexpectedly — treat as crash too.
-                return Ok(json!({
-                    "outcome": "event_stream_closed",
-                    "crashed": true,
-                    "elapsed_ms": started.elapsed().as_millis(),
-                }));
-            }
-            Err(_timeout) => {
-                // No crash this tick — check streaming.
-                let streaming = run_js(page, "window.__bestel.isStreaming()", false)
-                    .await?
-                    .as_bool()
-                    .unwrap_or(true);
+        match run_js(page, "window.__bestel.isStreaming()", false).await {
+            Ok(value) => {
+                consecutive_errors = 0;
+                let streaming = value.as_bool().unwrap_or(true);
                 if !streaming {
-                    let mem =
-                        run_js(page, "window.__bestel.getMemoryStats()", false).await?;
+                    let mem = run_js(page, "window.__bestel.getMemoryStats()", false)
+                        .await
+                        .ok();
                     return Ok(json!({
                         "outcome": "completed",
                         "elapsed_ms": started.elapsed().as_millis(),
@@ -329,7 +324,24 @@ async fn wait_completion_or_crash(page: &Page, deadline: Duration) -> Result<Val
                     }));
                 }
             }
+            Err(e) => {
+                consecutive_errors += 1;
+                last_error = Some(e.to_string());
+                // 5 errors in a row (~25s of failed polls at the 5s
+                // interval) → bail. CDP went dead.
+                if consecutive_errors >= 5 {
+                    return Err(anyhow!(
+                        "wait-completion: {} consecutive CDP errors; last: {e}",
+                        consecutive_errors
+                    ));
+                }
+                eprintln!(
+                    "[scenario] wait-completion poll error ({consecutive_errors}/5): {e}"
+                );
+            }
         }
+
+        sleep(Duration::from_millis(5000)).await;
     }
 }
 

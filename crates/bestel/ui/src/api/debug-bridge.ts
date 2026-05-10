@@ -13,6 +13,7 @@ import { invoke } from '@tauri-apps/api/core';
 
 import { useBuildStore } from '../stores/build';
 import { useChatStore } from '../stores/chat';
+import { useSettingsStore } from '../stores/settings';
 
 interface MemoryStats {
   /** JS heap currently used (bytes). Edge/Chromium-only — null on others. */
@@ -40,8 +41,14 @@ interface BestelDebugBridge {
   cancelStreaming: () => Promise<void>;
   /** Currently-attached build (or null). */
   getActiveBuild: () => unknown;
+  /** Currently-active model profile (DTO). */
+  getActiveModel: () => unknown;
+  /** Switch the active model profile by id. */
+  setActiveModel: (id: string) => Promise<unknown>;
+  /** Generic Tauri command bridge — useful for any backend probe. */
+  invoke: (cmd: string, args?: unknown) => Promise<unknown>;
   /** Schema version — bumped on breaking bridge changes. */
-  readonly version: 1;
+  readonly version: 2;
 }
 
 declare global {
@@ -85,9 +92,10 @@ export async function installDebugBridge(): Promise<void> {
 
   const chat = useChatStore();
   const build = useBuildStore();
+  const settings = useSettingsStore();
 
   window.__bestel = {
-    version: 1,
+    version: 2,
     async newChat(buildPath?: string) {
       chat.reset();
       if (buildPath) {
@@ -115,8 +123,20 @@ export async function installDebugBridge(): Promise<void> {
     getActiveBuild() {
       return build.current ? JSON.parse(JSON.stringify(build.current)) : null;
     },
+    getActiveModel() {
+      return settings.activeModel
+        ? JSON.parse(JSON.stringify(settings.activeModel))
+        : null;
+    },
+    async setActiveModel(id: string) {
+      const dto = await settings.setActive(id);
+      return dto ? JSON.parse(JSON.stringify(dto)) : null;
+    },
+    async invoke(cmd: string, args?: unknown) {
+      return await invoke(cmd, args as Record<string, unknown> | undefined);
+    },
   };
   // Loud log so the driver's `logs --filter bestel.debug` immediately picks
   // up that the bridge is live and version-stamped.
-  console.log('[bestel.debug] window.__bestel installed', { version: 1 });
+  console.log('[bestel.debug] window.__bestel installed', { version: 2 });
 }

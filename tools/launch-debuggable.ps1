@@ -22,6 +22,14 @@ $ErrorActionPreference = 'Stop'
 
 $repoRoot = Resolve-Path "$PSScriptRoot\.."
 
+# Tear down any leftover Bestel + child WebView2 processes from a
+# previous session before launching. Without this step, repeated
+# launches accumulate orphan msedgewebview2 children that consume
+# 200–500 MB of RAM and aren't reclaimed until reboot. See
+# tools/cleanup-bestel.ps1 for the full rationale.
+& "$PSScriptRoot\cleanup-bestel.ps1"
+Write-Host ""
+
 $env:BESTEL_DEBUG_PORT = $Port
 $env:BESTEL_FILE_LOG = "1"
 # Default tracing filter — verbose enough for debug, not noisy.
