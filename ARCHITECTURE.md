@@ -293,7 +293,7 @@ and returns.
 
 ## 6. Provider system
 
-Five profiles ship today (`crates/bestel-core/src/llm/models.rs`):
+Six profiles ship today (`crates/bestel-core/src/llm/models.rs`):
 
 | Profile id | Model id | Provider | Endpoint |
 |---|---|---|---|
@@ -301,6 +301,7 @@ Five profiles ship today (`crates/bestel-core/src/llm/models.rs`):
 | `anthropic-sonnet-4-6` | `claude-sonnet-4-6` | Anthropic | api.anthropic.com |
 | `anthropic-opus-4-7` | `claude-opus-4-7` | Anthropic | api.anthropic.com |
 | `deepseek-v4-flash` | `deepseek-v4-flash` | Anthropic-compat | api.deepseek.com/anthropic |
+| `deepseek-v4-pro` | `deepseek-v4-pro` | Anthropic-compat | api.deepseek.com/anthropic |
 | (any local Ollama tag) | (resolved at runtime) | Ollama | http://127.0.0.1:11434 |
 
 Profile selection is persisted at `~/.bestel/runtime/model.json` and

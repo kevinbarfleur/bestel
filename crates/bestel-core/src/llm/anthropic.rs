@@ -408,11 +408,17 @@ impl AnthropicClient {
                 } else if matches!(sheet_status_kind, SheetStatusKind::Stale) {
                     tag.push_str(
                         "\n[Sheet directive: a Build Sheet exists but the PoB hash differs since \
-                         authoring (gear / gem swaps). Surface the drift in plain prose before \
-                         answering, then default to use-as-is unless the user explicitly asks to \
-                         refresh. Only re-author the sheet (re-run sheet_open_interview with fresh \
-                         analysis) when the change clearly invalidates the framing — e.g. a \
-                         different main skill or ascendancy.]",
+                         authoring (gear / gem swaps). Call get_active_build_sheet anyway with the \
+                         fingerprint above. Intent / archetype / defining items / known gaps are \
+                         authored decisions that don't go stale when an item swaps — only the \
+                         numbers age. Open the answer with one short sentence acknowledging the \
+                         drift, then cite the sheet's intent / archetype / items sections for \
+                         context. For numerical claims (DPS, EHP, max-hit, resists, regen), DO \
+                         NOT use the sheet's stored numbers — re-derive from the live PoB via \
+                         pob_calc and present those. End with `read_from_sheet · keys` italic \
+                         caption listing the sections you cited (intent / archetype / items, \
+                         never numbers). Do NOT call sheet_open_interview to refresh — the user \
+                         has a refresh button in the UI and triggers it themselves.]",
                     );
                 }
                 system_blocks.push(json!({
