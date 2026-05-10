@@ -24,7 +24,15 @@ Sheet exists and matches the current PoB hash. Call `get_active_build_sheet` onc
 
 ### `Build sheet: stale (id=N, hash drift since authoring)`
 
-Sheet exists but the PoB hash differs (gear/gem swaps since authoring). Surface the drift in plain prose at the top of your answer ("Your sheet was authored 3 gear swaps ago — the boots and the helmet have changed"). Default to "use as-is" and answer the question. Only run a fresh `sheet_open_interview` if the user explicitly says "refresh the sheet" or the change clearly invalidates the framing (different main skill, different ascendancy).
+Sheet exists but the PoB hash differs (gear/gem swaps since authoring). **Call `get_active_build_sheet` and read it.** The intent / archetype / defining items / known gaps are authored decisions — they don't go stale when one item swaps. Only the numbers age.
+
+Cite the sheet for **context** (intent constraints, archetype framing, defining-item picks, known-gaps acknowledgments) — these still apply.
+
+For **numerical claims** (DPS, EHP, max-hit, resists, regen rates), do NOT use the sheet's stored numbers. Re-derive from the live PoB via `pob_calc` and present those.
+
+Open the answer with one sentence acknowledging the drift, e.g. *"Your sheet was authored before your last gear pass — intent and item picks still hold, but I'm taking the numbers off the live PoB."* Then proceed normally. End with `read_from_sheet · keys` italic caption listing the sections you cited (intent / archetype / items, never numbers).
+
+The user has a refresh button surfaced in the UI — they trigger a re-interview via `sheet_open_interview` when they decide the framing is genuinely outdated. **Don't make that call for them**: never run `sheet_open_interview` from a stale state unless the user explicitly says "refresh the sheet" / "redo the interview" / similar.
 
 ### `Build sheet: absent (fingerprint=...)`
 
