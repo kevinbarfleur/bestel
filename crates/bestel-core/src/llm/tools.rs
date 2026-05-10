@@ -814,9 +814,28 @@ async fn dispatch_load_skill(input: &Value, ctx: &ToolCtx) -> Result<String> {
 async fn dispatch_get_active_build(ctx: &ToolCtx) -> Result<String> {
     let base = ctx.build.render_tool_result();
     let active_build = ctx.build.get();
+
+    // Compute the sheet-status directive BEFORE we touch the JSON, so we
+    // can prepend it as a text block. A directive buried inside the JSON
+    // (alphabetical key order, ~30k-token payload) was empirically
+    // skimmed by DeepSeek-V4-Flash — it called get_active_build_sheet at
+    // position 6 instead of the prescribed 2 on a stale sheet test.
+    // Surfacing it as a leading PLAIN-TEXT block in front of the JSON
+    // payload makes it unmissable. Anthropic / DeepSeek tool-results are
+    // strings ; the model parses the whole content textually, so a
+    // pre-JSON banner is naturally read first.
+    let priority_directive = compute_sheet_priority_directive(active_build.as_ref());
+
     let mut value: Value = match serde_json::from_str(&base) {
         Ok(v) => v,
-        Err(_) => return Ok(base),
+        Err(_) => {
+            // If the base failed to parse as JSON, still prepend the
+            // directive as a banner so the agent sees it.
+            return Ok(match &priority_directive {
+                Some(d) => format!("{d}\n\n{base}"),
+                None => base,
+            });
+        }
     };
     let summary_obj = match value.as_object_mut() {
         Some(o) if o.contains_key("summary") => {
@@ -827,7 +846,12 @@ async fn dispatch_get_active_build(ctx: &ToolCtx) -> Result<String> {
     };
     let summary = match summary_obj {
         Some(s) => s,
-        None => return Ok(base),
+        None => {
+            return Ok(match &priority_directive {
+                Some(d) => format!("{d}\n\n{base}"),
+                None => base,
+            });
+        }
     };
 
     // (a) Sprint E P7 — relevant_kb passages.
@@ -859,8 +883,8 @@ async fn dispatch_get_active_build(ctx: &ToolCtx) -> Result<String> {
     }
 
     // (b) Sprint G P4 — session_notes for multi-turn diagnosis carry-over.
-    if let Some(build) = active_build {
-        let session_id = derive_build_session_id(&build);
+    if let Some(build) = active_build.as_ref() {
+        let session_id = derive_build_session_id(build);
         let notes = crate::llm::session_notes::read_notes(&session_id);
         if notes.current_diagnosis.is_some() {
             if let Ok(notes_json) = serde_json::to_value(&notes) {
@@ -869,7 +893,83 @@ async fn dispatch_get_active_build(ctx: &ToolCtx) -> Result<String> {
         }
     }
 
-    Ok(truncate(&serde_json::to_string(&value).unwrap_or(base.clone()), 30_000))
+    // (c) Sprint K — sheet status hint. The actual computation lives in
+    // `compute_sheet_priority_directive` so we can use it both as a
+    // pre-JSON banner (high-salience for models that skim) AND as a
+    // structured `next_required_action` field inside the summary (for
+    // any tooling that parses the JSON shape downstream). Both paths
+    // carry the same string.
+    if let Some(text) = priority_directive.as_deref() {
+        summary.insert("next_required_action".into(), json!(text));
+    }
+
+    let body = truncate(
+        &serde_json::to_string(&value).unwrap_or_else(|_| base.clone()),
+        30_000,
+    );
+    // Prepend the directive as a plain-text banner so the model reads it
+    // BEFORE the JSON payload. Empirically a directive buried in the
+    // body was skimmed by DeepSeek-V4-Flash on long build dumps.
+    Ok(match priority_directive {
+        Some(d) => format!("{d}\n\n--- BUILD CONTEXT (JSON) ---\n\n{body}"),
+        None => body,
+    })
+}
+
+/// Compute the priority directive that nudges the agent toward
+/// `get_active_build_sheet` as its IMMEDIATE next tool call when a sheet
+/// exists for the loaded build. Returns `None` when no sheet is
+/// applicable (no build, no fingerprint, no DB, or no sheet found).
+///
+/// Mirrors the lookup logic in `crate::llm::anthropic::run`'s tag
+/// injector — keep them in sync. TODO(refactor): extract to
+/// `crate::sheets::lookup_status`.
+fn compute_sheet_priority_directive(build: Option<&PobBuild>) -> Option<String> {
+    let build = build?;
+    let fingerprint = crate::sheets::compute_fingerprint_from_pob(build)?;
+    let canonical = serde_json::to_string(build).unwrap_or_default();
+    let current_hash = crate::sheets::compute_pob_hash(&canonical);
+    let row = crate::persistence::global_db().and_then(|db| {
+        crate::sheets::store::find_by_fingerprint(&db, &fingerprint)
+            .ok()
+            .flatten()
+    })?;
+
+    if row.pob_hash == current_hash {
+        Some(format!(
+            "[PRIORITY DIRECTIVE — STEP 2 / READ SHEET FIRST]\n\
+             A validated, fresh Build Sheet (id={id}) exists for this build. Your \
+             IMMEDIATE next tool call MUST be get_active_build_sheet with \
+             fingerprint='{fp}'. DO NOT call pob_calc / wiki_search / wiki_parse / \
+             kb_search / load_skill / read_internal_reference before reading the \
+             sheet — its sections intent / archetype / damage / defense / items \
+             were authored from a deep PoB analysis at finalize time and often \
+             already contain the pob_calc numbers, threshold lookups, and wiki \
+             facts that bear on the user's question. Only do extra research for \
+             things the sheet does not cover. End the answer with `read_from_sheet \
+             · key1 · key2` italic caption.",
+            id = row.id,
+            fp = fingerprint,
+        ))
+    } else {
+        Some(format!(
+            "[PRIORITY DIRECTIVE — STEP 2 / READ STALE SHEET FIRST]\n\
+             A Build Sheet (id={id}) exists for this build, but the PoB hash \
+             differs since authoring (gear / gem swaps). Your IMMEDIATE next tool \
+             call MUST be get_active_build_sheet with fingerprint='{fp}'. \
+             Intent / archetype / defining items / known gaps are authored \
+             decisions that don't go stale when gear shifts — only the numbers \
+             age. After reading: cite sections.intent / archetype / items for \
+             context, then re-derive numerical claims (DPS, EHP, max-hit, resists, \
+             regen) from the live PoB via pob_calc. Open the answer with one \
+             short sentence acknowledging the drift. End with `read_from_sheet · \
+             keys` italic caption listing the sections you cited (never numbers). \
+             DO NOT call sheet_open_interview to refresh — the user has a refresh \
+             button in the UI and triggers it themselves.",
+            id = row.id,
+            fp = fingerprint,
+        ))
+    }
 }
 
 /// Stable session identifier per loaded build. Currently a Blake3 of the
