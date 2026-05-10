@@ -36,6 +36,9 @@ tmp_*
 # Battery run artifacts (per-machine, per-test outputs)
 tests/eval/runs/
 
+# bestel-driver scenario run artifacts (timestamped per-machine outputs)
+tools/scenarios/runs/
+
 # Design handoff bundles — ephemeral exploration artifacts from
 # claude.ai/design. Extracted locally for reference, not versioned.
 .design-bundle-v*/
