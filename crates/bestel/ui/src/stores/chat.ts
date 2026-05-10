@@ -814,31 +814,59 @@ export const useChatStore = defineStore('chat', () => {
 
   // ─── Autosave ──────────────────────────────────────────────────
   // Snapshot the current chat into history whenever the messages
-  // settle (deep watch, debounced via the run loop).
+  // settle. The deep watch sees every reactive mutation under
+  // `messages`, which during a long DeepSeek+verifier turn fires
+  // 50-200 times per second (each text/reasoning delta). Re-running
+  // `JSON.stringify` over the entire `chats.value` array on every
+  // fire (~500 KB-2 MB depending on history) is what crashed
+  // WebView2 in the 2026-05-10 user-session test — V8 GC couldn't
+  // keep up, the heap overflowed, and Windows OOM-killed neighboring
+  // apps. See `fix/oom-chat-snapshot` branch.
   //
-  // The `restoreInProgress` guard prevents a destructive race during
-  // app boot: ChatView mounts → refreshActive() loads the *default* build
-  // → loadFromSaved() populates messages → the watch below would fire
-  // and snapshot with `attached_build_path = <default build>`, overwriting
-  // the chat's actual associated build. Then `setActive(saved.attached_build_path)`
-  // runs *after* and fixes the in-memory state, but the corrupted snapshot
-  // is already in localStorage. Next app launch reads the corrupted path
-  // and the chat opens with the wrong (default) build forever after.
+  // Strategy: skip the snapshot during streaming. Mark a pending
+  // flag, and let the dedicated `isStreaming` watch below catch up
+  // exactly once when the turn ends. Trade-off: if the user kills
+  // the app mid-stream, the partial reply is lost — acceptable, the
+  // log on disk via `flushToDisk()` keeps each completed turn safe.
   //
-  // Fix: skip snapshots while a chat is being restored — the caller
-  // (ChatView / ChatPicker) is responsible for re-aligning the build via
-  // setActive(), and once that completes the next message OR a manual
-  // re-snapshot will persist the correct path.
+  // `restoreInProgress` is the original guard: prevents a destructive
+  // race during boot where the chat watch could snapshot before
+  // `setActive(saved.attached_build_path)` re-aligns the build.
+
+  let pendingSnapshot = false;
+
+  function doSnapshot(): void {
+    if (messages.value.length === 0) return;
+    const buildPath = useBuildStore().current?.source_file ?? null;
+    useChatHistoryStore().snapshot(messages.value, buildPath);
+  }
+
   watch(
     messages,
     () => {
       if (restoreInProgress) return;
       if (messages.value.length === 0) return;
-      const buildPath = useBuildStore().current?.source_file ?? null;
-      useChatHistoryStore().snapshot(messages.value, buildPath);
+      // Streaming = high-frequency mutations. Defer the write.
+      if (isStreaming.value) {
+        pendingSnapshot = true;
+        return;
+      }
+      pendingSnapshot = false;
+      doSnapshot();
     },
     { deep: true, flush: 'post' },
   );
+
+  // When streaming flips off, drain any deferred write exactly once.
+  // The mutation that closed the stream (status=complete, etc.) has
+  // already landed in `messages` by the time this watch fires.
+  watch(isStreaming, (streaming) => {
+    if (streaming) return;
+    if (restoreInProgress) return;
+    if (!pendingSnapshot) return;
+    pendingSnapshot = false;
+    doSnapshot();
+  });
 
   return {
     messages,
