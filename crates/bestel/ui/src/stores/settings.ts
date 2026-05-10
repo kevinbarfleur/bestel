@@ -10,12 +10,15 @@ import {
   listModels,
   setActiveModel as setActiveModelIpc,
   setApiKey as setApiKeyIpc,
+  settingsGet,
+  settingsSetVerifyEnabled,
 } from '../api/tauri';
 import type {
   DetectionDto,
   KeyStatusDto,
   ModelProfileDto,
   ProviderKindLabel,
+  SettingsDto,
 } from '../api/types';
 
 export type Theme = 'light' | 'dark';
@@ -98,6 +101,11 @@ export const useSettingsStore = defineStore('settings', () => {
   const density = ref<Density>(readStoredDensity());
   const defaultModelId = ref<string | null>(readStoredString(DEFAULT_MODEL_KEY));
   const watcherFolders = ref<string[]>(readStoredFolders());
+  // Persisted server-side in `~/.bestel/runtime/settings.json` via Tauri
+  // command. Default-on; mirrors the Rust-side `Settings::default()` so
+  // the very first frame after boot (before refreshRuntimeSettings)
+  // already shows the correct UI state.
+  const verifyEnabled = ref<boolean>(true);
 
   applyThemeToDom(theme.value);
   applyDensityToDom(density.value);
@@ -259,6 +267,30 @@ export const useSettingsStore = defineStore('settings', () => {
     return apiKeys.value.find((k) => k.env_name === envName) ?? null;
   }
 
+  /** Loads the server-side persisted settings (verify toggle, ...). Safe
+   * to call repeatedly; never throws. Treats failures as a no-op so the
+   * UI keeps the local defaults. */
+  async function refreshRuntimeSettings() {
+    try {
+      const dto: SettingsDto = await settingsGet();
+      verifyEnabled.value = dto.verify_enabled;
+    } catch {
+      /* keep current local value */
+    }
+  }
+
+  /** Persists the verify toggle. Returns null on success, or an
+   * error message string on failure. */
+  async function setVerifyEnabled(enabled: boolean): Promise<string | null> {
+    try {
+      await settingsSetVerifyEnabled(enabled);
+      verifyEnabled.value = enabled;
+      return null;
+    } catch (e: unknown) {
+      return e instanceof Error ? e.message : String(e);
+    }
+  }
+
   return {
     models,
     activeModel,
@@ -269,6 +301,7 @@ export const useSettingsStore = defineStore('settings', () => {
     density,
     defaultModelId,
     watcherFolders,
+    verifyEnabled,
     providerAvailability,
     setTheme,
     toggleTheme,
@@ -284,5 +317,7 @@ export const useSettingsStore = defineStore('settings', () => {
     keyStatus,
     setActive,
     applyDetection,
+    refreshRuntimeSettings,
+    setVerifyEnabled,
   };
 });

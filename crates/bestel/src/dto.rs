@@ -49,6 +49,37 @@ pub struct BuildSheetDetailDto {
     pub payload: serde_json::Value,
 }
 
+/// One verified claim as surfaced to the chat tool card. Mirrors
+/// `bestel_core::llm::verifier::VerifiedClaim` but keeps the DTO crate
+/// boundary clean.
+#[derive(Debug, Clone, Serialize)]
+pub struct VerifiedClaimDto {
+    pub statement: String,
+    pub topic: String,
+    /// `"ok" | "wrong" | "unverified"` — same lowercase variants as the
+    /// core enum so the frontend can render with a matching pill.
+    pub status: String,
+    pub evidence_excerpt: String,
+    pub correction: Option<String>,
+}
+
+impl From<bestel_core::llm::verifier::VerifiedClaim> for VerifiedClaimDto {
+    fn from(c: bestel_core::llm::verifier::VerifiedClaim) -> Self {
+        let status = match c.status {
+            bestel_core::llm::verifier::ClaimStatus::Ok => "ok",
+            bestel_core::llm::verifier::ClaimStatus::Wrong => "wrong",
+            bestel_core::llm::verifier::ClaimStatus::Unverified => "unverified",
+        };
+        Self {
+            statement: c.statement,
+            topic: c.topic,
+            status: status.to_string(),
+            evidence_excerpt: c.evidence_excerpt,
+            correction: c.correction,
+        }
+    }
+}
+
 /// Status of one whitelisted API key env var, as exposed to the picker UI.
 /// `masked_preview` is `Some("sk-ant-...4f2c")` when we can safely echo a
 /// short fingerprint, `Some("(from environment)")` for OS-env-only keys
@@ -435,12 +466,19 @@ pub enum DeltaEvent {
     Completed {
         session_id: u64,
     },
-    /// Sprint G — verifier verdict surfaced to the dev panel.
+    /// Verifier verdict — Chain-of-Verification factored pipeline. Carries
+    /// the legacy Sprint G fields (`status`, `findings_count`,
+    /// `findings_summary`) for the dev panel plus the per-claim audit list
+    /// (`claims_checked`, `corrections_count`) that drives the slim chat
+    /// tool card. Empty `claims_checked` means the heuristic skipped (cheap
+    /// draft) or the toggle is off.
     Verifier {
         session_id: u64,
         status: String,
         findings_count: usize,
         findings_summary: String,
+        claims_checked: Vec<VerifiedClaimDto>,
+        corrections_count: usize,
     },
     /// Build Sheets — agent-drafted (or re-drafted) section. Front-end
     /// patches the matching `BSDraftedCard` in place.
@@ -545,11 +583,18 @@ impl DeltaEvent {
                         .collect::<Vec<_>>()
                         .join("; ")
                 };
+                let claims_checked: Vec<VerifiedClaimDto> = v
+                    .claims_checked
+                    .into_iter()
+                    .map(VerifiedClaimDto::from)
+                    .collect();
                 DeltaEvent::Verifier {
                     session_id,
                     status: status.to_string(),
                     findings_count: v.findings.len(),
                     findings_summary: summary,
+                    claims_checked,
+                    corrections_count: v.corrections_count,
                 }
             }
             LlmDelta::SheetDraftUpdate {

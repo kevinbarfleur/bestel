@@ -67,7 +67,19 @@ const {
   watcherFolders,
   apiKeys,
   models,
+  verifyEnabled,
 } = storeToRefs(settings);
+
+async function onVerifyToggle(next: boolean) {
+  const err = await settings.setVerifyEnabled(next);
+  if (err) {
+    toasts.push({
+      variant: 'error',
+      title: 'Could not save verification setting',
+      body: err,
+    });
+  }
+}
 
 const active = ref<Section>('appearance');
 
@@ -313,6 +325,17 @@ const chatCount = computed(() => history.chats.length);
                 { value: 'fail', label: 'Show error' },
               ]"
               @update:model-value="(v) => { onUnavailable = v; placeholderToast('On-unavailable behavior'); }"
+            />
+          </SettingsField>
+
+          <SettingsField
+            label="Claim verification"
+            hint="When enabled, Bestel re-checks numerical and named claims against the local knowledge base before showing the answer. Adds ~3–5s latency and ~10–20% cost; trivial replies are skipped automatically."
+          >
+            <SettingsToggle
+              :model-value="verifyEnabled"
+              caption="Verify factual claims (Chain-of-Verification)"
+              @update:model-value="onVerifyToggle"
             />
           </SettingsField>
         </div>

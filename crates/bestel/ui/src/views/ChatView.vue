@@ -62,6 +62,7 @@ onMounted(async () => {
     settings.refreshModels(),
     settings.refreshDetection(),
     settings.refreshKeys(),
+    settings.refreshRuntimeSettings(),
   ]);
   // Restore the last active chat if any. The associated build is loaded
   // best-effort; if the file is gone we silently keep the current one.

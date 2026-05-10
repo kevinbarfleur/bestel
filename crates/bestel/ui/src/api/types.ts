@@ -147,6 +147,11 @@ export interface DetectionDto {
   probes: ProbeDto[];
 }
 
+export interface SettingsDto {
+  schema_version: number;
+  verify_enabled: boolean;
+}
+
 export interface BuildEvent {
   summary: PobBuildSummaryDto;
   build: PobBuildDto;
@@ -229,6 +234,18 @@ export interface UsageStats {
   cost_usd: number | null;
 }
 
+/** One claim audited by the CoVe verifier. Mirrors `VerifiedClaimDto`
+ * on the Rust side. The slim chat tool card shows a roll-up; clicking
+ * expand reveals the per-claim list using these. */
+export interface VerifiedClaimDto {
+  statement: string;
+  topic: string;
+  /** Lowercase variant from the Rust enum: matches the pill colour. */
+  status: 'ok' | 'wrong' | 'unverified';
+  evidence_excerpt: string;
+  correction: string | null;
+}
+
 export type LlmDeltaEvent =
   | { kind: 'text'; session_id: number; text: string }
   | { kind: 'reasoning_begin'; session_id: number }
@@ -296,4 +313,15 @@ export type LlmDeltaEvent =
       updated_at: string;
       schema_version: number;
       payload: unknown;
+    }
+  | {
+      kind: 'verifier';
+      session_id: number;
+      /** `pass` | `revise` | `fail`. Pass with empty `claims_checked`
+       * means the heuristic skipped or the toggle was off — no card. */
+      status: string;
+      findings_count: number;
+      findings_summary: string;
+      claims_checked: VerifiedClaimDto[];
+      corrections_count: number;
     };
