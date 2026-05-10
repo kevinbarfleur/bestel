@@ -18,6 +18,7 @@ import LinkViewerModal from './components/link-viewer/LinkViewerModal.vue';
 import { useTooltip } from './composables/useTooltip';
 import { useToastsStore } from './stores/toasts';
 import { useUiStore } from './stores/ui';
+import { installDebugBridge } from './api/debug-bridge';
 
 const route = useRoute();
 const isComponentsRoute = computed(() => route.path === '/components');
@@ -33,6 +34,8 @@ function onKeyDown(ev: KeyboardEvent) {
 
 onMounted(() => {
   window.addEventListener('keydown', onKeyDown);
+  // No-op unless the backend was launched with BESTEL_DEBUG_PORT.
+  void installDebugBridge();
 });
 
 onUnmounted(() => {

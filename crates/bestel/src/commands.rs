@@ -609,6 +609,20 @@ pub fn settings_set_verify_enabled(enabled: bool) -> Result<(), String> {
     bestel_core::settings::set_verify_enabled(enabled).map_err(|e| e.to_string())
 }
 
+/// True when Bestel was launched with a valid `BESTEL_DEBUG_PORT=<port>` env
+/// var — i.e. the WebView2 CDP listener is exposed and the `bestel-driver`
+/// harness can attach. The frontend uses this to decide whether to install
+/// the `window.__bestel` debug bridge. Returning false means the bridge is
+/// NEVER attached, even in dev builds without the env var set, so a stray
+/// page can't poke at the chat store via DevTools.
+#[tauri::command]
+pub fn debug_is_enabled() -> bool {
+    std::env::var("BESTEL_DEBUG_PORT")
+        .ok()
+        .and_then(|s| s.parse::<u16>().ok())
+        .is_some()
+}
+
 const PROMPT_EDITOR_LABEL: &str = "prompt-editor";
 const DEV_PANEL_LABEL: &str = "dev-panel";
 

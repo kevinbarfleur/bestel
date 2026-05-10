@@ -1,0 +1,39 @@
+name = "repro-oom-whisperer"
+description = """
+Reproduces the WebView2 OOM crash observed during long PoB+thinking turns
+(see Whisperer audit, 2026-05-09). The chat is reset, the Penance Brand
+PoB is attached, a single deep diagnostic prompt is sent, and the heap is
+sampled every 1.5s while we wait for either completion or
+`Inspector.targetCrashed`. The expectation: localStorage saturates as the
+deep-watch snapshot loop fires on every reasoning delta, V8 heap grows
+past the WebView2 per-process limit, and the page crashes mid-stream.
+"""
+
+[[step]]
+type = "new-chat"
+build = "C:/Users/kbarf/Documents/Path of Building/Builds/3.26/Penance Brand.xml"
+
+[[step]]
+type = "sleep"
+ms = 1500
+
+[[step]]
+type = "memory-probe"
+interval_ms = 1500
+duration_ms = 4000
+
+[[step]]
+type = "send"
+text = "why do I die often in t16+? give me a thorough analysis"
+
+[[step]]
+type = "memory-probe"
+interval_ms = 1500
+duration_ms = 90000
+
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 90000
+
+[[step]]
+type = "screenshot"

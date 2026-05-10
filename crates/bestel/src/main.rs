@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use anyhow::Result;
 use tauri::{Emitter, Manager};
-use tracing_subscriber::EnvFilter;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 use bestel_core::llm::detect::detect_provider;
 use bestel_core::pob::watcher::PobWatcher;
@@ -78,16 +78,90 @@ fn main() {
         }
     }
 
+    // Must run before tauri::Builder constructs the WebView — WebView2
+    // snapshots env vars at construction time, so a later mutation has no
+    // effect on the embedded browser instance.
+    maybe_enable_cdp_debug();
+
     run_tauri();
 }
 
+/// Tracing pipeline. Stderr layer is always present (visible when launched
+/// from a terminal). When `BESTEL_FILE_LOG=1`, an additional rolling-daily
+/// file layer writes to `~/.bestel/runtime/logs/bestel.log` — this is the
+/// only way to capture Rust-side logs in release builds, since the GUI
+/// subsystem detaches stdio. The `bestel-driver` debug harness reads this
+/// file to combine backend tracing with WebView console events.
+///
+/// The `_FILE_GUARD` is leaked into a static once-cell-like slot via
+/// `Box::leak` to keep the non-blocking writer alive for the program's
+/// lifetime. Without it, the worker thread shuts down at function exit
+/// and log writes get dropped silently.
 fn init_tracing() {
-    let _ = tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn")),
-        )
-        .with_writer(std::io::stderr)
+    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn"));
+    let stderr_layer = tracing_subscriber::fmt::layer().with_writer(std::io::stderr);
+
+    let file_layer = if std::env::var("BESTEL_FILE_LOG").is_ok() {
+        if let Some(home) = dirs::home_dir() {
+            let log_dir = home.join(".bestel").join("runtime").join("logs");
+            if std::fs::create_dir_all(&log_dir).is_ok() {
+                let appender = tracing_appender::rolling::daily(&log_dir, "bestel.log");
+                let (non_blocking, guard) = tracing_appender::non_blocking(appender);
+                // Leak the guard so the worker thread stays alive for the
+                // process lifetime. We never need to drop it explicitly.
+                Box::leak(Box::new(guard));
+                Some(
+                    tracing_subscriber::fmt::layer()
+                        .with_writer(non_blocking)
+                        .with_ansi(false),
+                )
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let _ = tracing_subscriber::registry()
+        .with(env_filter)
+        .with(stderr_layer)
+        .with(file_layer)
         .try_init();
+}
+
+/// Reads `BESTEL_DEBUG_PORT` and, if set to a valid u16, forwards it to
+/// WebView2's `--remote-debugging-port` flag via the
+/// `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` env var. Must run BEFORE
+/// `tauri::Builder` constructs the WebView, otherwise WebView2 has already
+/// snapshotted env vars and the flag is ignored.
+///
+/// Opt-in by design: production users never set this, no CDP listener
+/// runs, no debug bridge attack surface. The driver's helper script
+/// (`tools/launch-debuggable.ps1`) sets it explicitly.
+fn maybe_enable_cdp_debug() {
+    if let Ok(port_str) = std::env::var("BESTEL_DEBUG_PORT") {
+        match port_str.parse::<u16>() {
+            Ok(port) => {
+                let webview_arg = format!("--remote-debugging-port={port}");
+                std::env::set_var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", &webview_arg);
+                tracing::warn!(
+                    target: "bestel.debug",
+                    port,
+                    "CDP debug bridge enabled — DO NOT USE IN PRODUCTION"
+                );
+            }
+            Err(_) => {
+                tracing::warn!(
+                    target: "bestel.debug",
+                    raw = %port_str,
+                    "BESTEL_DEBUG_PORT is set but not a valid u16 — ignoring"
+                );
+            }
+        }
+    }
 }
 
 fn print_help() {
@@ -1521,6 +1595,7 @@ fn run_tauri() {
                 commands::delete_api_key,
                 commands::settings_get,
                 commands::settings_set_verify_enabled,
+                commands::debug_is_enabled,
                 commands::prompts_list,
                 commands::prompts_read,
                 commands::prompts_write,
