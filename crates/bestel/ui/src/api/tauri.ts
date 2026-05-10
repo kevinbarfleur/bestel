@@ -16,6 +16,7 @@ import type {
   PobBuildDto,
   PobBuildSummaryDto,
   ProviderStatusEvent,
+  SettingsDto,
 } from './types';
 
 export const ping = (name: string): Promise<string> => invoke('ping', { name });
@@ -127,6 +128,10 @@ export const setApiKey = (envName: string, value: string): Promise<void> =>
   invoke('set_api_key', { envName, value });
 export const deleteApiKey = (envName: string): Promise<void> =>
   invoke('delete_api_key', { envName });
+
+export const settingsGet = (): Promise<SettingsDto> => invoke('settings_get');
+export const settingsSetVerifyEnabled = (enabled: boolean): Promise<void> =>
+  invoke('settings_set_verify_enabled', { enabled });
 
 export const onLlmDelta = (cb: (e: LlmDeltaEvent) => void): Promise<UnlistenFn> =>
   listen<LlmDeltaEvent>('llm:delta', (ev) => cb(ev.payload));

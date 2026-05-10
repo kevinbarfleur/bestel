@@ -14,9 +14,11 @@ import type {
   SheetInterviewSegment,
   TextSegment,
   ToolSegment,
+  VerifyClaimsSegment,
 } from '../../stores/chat';
 import { useSheetStore } from '../../stores/sheet';
 import ToolCallBadge from './ToolCallBadge.vue';
+import VerifyClaimsCard from './VerifyClaimsCard.vue';
 import ArtThinking from './artifacts/ArtThinking.vue';
 import ArtPoBImport from './artifacts/ArtPoBImport.vue';
 import ArtWikiPage from './artifacts/ArtWikiPage.vue';
@@ -199,6 +201,7 @@ interface Turn {
     | 'sheet-ask'
     | 'sheet-interview'
     | 'sheet-finalized'
+    | 'verify-claims'
     | 'placeholder';
   segment:
     | TextSegment
@@ -208,6 +211,7 @@ interface Turn {
     | SheetAskSegment
     | SheetInterviewSegment
     | SheetFinalizedSegment
+    | VerifyClaimsSegment
     | null;
   isLast: boolean;
 }
@@ -272,7 +276,8 @@ function isArtifactKind(k: Turn['kind']): boolean {
     k === 'tool-wiki-page' ||
     k === 'tool-generic' ||
     k === 'sheet-draft' ||
-    k === 'sheet-ask'
+    k === 'sheet-ask' ||
+    k === 'verify-claims'
   );
 }
 
@@ -388,6 +393,15 @@ const turns = computed<Turn[]>(() => {
         label: 'sheet',
         color: 'var(--good)',
         kind: 'sheet-finalized',
+        segment: seg,
+        isLast,
+      });
+    } else if (seg.kind === 'verify_claims') {
+      out.push({
+        key: seg.id,
+        label: 'verify',
+        color: seg.correctionsCount > 0 ? 'var(--amber)' : 'var(--good)',
+        kind: 'verify-claims',
         segment: seg,
         isLast,
       });
@@ -544,6 +558,14 @@ const turns = computed<Turn[]>(() => {
         <BSSheetSavedBanner
           v-else-if="t.kind === 'sheet-finalized' && t.segment"
           :name="(t.segment as SheetFinalizedSegment).name"
+        />
+
+        <!-- Slim CoVe verifier audit card. Anchored before the final text
+             of the turn so the user sees the verification status before
+             reading the (possibly revised) reply. -->
+        <VerifyClaimsCard
+          v-else-if="t.kind === 'verify-claims' && t.segment"
+          :segment="(t.segment as VerifyClaimsSegment)"
         />
 
         <!-- Placeholder while waiting for first segment, OR while

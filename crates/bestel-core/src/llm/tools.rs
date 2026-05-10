@@ -1350,7 +1350,7 @@ mod tests {
         assert!(names.contains(&SHEET_ASK));
         assert!(names.contains(&SHEET_FINALIZE_REQUEST));
         assert!(names.contains(&GET_ACTIVE_BUILD_SHEET));
-        assert_eq!(schemas.len(), 17);
+        assert_eq!(schemas.len(), 18);
     }
 
     #[test]

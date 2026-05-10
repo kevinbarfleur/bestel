@@ -594,6 +594,21 @@ pub async fn delete_api_key(env_name: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Returns the current persisted settings. Default-on for new installs and
+/// for any read failure (corrupt file, missing home dir).
+#[tauri::command]
+pub fn settings_get() -> bestel_core::settings::Settings {
+    bestel_core::settings::load()
+}
+
+/// Toggles the Chain-of-Verification post-draft pipeline. Live update —
+/// the next chat turn picks up the new value via `is_verify_enabled()`,
+/// no restart required.
+#[tauri::command]
+pub fn settings_set_verify_enabled(enabled: bool) -> Result<(), String> {
+    bestel_core::settings::set_verify_enabled(enabled).map_err(|e| e.to_string())
+}
+
 const PROMPT_EDITOR_LABEL: &str = "prompt-editor";
 const DEV_PANEL_LABEL: &str = "dev-panel";
 

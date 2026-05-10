@@ -124,6 +124,22 @@ export interface SheetFinalizedSegment {
   name: string;
 }
 
+/** CoVe verifier surface — slim tool card emitted after the post-draft
+ * verification pipeline runs. Anchored at the start of the assistant's
+ * turn so the user sees the audit BEFORE reading the (possibly revised)
+ * answer. Empty `claims` means heuristic-skip or toggle-off — caller
+ * should NOT render anything in that case. */
+export interface VerifyClaimsSegment {
+  kind: 'verify_claims';
+  id: string;
+  /** `pass` | `revise` | `fail`. Drives the card's accent colour. */
+  status: 'pass' | 'revise' | 'fail' | string;
+  claims: import('../api/types').VerifiedClaimDto[];
+  correctionsCount: number;
+  /** Joined finding summaries (mainly for dev panel parity). */
+  findingsSummary: string;
+}
+
 export type Segment =
   | TextSegment
   | ReasoningSegment
@@ -131,7 +147,8 @@ export type Segment =
   | SheetDraftSegment
   | SheetAskSegment
   | SheetInterviewSegment
-  | SheetFinalizedSegment;
+  | SheetFinalizedSegment
+  | VerifyClaimsSegment;
 
 export interface ChatMessageVm {
   id: string;
@@ -555,6 +572,40 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  /** Append a verifier audit segment to the current assistant message.
+   * Called once per turn (the verifier runs after the draft is fully
+   * streamed). Idempotent — replaces an existing verify segment so a
+   * retry doesn't stack two cards. Caller should pre-filter empty
+   * results (heuristic skip / toggle off) and skip this entirely. */
+  function verifierResult(payload: {
+    status: string;
+    claims: import('../api/types').VerifiedClaimDto[];
+    correctionsCount: number;
+    findingsSummary: string;
+  }) {
+    const a = currentAssistant.value;
+    if (!a) return;
+    a.lastDeltaAt = Date.now();
+    const existing = a.segments.find(
+      (s): s is VerifyClaimsSegment => s.kind === 'verify_claims',
+    );
+    if (existing) {
+      existing.status = payload.status;
+      existing.claims = payload.claims;
+      existing.correctionsCount = payload.correctionsCount;
+      existing.findingsSummary = payload.findingsSummary;
+      return;
+    }
+    a.segments.push({
+      kind: 'verify_claims',
+      id: segId(),
+      status: payload.status,
+      claims: payload.claims,
+      correctionsCount: payload.correctionsCount,
+      findingsSummary: payload.findingsSummary,
+    });
+  }
+
   /** Anchor the `✓ Build Sheet saved` banner on the current assistant
    *  message after `sheet_finalize_request` reports success. Idempotent —
    *  if the agent somehow emits two finalize events in one turn, the
@@ -806,6 +857,7 @@ export const useChatStore = defineStore('chat', () => {
     sheetAskUser,
     sheetInterviewOpen,
     sheetFinalized,
+    verifierResult,
     updateSheetInterviewState,
     findLatestSheetInterviewSegment,
     findToolSegment,

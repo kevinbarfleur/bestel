@@ -124,6 +124,20 @@ export function useStreaming() {
           if (ev.stale) sheet.markStale();
           break;
         }
+        case 'verifier': {
+          // Empty `claims_checked` means the heuristic short-circuited
+          // (cheap draft) or the toggle is off — render nothing in
+          // those cases so the chat stays uncluttered. Anything beyond
+          // that surfaces as a slim tool card on the assistant turn.
+          if (ev.claims_checked.length === 0) break;
+          chat.verifierResult({
+            status: ev.status,
+            claims: ev.claims_checked,
+            correctionsCount: ev.corrections_count,
+            findingsSummary: ev.findings_summary,
+          });
+          break;
+        }
       }
     });
   });

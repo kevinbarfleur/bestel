@@ -1,63 +1,60 @@
-//! Conditional verifier (Sprint G).
+//! Chain-of-Verification (CoVe factored) verifier.
 //!
-//! Catches unsourced numerical / named claims without paying verification
-//! latency on every turn. The verifier is a SECOND PASS by the same model
-//! (NOT a sub-agent — Cognition-style consistency); it is gated on a
-//! cheap heuristic ([`should_verify`]) so quick mechanic answers and
-//! off-topic refusals never hit the API a second time.
+//! Replaces the Sprint G single-pass consistency check with a 3-step
+//! retrieval-grounded pipeline (Meta, ACL 2024, arxiv 2309.11495):
 //!
-//! Verdict shape is strict JSON:
+//! 1. **Extract**: atomize the draft into ≤ 7 verifiable claims (1 LLM call).
+//! 2. **Gather evidence**: pull deterministic evidence per claim from the
+//!    local KB (`kb::search`). If the KB is unavailable we fall through
+//!    to mark every claim "unverified" and ship the draft as-is.
+//! 3. **Judge**: classify each claim as ok / wrong / unverified against
+//!    its evidence (1 batched LLM call). Wrongs include a one-line fix.
 //!
-//! ```json
-//! {
-//!   "status": "pass" | "revise" | "fail",
-//!   "findings": [{"category": "...", "issue": "...", "evidence": "..."}],
-//!   "minimal_rewrite": "<full revised answer when status=revise, else empty>"
-//! }
-//! ```
+//! When ≥ 1 claim is `wrong`, we run a 4th sub-call ("revise") that
+//! rewrites the offending sentences in place, preserving paragraph
+//! structure and Sources blocks. The revised text replaces the draft
+//! in `run_verifier_pass`. If revise fails or the rewrite is empty,
+//! we fall back to a `Pass` with diagnostic findings so the original
+//! reply still ships.
 //!
-//! - `pass` → emit the draft as-is.
-//! - `revise` → swap in `minimal_rewrite` (kept minimal: don't restructure
-//!   the answer, just patch the offending claim).
-//! - `fail` → emit a fallback "verifier rejected" message; surface the
-//!   findings in the dev panel.
+//! Cost note: 2-4 sub-calls per turn (extract + judge ± revise), each
+//! 500-2000 tokens. Total overhead ~10-20% on a real turn vs the
+//! single-pass Sprint G's ~5%. `settings::is_verify_enabled` lets
+//! users opt out for cost-sensitive workflows; the heuristic
+//! [`should_verify`] short-circuits trivial drafts before any API
+//! call so the toggle is the only knob most users ever touch.
 
-use anyhow::{Context, Result};
+use std::time::Duration;
+
+use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-/// The full verifier system prompt. Kept inline (not a SKILL.md) because
-/// it must NOT be readable / overridable by the model itself.
-pub const VERIFIER_SYSTEM_PROMPT: &str = r#"You are a strict claim verifier for Bestel, a Path of Exile assistant. You are NOT replying to the user — you are auditing a DRAFT answer the assistant produced. Your only output is a JSON object matching this schema:
+/// Hard cap on claims extracted per draft. Anything beyond this gets
+/// dropped at the extract step — we'd rather miss low-priority claims
+/// than blow latency / cost. The model is instructed to rank by
+/// importance.
+const MAX_CLAIMS: usize = 7;
 
-{
-  "status": "pass" | "revise" | "fail",
-  "findings": [{"category": "...", "issue": "...", "evidence": "..."}],
-  "minimal_rewrite": "<full revised answer when status=revise, else empty string>"
-}
+/// Per-claim evidence body cap. Anthropic charges per token and the
+/// judge prompt batches all claims+evidence into one call, so each
+/// extra char is paid 7×.
+const MAX_EVIDENCE_PER_CLAIM_CHARS: usize = 500;
 
-Decision rules:
+/// Whole-pipeline hard timeout. Three sub-calls + KB hits + revise can
+/// stretch under load; this is the absolute cutoff after which we ship
+/// the draft as-is rather than block the user.
+const HARD_TIMEOUT_SECS: u64 = 12;
 
-- **pass**: every numerical claim is sourced (engine echo, wiki, repoe, trade), no fabricated unique names, no PoE1↔PoE2 contamination, the cache disclaimer is present when `pob_calc` failed, no banned phrases ("real DPS" / "actual DPS" / "live engine result" after engine failure).
+/// Top-K passed to `kb.search` per claim. Three hits are usually enough
+/// to cover the canonical wiki page and one variant.
+const KB_TOP_K_PER_CLAIM: usize = 3;
 
-- **revise**: a single defect that can be patched in-place without restructuring the answer. Return a `minimal_rewrite` that fixes JUST the offending sentence(s); keep paragraph structure, headings, and `Sources:` intact. Do NOT add new content.
-
-- **fail**: the draft fabricates a key claim, cites a forbidden source, or misuses the build identity. Return an empty `minimal_rewrite` and explain the defect in `findings`.
-
-Categories you flag in `findings`:
-
-- `unsourced_number` — DPS / EHP / max-hit / damage value with no engine echo or `(cached)` marker.
-- `fabricated_unique` — a unique name that isn't in the wiki / engine output.
-- `cache_disclaimer_missing` — engine failed but the verbatim cache disclaimer is absent.
-- `banned_phrase` — "real DPS", "actual DPS", "live engine result" after a `pob_calc` failure.
-- `cross_game_contamination` — PoE1 mechanic cited for a PoE2 question or vice-versa.
-- `identity_card_missing` — answer cites the player's loaded build with concrete numbers (DPS, EHP, max-hit, resists, ascendancy, item names from their gear) but does not open with the `Identity:` line. **Do NOT fire** when the assistant is asking a clarifying question, when no build is loaded (the draft will say so or ask the user to attach one), or when the answer is purely about generic mechanics.
-- `forbidden_source` — citation in `Sources:` from the tier-4 SEO blocklist (aoeah, mmogah, fandom, fextralife, etc.).
-- `fabricated_url` — URL in `Sources:` that wasn't returned by any tool call you can see.
-
-Output JSON only. No prose, no markdown, no preamble. Wrap nothing in code fences."#;
-
-/// One verdict from the verifier.
+/// Verdict shape consumed by `anthropic.rs::run_verifier_pass`. The
+/// first three fields preserve the Sprint G surface so the existing
+/// 3-arm match (Pass / Revise / Fail) keeps working unchanged. The
+/// last two are added by the CoVe refactor and surfaced to the UI as
+/// "claims_checked / corrections_count" in the slim tool card.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct VerifierVerdict {
     pub status: VerdictStatus,
@@ -65,6 +62,10 @@ pub struct VerifierVerdict {
     pub findings: Vec<VerifierFinding>,
     #[serde(default)]
     pub minimal_rewrite: String,
+    #[serde(default)]
+    pub claims_checked: Vec<VerifiedClaim>,
+    #[serde(default)]
+    pub corrections_count: usize,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -83,8 +84,32 @@ pub struct VerifierFinding {
     pub evidence: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct VerifiedClaim {
+    /// Atomic claim sentence as the extractor distilled it.
+    pub statement: String,
+    /// Topic used for KB retrieval (e.g. "Brutality support gem").
+    pub topic: String,
+    /// Judge verdict against the gathered evidence.
+    pub status: ClaimStatus,
+    /// 1-2 sentence excerpt from the KB hit, truncated to
+    /// [`MAX_EVIDENCE_PER_CLAIM_CHARS`]. Empty when the KB had no hit.
+    pub evidence_excerpt: String,
+    /// Single-sentence fix the judge proposed for `wrong` claims.
+    /// `None` for `ok` and `unverified`.
+    pub correction: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ClaimStatus {
+    Ok,
+    Wrong,
+    Unverified,
+}
+
 impl VerifierVerdict {
-    /// Used as a fallback when the API call or parse fails. We DON'T
+    /// Used as a fallback when any sub-call or parse fails. We DON'T
     /// promote a failed verifier into a false `revise` — we tag it
     /// `pass` so the user-facing answer survives, and surface the
     /// underlying error in `findings` for the dev panel.
@@ -97,22 +122,36 @@ impl VerifierVerdict {
                 evidence: String::new(),
             }],
             minimal_rewrite: String::new(),
+            claims_checked: Vec::new(),
+            corrections_count: 0,
+        }
+    }
+
+    /// Pass with no findings and no claims — used when `should_verify`
+    /// short-circuits (cheap drafts that don't warrant verification).
+    pub fn pass_empty() -> Self {
+        Self {
+            status: VerdictStatus::Pass,
+            findings: Vec::new(),
+            minimal_rewrite: String::new(),
+            claims_checked: Vec::new(),
+            corrections_count: 0,
         }
     }
 }
 
-/// Cheap heuristic: does this draft contain claims worth verifying?
-///
-/// True if the draft mentions:
-/// - a `Sources:` block (any answer that cites is worth verifying)
-/// - a numerical claim with PoE-context units (k DPS, m DPS, EHP, max-hit, life, ES)
-/// - a tier marker (T1-T17 maps, mod tier S/T1, t1 mod, etc.)
-/// - a patch version (`0.5`, `3.25`, `Settlers`, `Affliction`, etc.)
-/// - a `(cached)` marker (means engine fallback — verify the disclaimer)
-/// - a banned phrase (always verify, will be flagged `fail`)
-///
-/// False for short, generic answers ("spell suppression caps at 100%",
-/// "Resolute Technique disables crit") which already have the linter.
+// ============================================================================
+// Heuristic gate — kept from Sprint G unchanged. Cheap pre-filter that runs
+// before any API call. Returns true when the draft mentions:
+// - a `Sources:` block (any answer that cites is worth verifying)
+// - a numerical claim with PoE-context units (k DPS, m DPS, EHP, max-hit, life, ES)
+// - a tier marker (T1-T17 maps, mod tier S/T1, t1 mod, etc.)
+// - a patch version (`0.5`, `3.25`, `Settlers`, `Affliction`, etc.)
+// - a `(cached)` marker (means engine fallback — verify the disclaimer)
+// - a banned phrase (always verify, will be flagged `wrong`)
+// - an `Identity:` line (always verify, build-grounded answer)
+// ============================================================================
+
 pub fn should_verify(text: &str) -> bool {
     let lower = text.to_lowercase();
     if lower.contains("sources:") {
@@ -154,12 +193,10 @@ fn has_numerical_claim(lower: &str) -> bool {
     if !has_unit {
         return false;
     }
-    // Require at least one digit anywhere in the same 200-char window.
     lower.chars().any(|c| c.is_ascii_digit())
 }
 
 fn has_tier_marker(text: &str) -> bool {
-    // T1..T17, "tier 1", "tier 17"
     let t_digit = regex_lite_t_digit(text);
     if t_digit {
         return true;
@@ -174,7 +211,6 @@ fn regex_lite_t_digit(text: &str) -> bool {
     let mut i = 0;
     while i < len.saturating_sub(1) {
         if (bytes[i] == b'T' || bytes[i] == b't') && bytes[i + 1].is_ascii_digit() {
-            // Reject when T is mid-word (e.g. "ATTACK").
             let prev_ok = i == 0 || !bytes[i - 1].is_ascii_alphabetic();
             if prev_ok {
                 return true;
@@ -186,7 +222,6 @@ fn regex_lite_t_digit(text: &str) -> bool {
 }
 
 fn has_patch_version(text: &str) -> bool {
-    // Crude patch-version detector: `\d+\.\d+` AND a PoE-context word.
     let lower = text.to_lowercase();
     let context = lower.contains("patch")
         || lower.contains("league")
@@ -212,36 +247,111 @@ fn has_patch_version(text: &str) -> bool {
     false
 }
 
-/// Build the verifier API request body. Kept as a free function so the
-/// caller can inject HTTP transport choice (reqwest vs mock).
-pub fn build_request_body(
-    model: &str,
-    user_question: &str,
-    draft: &str,
-) -> Value {
-    let user_payload = format!(
-        "USER QUESTION:\n{user_question}\n\n---\n\nDRAFT ANSWER:\n{draft}\n\n---\n\nReturn ONLY the JSON verdict object."
-    );
-    json!({
-        "model": model,
-        "max_tokens": 1024,
-        "system": [{
-            "type": "text",
-            "text": VERIFIER_SYSTEM_PROMPT,
-        }],
-        "messages": [{
-            "role": "user",
-            "content": user_payload,
-        }],
-    })
+// ============================================================================
+// System prompts — hardcoded inline (NOT readable / overridable by the model).
+// ============================================================================
+
+const VERIFIER_EXTRACT_PROMPT: &str = r#"You are a claim extractor for Bestel, a Path of Exile assistant. Your job is to isolate atomic factual claims from a DRAFT answer that could be checked against the wiki / engine / kb.
+
+SKIP these (do NOT extract):
+- Advice, opinions, recommendations ("you should run X", "consider taking Y")
+- Numbers that come from the player's PoB (already grounded by the engine)
+- General mechanic descriptions that are textbook PoE ("crit chance caps at 95%")
+- Hedged statements ("typically", "usually", "around")
+
+EXTRACT these (the kind of thing that gets hallucinated):
+- Specific item / unique / ascendancy node names ("Mind of the Council Foulborn variant")
+- Numerical mechanics with concrete values ("Brutality lvl 20 = 59% more phys")
+- Resource counts about the player ("you have 2 ascendancy points left", "at lvl 94 you need 2 more points")
+- Patch-version specific behavior ("in Settlers 3.25, Brutality was buffed")
+- Cross-references to gear or skills ("with Awakened Cast on Crit you get Y")
+
+Each claim must be ATOMIC (one fact each) and SELF-CONTAINED (readable without context). Set "topic" to a short search query that would retrieve this claim's authoritative source from the wiki (e.g. "Brutality support gem", "PoE1 ascendancy points total").
+
+Output ONLY this JSON shape, no prose, no markdown fences:
+
+{"claims": [{"statement": "...", "topic": "..."}, ...]}
+
+Cap: 7 claims max, ranked by importance (most likely-hallucinated first). If the draft has no extractable claims, return `{"claims": []}`."#;
+
+const VERIFIER_JUDGE_PROMPT: &str = r#"You are a strict claim judge. For each numbered claim + evidence pair, decide:
+
+- "ok": evidence directly supports the claim (numbers match, names match, behavior matches).
+- "wrong": evidence contradicts the claim (different number, wrong name, wrong mechanic). Write a CORRECTION as a single replacement sentence.
+- "unverified": evidence is empty, off-topic, or insufficient to judge (do NOT guess; default to unverified when in doubt).
+
+Be strict on numbers. If the claim says "X = 59%" and the evidence says "X = 53%", that's WRONG, not unverified. If the claim says "Don't Panic Yet requires 100% physical conversion" and the evidence confirms it, that's OK.
+
+Be conservative on names. If a unique name appears in the claim but not the evidence, prefer "unverified" unless the evidence explicitly says it doesn't exist.
+
+The CORRECTION (when status=wrong) must be a single drop-in replacement sentence the reviser can splice into the draft verbatim. Keep PoE jargon intact, use proper item/skill case.
+
+Output ONLY this JSON, no prose:
+
+{"verdicts": [{"id": N, "status": "ok|wrong|unverified", "correction": "..."}, ...]}
+
+`correction` is empty string for ok / unverified."#;
+
+const VERIFIER_REVISE_PROMPT: &str = r#"You are revising a draft to fix specific factual claims. Apply each correction VERBATIM to the offending sentence in the draft. Rules:
+
+- Splice corrections in place of the wrong sentence. Do NOT restructure paragraphs.
+- Keep ALL other content identical: tone, headings, code blocks, Sources block, Identity line.
+- Do NOT add new content, do NOT remove sources, do NOT add disclaimers.
+- If a correction obsoletes a follow-up sentence, leave the follow-up unchanged unless the correction makes it nonsensical.
+- Output the FULL revised draft text only. No prose explanation, no markdown fences around the whole output."#;
+
+// ============================================================================
+// Pipeline — internal data flow.
+// ============================================================================
+
+#[derive(Debug, Clone, Deserialize)]
+struct RawClaim {
+    statement: String,
+    topic: String,
 }
 
-/// Parse a verdict from the assistant message text. Tolerates code fences
-/// around the JSON.
-pub fn parse_verdict(body: &str) -> Result<VerifierVerdict> {
-    let trimmed = strip_code_fences(body);
-    serde_json::from_str::<VerifierVerdict>(trimmed)
-        .with_context(|| format!("parse verifier verdict: {}", truncate(trimmed, 200)))
+#[derive(Debug, Clone, Deserialize)]
+struct RawClaimList {
+    #[serde(default)]
+    claims: Vec<RawClaim>,
+}
+
+#[derive(Debug, Clone)]
+struct ClaimWithEvidence {
+    claim: RawClaim,
+    evidence: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct RawVerdict {
+    #[serde(default)]
+    id: usize,
+    status: ClaimStatus,
+    #[serde(default)]
+    correction: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct RawVerdictList {
+    #[serde(default)]
+    verdicts: Vec<RawVerdict>,
+}
+
+// ============================================================================
+// Helpers.
+// ============================================================================
+
+fn truncate(s: &str, max: usize) -> String {
+    if s.len() <= max {
+        s.to_string()
+    } else {
+        // Truncate on a char boundary to avoid panicking on UTF-8.
+        let mut end = max;
+        while !s.is_char_boundary(end) && end > 0 {
+            end -= 1;
+        }
+        format!("{}…", &s[..end])
+    }
 }
 
 fn strip_code_fences(s: &str) -> &str {
@@ -255,20 +365,220 @@ fn strip_code_fences(s: &str) -> &str {
     trimmed
 }
 
-fn truncate(s: &str, max: usize) -> String {
-    if s.len() <= max {
-        s.to_string()
-    } else {
-        format!("{}…", &s[..max])
+/// POST one verifier sub-call and pull the assistant text out of the
+/// Anthropic-shaped response. All sub-calls share this transport.
+async fn post_one(
+    http: &reqwest::Client,
+    endpoint: &str,
+    api_key: &str,
+    api_version: &str,
+    body: Value,
+) -> Result<String> {
+    let resp = http
+        .post(endpoint)
+        .header("anthropic-version", api_version)
+        .header("x-api-key", api_key)
+        .header("content-type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .with_context(|| "verifier sub-call HTTP error")?;
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let raw = resp.text().await.unwrap_or_default();
+        return Err(anyhow!(
+            "verifier sub-call HTTP {status}: {}",
+            truncate(&raw, 200)
+        ));
     }
+    let parsed: Value = resp
+        .json()
+        .await
+        .with_context(|| "verifier sub-call JSON parse")?;
+    let text = parsed
+        .get("content")
+        .and_then(|c| c.as_array())
+        .and_then(|arr| {
+            arr.iter().find_map(|block| {
+                block
+                    .get("type")
+                    .and_then(|t| t.as_str())
+                    .filter(|t| *t == "text")
+                    .and_then(|_| block.get("text").and_then(|t| t.as_str()))
+            })
+        })
+        .unwrap_or("")
+        .to_string();
+    if text.trim().is_empty() {
+        return Err(anyhow!("verifier sub-call returned empty content"));
+    }
+    Ok(text)
 }
 
-/// Send the draft to the verifier endpoint. Errors are NOT propagated as
-/// failures — they bubble up as `pass_with_note` so the user-facing
-/// answer always ships. Latency budget: target ~2s, hard timeout 8s.
+fn build_extract_body(model: &str, draft: &str) -> Value {
+    let user_payload = format!(
+        "DRAFT:\n{draft}\n\n---\n\nReturn ONLY the JSON object {{\"claims\": [...]}}."
+    );
+    json!({
+        "model": model,
+        "max_tokens": 1024,
+        "system": [{"type": "text", "text": VERIFIER_EXTRACT_PROMPT}],
+        "messages": [{"role": "user", "content": user_payload}],
+    })
+}
+
+fn build_judge_body(model: &str, claims_with_evidence: &[ClaimWithEvidence]) -> Value {
+    let mut payload = String::new();
+    for (i, ce) in claims_with_evidence.iter().enumerate() {
+        payload.push_str(&format!(
+            "CLAIM {}: {}\nEVIDENCE: {}\n\n",
+            i,
+            ce.claim.statement,
+            if ce.evidence.is_empty() {
+                "(no evidence found in KB)"
+            } else {
+                ce.evidence.as_str()
+            }
+        ));
+    }
+    payload.push_str("Return ONLY the JSON object {\"verdicts\": [...]}.");
+    json!({
+        "model": model,
+        "max_tokens": 2048,
+        "system": [{"type": "text", "text": VERIFIER_JUDGE_PROMPT}],
+        "messages": [{"role": "user", "content": payload}],
+    })
+}
+
+fn build_revise_body(model: &str, draft: &str, corrections: &[(usize, &VerifiedClaim)]) -> Value {
+    let mut corr_block = String::new();
+    for (_id, c) in corrections {
+        corr_block.push_str(&format!(
+            "- Wrong: {}\n  Fix: {}\n",
+            c.statement,
+            c.correction.clone().unwrap_or_default()
+        ));
+    }
+    let user_payload = format!(
+        "DRAFT:\n{draft}\n\n---\n\nCORRECTIONS TO APPLY:\n{corr_block}\n---\n\nReturn the full revised draft text only."
+    );
+    json!({
+        "model": model,
+        "max_tokens": 4096,
+        "system": [{"type": "text", "text": VERIFIER_REVISE_PROMPT}],
+        "messages": [{"role": "user", "content": user_payload}],
+    })
+}
+
+async fn extract_claims(
+    http: &reqwest::Client,
+    endpoint: &str,
+    api_key: &str,
+    api_version: &str,
+    model: &str,
+    draft: &str,
+) -> Result<Vec<RawClaim>> {
+    let body = build_extract_body(model, draft);
+    let text = post_one(http, endpoint, api_key, api_version, body).await?;
+    let parsed: RawClaimList = serde_json::from_str(strip_code_fences(&text))
+        .with_context(|| format!("extract parse: {}", truncate(&text, 200)))?;
+    let mut claims = parsed.claims;
+    if claims.len() > MAX_CLAIMS {
+        claims.truncate(MAX_CLAIMS);
+    }
+    Ok(claims)
+}
+
+/// Pulls per-claim evidence from the local KB. KB hits are concatenated
+/// (best score first) then truncated to [`MAX_EVIDENCE_PER_CLAIM_CHARS`].
+/// If the KB is unavailable (not bootstrapped, ungetheable), every claim
+/// returns empty evidence — they'll be classified `unverified` downstream.
+async fn gather_evidence(claims: Vec<RawClaim>) -> Vec<ClaimWithEvidence> {
+    let kb = crate::llm::kb::global();
+    let mut out: Vec<ClaimWithEvidence> = Vec::with_capacity(claims.len());
+    for c in claims {
+        let evidence = if let Some(kb) = kb.as_ref() {
+            match kb.search(&c.topic, KB_TOP_K_PER_CLAIM, None, &[]).await {
+                Ok(hits) if !hits.is_empty() => {
+                    let mut acc = String::new();
+                    for h in hits {
+                        if !acc.is_empty() {
+                            acc.push_str("\n---\n");
+                        }
+                        acc.push_str(&h.chunk.body);
+                        if acc.len() >= MAX_EVIDENCE_PER_CLAIM_CHARS {
+                            break;
+                        }
+                    }
+                    truncate(&acc, MAX_EVIDENCE_PER_CLAIM_CHARS)
+                        .trim_end_matches('…')
+                        .to_string()
+                }
+                _ => String::new(),
+            }
+        } else {
+            String::new()
+        };
+        out.push(ClaimWithEvidence { claim: c, evidence });
+    }
+    out
+}
+
+async fn judge_batch(
+    http: &reqwest::Client,
+    endpoint: &str,
+    api_key: &str,
+    api_version: &str,
+    model: &str,
+    claims_with_evidence: &[ClaimWithEvidence],
+) -> Result<Vec<RawVerdict>> {
+    if claims_with_evidence.is_empty() {
+        return Ok(Vec::new());
+    }
+    let body = build_judge_body(model, claims_with_evidence);
+    let text = post_one(http, endpoint, api_key, api_version, body).await?;
+    let parsed: RawVerdictList = serde_json::from_str(strip_code_fences(&text))
+        .with_context(|| format!("judge parse: {}", truncate(&text, 200)))?;
+    Ok(parsed.verdicts)
+}
+
+async fn revise_draft(
+    http: &reqwest::Client,
+    endpoint: &str,
+    api_key: &str,
+    api_version: &str,
+    model: &str,
+    draft: &str,
+    corrections: &[(usize, &VerifiedClaim)],
+) -> Result<String> {
+    let body = build_revise_body(model, draft, corrections);
+    let text = post_one(http, endpoint, api_key, api_version, body).await?;
+    let stripped = strip_code_fences(&text).to_string();
+    if stripped.trim().is_empty() {
+        return Err(anyhow!("revise returned empty draft"));
+    }
+    Ok(stripped)
+}
+
+// ============================================================================
+// Public entry point.
+// ============================================================================
+
+/// Runs the full CoVe-factored pipeline against a draft and returns a
+/// verdict the caller should consume in the same way as Sprint G:
+/// - `Pass` → ship the draft as-is (or with the audit trail in
+///   `claims_checked` for the UI).
+/// - `Revise` → swap in `minimal_rewrite` (which already preserves
+///   structure) before showing to the user.
+/// - `Fail` → currently never returned by this pipeline (we always
+///   degrade gracefully to `Pass` with diagnostics). The variant
+///   stays in the enum for forward compatibility.
 ///
-/// `messages_endpoint` is the full URL (e.g. `https://api.anthropic.com/v1/messages`).
-pub async fn verify(
+/// Errors at any step never propagate: every failure path collapses
+/// into [`VerifierVerdict::pass_with_note`] so the user-facing reply
+/// always ships. The whole pipeline is wrapped in a hard timeout
+/// ([`HARD_TIMEOUT_SECS`]).
+pub async fn verify_factored(
     http: &reqwest::Client,
     messages_endpoint: &str,
     api_key: &str,
@@ -281,58 +591,242 @@ pub async fn verify(
         return VerifierVerdict::pass_with_note("draft was empty; nothing to verify");
     }
     if !should_verify(draft) {
+        return VerifierVerdict::pass_empty();
+    }
+    let _ = user_question; // reserved for future judge prompts
+    let pipeline = run_pipeline(
+        http,
+        messages_endpoint,
+        api_key,
+        api_version,
+        model,
+        draft,
+    );
+    match tokio::time::timeout(Duration::from_secs(HARD_TIMEOUT_SECS), pipeline).await {
+        Ok(verdict) => verdict,
+        Err(_) => VerifierVerdict::pass_with_note(format!(
+            "verifier hard timeout > {HARD_TIMEOUT_SECS}s"
+        )),
+    }
+}
+
+async fn run_pipeline(
+    http: &reqwest::Client,
+    endpoint: &str,
+    api_key: &str,
+    api_version: &str,
+    model: &str,
+    draft: &str,
+) -> VerifierVerdict {
+    let started = std::time::Instant::now();
+
+    // Phase 1 — extract.
+    let claims = match extract_claims(http, endpoint, api_key, api_version, model, draft).await {
+        Ok(v) if v.is_empty() => {
+            tracing::info!(
+                target: "bestel.verifier",
+                phase = "extract",
+                claims = 0,
+                latency_ms = started.elapsed().as_millis() as u64,
+                "no claims extracted, passing through"
+            );
+            return VerifierVerdict::pass_empty();
+        }
+        Ok(v) => {
+            tracing::info!(
+                target: "bestel.verifier",
+                phase = "extract",
+                claims = v.len(),
+                latency_ms = started.elapsed().as_millis() as u64,
+                "claims extracted"
+            );
+            v
+        }
+        Err(e) => {
+            tracing::warn!(
+                target: "bestel.verifier",
+                phase = "extract",
+                error = %e,
+                "extract failed"
+            );
+            return VerifierVerdict::pass_with_note(format!("extract failed: {e}"));
+        }
+    };
+
+    // Phase 2 — gather evidence (deterministic, no LLM call, infallible).
+    let evidence_started = std::time::Instant::now();
+    let with_evidence = gather_evidence(claims).await;
+    let with_evidence_count = with_evidence.iter().filter(|c| !c.evidence.is_empty()).count();
+    tracing::info!(
+        target: "bestel.verifier",
+        phase = "evidence",
+        claims = with_evidence.len(),
+        with_evidence = with_evidence_count,
+        latency_ms = evidence_started.elapsed().as_millis() as u64,
+        "evidence gathered"
+    );
+
+    // Phase 3 — judge batch.
+    let judge_started = std::time::Instant::now();
+    let raw_verdicts = match judge_batch(
+        http,
+        endpoint,
+        api_key,
+        api_version,
+        model,
+        &with_evidence,
+    )
+    .await
+    {
+        Ok(v) => {
+            tracing::info!(
+                target: "bestel.verifier",
+                phase = "judge",
+                verdicts = v.len(),
+                latency_ms = judge_started.elapsed().as_millis() as u64,
+                "judge completed"
+            );
+            v
+        }
+        Err(e) => {
+            tracing::warn!(
+                target: "bestel.verifier",
+                phase = "judge",
+                error = %e,
+                "judge failed"
+            );
+            return VerifierVerdict::pass_with_note(format!("judge failed: {e}"));
+        }
+    };
+
+    // Compose the audit list. Pad / truncate verdicts to match claims —
+    // the judge sometimes drops or duplicates entries; default missing
+    // ones to `unverified`.
+    let mut claims_checked: Vec<VerifiedClaim> = Vec::with_capacity(with_evidence.len());
+    for (i, ce) in with_evidence.iter().enumerate() {
+        let v = raw_verdicts.iter().find(|v| v.id == i);
+        let (status, correction) = match v {
+            Some(v) => {
+                let corr = if matches!(v.status, ClaimStatus::Wrong) && !v.correction.is_empty() {
+                    Some(v.correction.clone())
+                } else {
+                    None
+                };
+                (v.status, corr)
+            }
+            None => (ClaimStatus::Unverified, None),
+        };
+        claims_checked.push(VerifiedClaim {
+            statement: ce.claim.statement.clone(),
+            topic: ce.claim.topic.clone(),
+            status,
+            evidence_excerpt: ce.evidence.clone(),
+            correction,
+        });
+    }
+
+    let wrongs: Vec<(usize, &VerifiedClaim)> = claims_checked
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| matches!(c.status, ClaimStatus::Wrong))
+        .collect();
+    let corrections_count = wrongs.len();
+
+    if corrections_count == 0 {
+        tracing::info!(
+            target: "bestel.verifier",
+            phase = "compose",
+            claims = claims_checked.len(),
+            corrections = 0,
+            total_latency_ms = started.elapsed().as_millis() as u64,
+            "verdict: pass (no corrections needed)"
+        );
         return VerifierVerdict {
             status: VerdictStatus::Pass,
             findings: Vec::new(),
             minimal_rewrite: String::new(),
+            claims_checked,
+            corrections_count: 0,
         };
     }
-    let body = build_request_body(model, user_question, draft);
-    let resp = match http
-        .post(messages_endpoint)
-        .header("anthropic-version", api_version)
-        .header("x-api-key", api_key)
-        .header("content-type", "application/json")
-        .json(&body)
-        .send()
-        .await
+
+    // Phase 4 — revise (only when ≥ 1 wrong).
+    let revise_started = std::time::Instant::now();
+    let rewrite = match revise_draft(
+        http,
+        endpoint,
+        api_key,
+        api_version,
+        model,
+        draft,
+        &wrongs,
+    )
+    .await
     {
-        Ok(r) => r,
-        Err(e) => return VerifierVerdict::pass_with_note(format!("verifier HTTP error: {e}")),
+        Ok(r) => {
+            tracing::info!(
+                target: "bestel.verifier",
+                phase = "revise",
+                corrections = corrections_count,
+                rewrite_chars = r.len(),
+                latency_ms = revise_started.elapsed().as_millis() as u64,
+                "revise completed"
+            );
+            r
+        }
+        Err(e) => {
+            tracing::warn!(
+                target: "bestel.verifier",
+                phase = "revise",
+                corrections = corrections_count,
+                error = %e,
+                "revise failed, falling back to pass"
+            );
+            return VerifierVerdict {
+                status: VerdictStatus::Pass,
+                findings: vec![VerifierFinding {
+                    category: "revise_failed".into(),
+                    issue: e.to_string(),
+                    evidence: String::new(),
+                }],
+                minimal_rewrite: String::new(),
+                claims_checked,
+                corrections_count,
+            };
+        }
     };
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let raw = resp.text().await.unwrap_or_default();
-        return VerifierVerdict::pass_with_note(format!(
-            "verifier HTTP {status}: {}",
-            truncate(&raw, 200)
-        ));
-    }
-    let parsed: Value = match resp.json().await {
-        Ok(v) => v,
-        Err(e) => return VerifierVerdict::pass_with_note(format!("verifier parse error: {e}")),
-    };
-    let assistant_text = parsed
-        .get("content")
-        .and_then(|c| c.as_array())
-        .and_then(|arr| {
-            arr.iter().find_map(|block| {
-                block
-                    .get("type")
-                    .and_then(|t| t.as_str())
-                    .filter(|t| *t == "text")
-                    .and_then(|_| block.get("text").and_then(|t| t.as_str()))
-            })
+
+    let findings: Vec<VerifierFinding> = claims_checked
+        .iter()
+        .filter(|c| matches!(c.status, ClaimStatus::Wrong))
+        .map(|c| VerifierFinding {
+            category: "incorrect_claim".into(),
+            issue: c.statement.clone(),
+            evidence: c.correction.clone().unwrap_or_default(),
         })
-        .unwrap_or("");
-    if assistant_text.trim().is_empty() {
-        return VerifierVerdict::pass_with_note("verifier returned empty content");
-    }
-    match parse_verdict(assistant_text) {
-        Ok(v) => v,
-        Err(e) => VerifierVerdict::pass_with_note(format!("verifier verdict unparseable: {e}")),
-    }
+        .collect();
+
+    let verdict = VerifierVerdict {
+        status: VerdictStatus::Revise,
+        findings,
+        minimal_rewrite: rewrite,
+        claims_checked,
+        corrections_count,
+    };
+    tracing::info!(
+        target: "bestel.verifier",
+        phase = "compose",
+        claims = verdict.claims_checked.len(),
+        corrections = verdict.corrections_count,
+        total_latency_ms = started.elapsed().as_millis() as u64,
+        "verdict: revise"
+    );
+    verdict
 }
+
+// ============================================================================
+// Tests.
+// ============================================================================
 
 #[cfg(test)]
 mod tests {
@@ -388,58 +882,98 @@ mod tests {
     }
 
     #[test]
-    fn parse_verdict_pass_minimal() {
-        let json = r#"{"status":"pass","findings":[],"minimal_rewrite":""}"#;
-        let v = parse_verdict(json).unwrap();
-        assert_eq!(v.status, VerdictStatus::Pass);
-        assert!(v.findings.is_empty());
-    }
-
-    #[test]
-    fn parse_verdict_revise_with_rewrite() {
-        let json = r#"{"status":"revise","findings":[{"category":"unsourced_number","issue":"DPS without engine echo","evidence":"4.2M"}],"minimal_rewrite":"Your build does ~4.2M DPS (cached) ..."}"#;
-        let v = parse_verdict(json).unwrap();
-        assert_eq!(v.status, VerdictStatus::Revise);
-        assert_eq!(v.findings.len(), 1);
-        assert!(v.minimal_rewrite.contains("(cached)"));
-    }
-
-    #[test]
-    fn parse_verdict_strips_code_fences() {
-        let json = "```json\n{\"status\":\"fail\",\"findings\":[],\"minimal_rewrite\":\"\"}\n```";
-        let v = parse_verdict(json).unwrap();
-        assert_eq!(v.status, VerdictStatus::Fail);
-    }
-
-    #[test]
-    fn parse_verdict_rejects_invalid_json() {
-        let err = parse_verdict("not json").unwrap_err();
-        assert!(err.to_string().to_lowercase().contains("parse"));
-    }
-
-    #[test]
-    fn build_request_body_includes_strict_system() {
-        let body = build_request_body("claude-sonnet-4-5", "what's my DPS", "draft answer here");
-        assert_eq!(body["model"], "claude-sonnet-4-5");
-        assert!(body["system"][0]["text"]
-            .as_str()
-            .unwrap()
-            .contains("strict claim verifier"));
-        assert!(body["messages"][0]["content"]
-            .as_str()
-            .unwrap()
-            .contains("USER QUESTION"));
-        assert!(body["messages"][0]["content"]
-            .as_str()
-            .unwrap()
-            .contains("DRAFT ANSWER"));
-    }
-
-    #[test]
     fn pass_with_note_keeps_status_pass() {
         let v = VerifierVerdict::pass_with_note("api unreachable");
         assert_eq!(v.status, VerdictStatus::Pass);
         assert_eq!(v.findings.len(), 1);
         assert_eq!(v.findings[0].category, "verifier_unavailable");
+        assert!(v.claims_checked.is_empty());
+        assert_eq!(v.corrections_count, 0);
+    }
+
+    #[test]
+    fn pass_empty_no_findings_no_claims() {
+        let v = VerifierVerdict::pass_empty();
+        assert_eq!(v.status, VerdictStatus::Pass);
+        assert!(v.findings.is_empty());
+        assert!(v.claims_checked.is_empty());
+        assert_eq!(v.corrections_count, 0);
+    }
+
+    #[test]
+    fn verified_claim_serde_roundtrip() {
+        let c = VerifiedClaim {
+            statement: "Brutality lvl 20 = 59% more phys".into(),
+            topic: "Brutality support gem".into(),
+            status: ClaimStatus::Wrong,
+            evidence_excerpt: "Brutality at level 20 grants 53% more physical damage.".into(),
+            correction: Some("Brutality lvl 20 = 53% more phys (60% only with awakened).".into()),
+        };
+        let s = serde_json::to_string(&c).unwrap();
+        assert!(s.contains("\"status\":\"wrong\""));
+        let back: VerifiedClaim = serde_json::from_str(&s).unwrap();
+        assert_eq!(back, c);
+    }
+
+    #[test]
+    fn claim_status_lowercase_serde() {
+        assert_eq!(serde_json::to_string(&ClaimStatus::Ok).unwrap(), "\"ok\"");
+        assert_eq!(serde_json::to_string(&ClaimStatus::Wrong).unwrap(), "\"wrong\"");
+        assert_eq!(
+            serde_json::to_string(&ClaimStatus::Unverified).unwrap(),
+            "\"unverified\""
+        );
+    }
+
+    #[test]
+    fn verdict_serde_includes_new_fields() {
+        let v = VerifierVerdict {
+            status: VerdictStatus::Revise,
+            findings: vec![],
+            minimal_rewrite: "rewritten".into(),
+            claims_checked: vec![VerifiedClaim {
+                statement: "x".into(),
+                topic: "x".into(),
+                status: ClaimStatus::Ok,
+                evidence_excerpt: String::new(),
+                correction: None,
+            }],
+            corrections_count: 0,
+        };
+        let s = serde_json::to_string(&v).unwrap();
+        assert!(s.contains("claims_checked"));
+        assert!(s.contains("corrections_count"));
+    }
+
+    #[test]
+    fn old_verdict_shape_still_parses() {
+        // Backwards-compat: a Sprint G verdict (no claims_checked /
+        // corrections_count) must still deserialize cleanly. The
+        // missing fields default to empty.
+        let json = r#"{"status":"pass","findings":[],"minimal_rewrite":""}"#;
+        let v: VerifierVerdict = serde_json::from_str(json).unwrap();
+        assert_eq!(v.status, VerdictStatus::Pass);
+        assert!(v.claims_checked.is_empty());
+        assert_eq!(v.corrections_count, 0);
+    }
+
+    #[test]
+    fn truncate_handles_utf8_boundary() {
+        // Multibyte char at the boundary must not panic.
+        let s = "abc\u{1F600}xyz";
+        let t = truncate(s, 4);
+        assert!(t.ends_with('…'));
+    }
+
+    #[test]
+    fn strip_code_fences_handles_json_block() {
+        let s = "```json\n{\"a\":1}\n```";
+        assert_eq!(strip_code_fences(s), "{\"a\":1}");
+    }
+
+    #[test]
+    fn strip_code_fences_handles_plain_block() {
+        let s = "```\n{\"a\":1}\n```";
+        assert_eq!(strip_code_fences(s), "{\"a\":1}");
     }
 }

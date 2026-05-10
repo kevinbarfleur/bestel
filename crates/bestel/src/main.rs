@@ -1519,6 +1519,8 @@ fn run_tauri() {
                 commands::list_api_keys,
                 commands::set_api_key,
                 commands::delete_api_key,
+                commands::settings_get,
+                commands::settings_set_verify_enabled,
                 commands::prompts_list,
                 commands::prompts_read,
                 commands::prompts_write,

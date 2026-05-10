@@ -464,9 +464,13 @@ impl AnthropicClient {
                 && has_active_build
                 && last_user_was_interview_submission
                 && !sheet_finalize_emitted_already;
+            // 16384 leaves headroom for both Anthropic extended-thinking
+            // and DeepSeek-reasoner, which can burn 2-3K tokens before
+            // the user-visible draft starts. Whisperer audit (2026-05-09)
+            // hit truncation mid-sentence at 8192 with thinking on.
             let mut body = json!({
                 "model": self.model,
-                "max_tokens": 8192,
+                "max_tokens": 16384,
                 "system": system_blocks,
                 "tools": if force_finalize { json!([]) } else { json!(schemas) },
                 "stream": true,
@@ -933,7 +937,18 @@ impl AnthropicClient {
         draft: &str,
         deltas: &mpsc::UnboundedSender<LlmDelta>,
     ) -> String {
+        // Cheap heuristic gate first — most drafts skip the API call entirely.
         if !super::verifier::should_verify(draft) {
+            return draft.to_string();
+        }
+        // User toggle: when off, the CoVe pipeline is skipped wholesale and
+        // the draft ships as-is. The setting is read fresh on every turn so
+        // toggling in the UI takes effect without a restart.
+        if !crate::settings::is_verify_enabled() {
+            tracing::debug!(
+                target: "bestel.verifier",
+                "verifier disabled by user setting"
+            );
             return draft.to_string();
         }
         let last_user = history
@@ -942,7 +957,7 @@ impl AnthropicClient {
             .find(|m| matches!(m.role, super::Role::User))
             .map(|m| m.content.as_str())
             .unwrap_or("");
-        let verdict = super::verifier::verify(
+        let verdict = super::verifier::verify_factored(
             &self.http,
             &self.api_url,
             &self.api_key,
