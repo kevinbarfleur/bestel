@@ -38,6 +38,40 @@ function safeWrite(key: string, value: unknown): void {
   }
 }
 
+/** Per-segment cap on persisted text fields (tool output, reasoning, raw
+ * eval results). 5 KB keeps a useful preview while preventing the
+ * `bestel.chats.v1` blob from growing past ~500 KB on a typical chat —
+ * the previous unbounded behavior had a single `pob_calc` output blow
+ * past 30 KB and a `get_active_build` past 35 KB, and each watch-fire
+ * during streaming reserialized the whole tree. See fix-oom commit. */
+const PERSIST_TEXT_MAX = 5_000;
+
+/** JSON.stringify replacer that truncates the long string-valued fields
+ * we know carry the most weight in tool segments. The in-memory state
+ * is unaffected — only the persisted blob is trimmed. */
+function persistReplacer(key: string, value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  if (value.length <= PERSIST_TEXT_MAX) return value;
+  switch (key) {
+    case 'output':
+    case 'summary':
+    case 'summaryInput':
+    case 'detail':
+    case 'text': // reasoning/text segments — truncate the long ones too
+      return `${value.slice(0, PERSIST_TEXT_MAX)}\n[truncated ${value.length - PERSIST_TEXT_MAX} chars for storage]`;
+    default:
+      return value;
+  }
+}
+
+function safeWriteCompact(key: string, value: unknown): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(value, persistReplacer));
+  } catch {
+    /* quota / disabled */
+  }
+}
+
 function deriveTitle(messages: ChatMessageVm[]): string {
   for (const m of messages) {
     if (m.role !== 'user') continue;
@@ -60,7 +94,10 @@ export const useChatHistoryStore = defineStore('chatHistory', () => {
   );
 
   function persist(): void {
-    safeWrite(STORAGE_KEY, chats.value);
+    // Use the compact writer that truncates long tool outputs / reasoning
+    // text fields. The in-memory `chats.value` keeps the full content for
+    // the UI; only the localStorage blob is trimmed.
+    safeWriteCompact(STORAGE_KEY, chats.value);
     safeWrite(ACTIVE_KEY, activeId.value);
   }
 
