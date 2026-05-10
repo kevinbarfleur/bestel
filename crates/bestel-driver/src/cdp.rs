@@ -112,29 +112,36 @@ pub async fn connect_to_main(port: u16) -> Result<Attached> {
         }
     });
 
-    // 2. Brief tick to let the handler flush incoming
-    // `Target.targetCreated` events for already-existing tabs. Without
-    // it, `Browser::pages()` is racy and sometimes returns empty.
-    tokio::time::sleep(Duration::from_millis(300)).await;
-
-    // 3. Filter for the main Bestel page. The dev-panel and prompt-editor
-    // both serve `*.html` URLs ; the main app routes to `/#/`.
-    let pages = browser.pages().await.context("Browser::pages")?;
-
+    // 2. Filter for the main Bestel page with retry — under heavy
+    // CDP traffic (long DeepSeek streams) chromiumoxide's internal
+    // `Page.enable` command can hit its tight default timeout, leaving
+    // the page list empty for a tick. Retry up to 5x with backoff.
     let mut main_page: Option<Page> = None;
-    for p in pages {
-        if let Ok(url) = p.url().await {
-            if let Some(u) = url {
+    for attempt in 0..5 {
+        tokio::time::sleep(Duration::from_millis(200 + attempt * 200)).await;
+
+        let pages = match browser.pages().await {
+            Ok(p) => p,
+            Err(e) => {
+                tracing::warn!(target: "bestel-driver.cdp", attempt, error = %e, "Browser::pages failed, retrying");
+                continue;
+            }
+        };
+        for p in pages {
+            if let Ok(Some(u)) = p.url().await {
                 if !u.contains(".html") {
                     main_page = Some(p);
                     break;
                 }
             }
         }
+        if main_page.is_some() {
+            break;
+        }
     }
 
     let page = main_page.ok_or_else(|| {
-        anyhow!("no main page (without .html in URL) found among Browser::pages()")
+        anyhow!("no main page (without .html in URL) found after 5 attempts — is the WebView busy / frozen?")
     })?;
 
     Ok(Attached {
