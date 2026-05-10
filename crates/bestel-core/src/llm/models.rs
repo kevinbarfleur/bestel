@@ -119,6 +119,22 @@ pub fn cloud_profiles() -> Vec<ModelProfile> {
             vision_capable: false,
         },
         ModelProfile {
+            id: "deepseek-v4-pro".into(),
+            provider: ProviderKind::Anthropic,
+            model_id: "deepseek-v4-pro".into(),
+            display_name: "DeepSeek V4-Pro".into(),
+            description:
+                "DeepSeek V4-Pro via Anthropic-compatible endpoint. 1.6T total / 49B active params, #2 open-weights model on the Artificial Analysis Intelligence Index (score 52). Stronger on agentic real-world tasks (GDPval-AA 1554), hard math (AIME 85.6), and factual knowledge than V4-Flash. Sonnet-tier output at ~half the price (standard) and ~3x the cost of V4-Flash. A 75% promo runs until 2026-05-31. Requires DEEPSEEK_API_KEY.".into(),
+            speed: SpeedTier::Balanced,
+            cost: CostTier::Mid,
+            cost_per_mtok: Some((1.74, 3.48)),
+            base_url: Some("https://api.deepseek.com/anthropic".into()),
+            api_key_env: Some("DEEPSEEK_API_KEY".into()),
+            info_url: Some(DEEPSEEK_DOCS_URL.into()),
+            api_key_url: Some(DEEPSEEK_KEYS_URL.into()),
+            vision_capable: false,
+        },
+        ModelProfile {
             id: "anthropic-haiku-4-5".into(),
             provider: ProviderKind::Anthropic,
             model_id: "claude-haiku-4-5-20251001".into(),
@@ -457,6 +473,21 @@ mod tests {
     }
 
     #[test]
+    fn deepseek_v4_pro_profile_present_with_correct_endpoint() {
+        let p = find_profile("deepseek-v4-pro").expect("v4-pro profile present");
+        assert_eq!(p.model_id, "deepseek-v4-pro");
+        assert_eq!(p.api_key_env.as_deref(), Some("DEEPSEEK_API_KEY"));
+        assert_eq!(
+            p.base_url.as_deref(),
+            Some("https://api.deepseek.com/anthropic")
+        );
+        // Standard pricing: 1.74 input / 3.48 output (promo not encoded
+        // in the registry — it runs until 2026-05-31 and we let the
+        // user judge cost via the description).
+        assert_eq!(p.cost_per_mtok, Some((1.74, 3.48)));
+    }
+
+    #[test]
     fn lookup_unknown_returns_none() {
         assert!(find_profile("nope").is_none());
     }
@@ -467,6 +498,7 @@ mod tests {
         assert!(find_profile("anthropic-sonnet-4-6").is_some());
         assert!(find_profile("anthropic-opus-4-7").is_some());
         assert!(find_profile("deepseek-v4-flash").is_some());
+        assert!(find_profile("deepseek-v4-pro").is_some());
     }
 
     #[test]
