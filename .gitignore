@@ -42,3 +42,9 @@ tools/scenarios/runs/
 # Design handoff bundles — ephemeral exploration artifacts from
 # claude.ai/design. Extracted locally for reference, not versioned.
 .design-bundle-v*/
+
+# Generated dev-panel run exports (dev_export_all_runs IPC)
+runs-export-*.json
+
+# Battery scenario runtime output written by the dev panel's Live test tab
+crates/bestel/ui/tools/

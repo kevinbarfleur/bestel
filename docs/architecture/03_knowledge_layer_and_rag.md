@@ -319,31 +319,8 @@ Path: `crates/bestel-core/src/sources/snapshots/{poe1,poe2}/*.zst` plus
 
 Refresh: `scripts/refresh-snapshots.ps1` re-pulls the source files and
 recompresses. Run on patch days or whenever drift is suspected (the
-2026-05-08 RAG audit caught two 11-byte placeholder files from
-upstream 404s — these will go away once repoe-fork ships full PoE2
-parity).
-
----
-
-## Veracity audit
-
-`RAG_REFERENCES_VERACITY_AUDIT.md` (repo root, untracked, dated
-2026-05-11) is an external deep-research request scoping a verification
-sweep over 43 reference files. It flags two systemic risks:
-
-1. **PoE2 0.5 launch claims** (release date 2026-05-29, atlas size,
-   Runes of Aldur league, new currencies) are *pre-launch
-   speculation* in some files — must be re-validated post-launch.
-2. **Hardcoded numerics across files** (Mind over Matter %, Trinity
-   penetration, Bone Helmet roll ranges, suppression caps) drift with
-   patches. The Sprint `value-purge` shift removed hardcoded numbers
-   from references in favour of live wiki / repoe fetches; the
-   verifier now flags any unsourced numeric claim that wasn't backed
-   by a fetch this turn (see
-   [02 § Verifier (CoVe)](./02_agentic_system.md#verifier-cove)).
-
-The audit is the source of truth for which reference files should be
-prioritised for re-validation when bandwidth allows.
+2026-05-08 refresh caught two 11-byte placeholder files from upstream
+404s — these will go away once repoe-fork ships full PoE2 parity).
 
 ---
 

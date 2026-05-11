@@ -125,4 +125,3 @@ upstream Path of Building engine.
 | Sprints, pivots, deferred work | `docs/ROADMAP.md` |
 | PoE2 0.5 launch playbook | `docs/POE2_05_LAUNCH_PLAYBOOK.md` |
 | Real-user evaluation prompts | `tests/eval/scenarios/*.toml` |
-| RAG references veracity audit (2026-05-11) | `RAG_REFERENCES_VERACITY_AUDIT.md` (repo root, untracked) |
