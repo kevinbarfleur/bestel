@@ -1,0 +1,280 @@
+name = "value-purge"
+description = """
+Sprint `value-purge` validation suite.
+
+Verifies that after stripping hardcoded magnitudes from `prompts/references/**`
+and wiring the runtime mechanics directive + verifier extension, the agent
+actually FETCHES the wiki / repoe / pob_calc before quoting a number on a
+mechanic-coded question — instead of reciting a stale value from training
+data or from a memory of the (now empty) references.
+
+Each test case is a known-stale claim from the 2026-05-12 audit. The post-
+sprint expectation is:
+
+  - the assistant called wiki_parse / repoe_lookup / pob_calc this turn,
+  - the answer either cites the live value with the wiki URL, OR refuses
+    to quote a number with the "chronicles are silent" escape,
+  - the historically-stale value does NOT appear unsourced in the prose.
+
+The TOML harness here is a SCAFFOLD — the `expectations` blocks are
+documented for the eval pass that the user runs manually with
+`bestel-driver scenario` against the dev port. Each scenario writes its
+chat state to `runs/value-purge-{ts}.json` for offline inspection.
+
+Run per-model: re-execute this file with set-model swapped between the
+three target models (Haiku, V4-Flash, V4-Pro) to compare enforcement
+across capacity tiers. Pass criteria per `wondrous-puzzling-forest.md`
+Phase 4:
+
+  - Haiku 4.5: ≥ 5 of 7 cases trigger a fetch before claim
+  - V4-Flash: ≥ 6 of 7
+  - V4-Pro: ≥ 7 of 7
+"""
+
+# ============================================================
+# MODEL: Haiku 4.5 (weakest enforcement target, audit-priority)
+# ============================================================
+[[step]]
+type = "set-model"
+id = "anthropic-haiku-4-5"
+
+# ---------- T1 — Mind Over Matter mitigation %
+# Audit-flagged: refs cited 30%, wiki says 40% since 3.19.
+[[step]]
+type = "new-chat"
+
+[[step]]
+type = "send"
+text = "how much damage does Mind over Matter actually mitigate"
+
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 180000
+
+[[step]]
+type = "eval"
+expr = "JSON.stringify({test:'T1_MoM', model: window.__bestel.getActiveModel()?.id, state: window.__bestel.getChatState()})"
+
+# ---------- T2 — Spine Bow base APS
+# Audit-flagged: refs cited 1.50 APS, wiki says 1.40.
+[[step]]
+type = "new-chat"
+
+[[step]]
+type = "send"
+text = "is spine bow really 1.5 attacks per second"
+
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 180000
+
+[[step]]
+type = "eval"
+expr = "JSON.stringify({test:'T2_SpineBow', model: window.__bestel.getActiveModel()?.id, state: window.__bestel.getChatState()})"
+
+# ---------- T3 — Trinity Support penetration %
+# Audit-flagged: refs cited 50% pen at 3 stacks, wiki says 16% at level 20.
+[[step]]
+type = "new-chat"
+
+[[step]]
+type = "send"
+text = "what does trinity support actually give at maximum stacks"
+
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 180000
+
+[[step]]
+type = "eval"
+expr = "JSON.stringify({test:'T3_Trinity', model: window.__bestel.getActiveModel()?.id, state: window.__bestel.getChatState()})"
+
+# ---------- T4 — Flame Dash charge count + cooldown
+# Audit-flagged: refs cited 3 charges / 10s, wiki says 3 stored / 3.50 sec.
+[[step]]
+type = "new-chat"
+
+[[step]]
+type = "send"
+text = "how many flame dash charges and what's the cooldown"
+
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 180000
+
+[[step]]
+type = "eval"
+expr = "JSON.stringify({test:'T4_FlameDash', model: window.__bestel.getActiveModel()?.id, state: window.__bestel.getChatState()})"
+
+# ---------- T5 — Bone Helmet minion-damage implicit
+# Audit-flagged: refs cited +30%, wiki says (15-20)% since 3.17.
+[[step]]
+type = "new-chat"
+
+[[step]]
+type = "send"
+text = "what's the minion damage implicit range on a bone helmet"
+
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 180000
+
+[[step]]
+type = "eval"
+expr = "JSON.stringify({test:'T5_BoneHelmet', model: window.__bestel.getActiveModel()?.id, state: window.__bestel.getChatState()})"
+
+# ---------- T6 — Threshold-file inverse test (red maps)
+# When the threshold file IS the right source, the agent should
+# read it AND frame it as community heuristic, never as wiki fact.
+[[step]]
+type = "new-chat"
+build = "C:/Users/kbarf/Documents/Path of Building/Builds/3.26/Penance Brand.xml"
+
+[[step]]
+type = "send"
+text = "am i ready for red maps with 1m dps"
+
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 240000
+
+[[step]]
+type = "eval"
+expr = "JSON.stringify({test:'T6_RedMapsThreshold', model: window.__bestel.getActiveModel()?.id, state: window.__bestel.getChatState()})"
+
+# ---------- T7 — PoE2 Talisman item class (was completely wrong in refs)
+# Audit-flagged: refs described as amulet-slot charge items; wiki says
+# they're a two-handed melee weapon class for shapeshift archetypes.
+[[step]]
+type = "new-chat"
+
+[[step]]
+type = "send"
+text = "what are talismans in poe2 and what slot do they go in"
+
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 180000
+
+[[step]]
+type = "eval"
+expr = "JSON.stringify({test:'T7_PoE2Talisman', model: window.__bestel.getActiveModel()?.id, state: window.__bestel.getChatState()})"
+
+# ============================================================
+# MODEL: DeepSeek V4-Flash
+# ============================================================
+[[step]]
+type = "set-model"
+id = "deepseek-v4-flash"
+
+[[step]]
+type = "new-chat"
+
+[[step]]
+type = "send"
+text = "how much damage does Mind over Matter actually mitigate"
+
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 180000
+
+[[step]]
+type = "eval"
+expr = "JSON.stringify({test:'T1_MoM_v4flash', model: window.__bestel.getActiveModel()?.id, state: window.__bestel.getChatState()})"
+
+[[step]]
+type = "new-chat"
+
+[[step]]
+type = "send"
+text = "what does trinity support actually give at maximum stacks"
+
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 180000
+
+[[step]]
+type = "eval"
+expr = "JSON.stringify({test:'T3_Trinity_v4flash', model: window.__bestel.getActiveModel()?.id, state: window.__bestel.getChatState()})"
+
+[[step]]
+type = "new-chat"
+
+[[step]]
+type = "send"
+text = "what's the minion damage implicit range on a bone helmet"
+
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 180000
+
+[[step]]
+type = "eval"
+expr = "JSON.stringify({test:'T5_BoneHelmet_v4flash', model: window.__bestel.getActiveModel()?.id, state: window.__bestel.getChatState()})"
+
+[[step]]
+type = "new-chat"
+
+[[step]]
+type = "send"
+text = "what are talismans in poe2 and what slot do they go in"
+
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 180000
+
+[[step]]
+type = "eval"
+expr = "JSON.stringify({test:'T7_PoE2Talisman_v4flash', model: window.__bestel.getActiveModel()?.id, state: window.__bestel.getChatState()})"
+
+# ============================================================
+# MODEL: DeepSeek V4-Pro
+# ============================================================
+[[step]]
+type = "set-model"
+id = "deepseek-v4-pro"
+
+[[step]]
+type = "new-chat"
+
+[[step]]
+type = "send"
+text = "how much damage does Mind over Matter actually mitigate"
+
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 240000
+
+[[step]]
+type = "eval"
+expr = "JSON.stringify({test:'T1_MoM_v4pro', model: window.__bestel.getActiveModel()?.id, state: window.__bestel.getChatState()})"
+
+[[step]]
+type = "new-chat"
+
+[[step]]
+type = "send"
+text = "how many flame dash charges and what's the cooldown"
+
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 240000
+
+[[step]]
+type = "eval"
+expr = "JSON.stringify({test:'T4_FlameDash_v4pro', model: window.__bestel.getActiveModel()?.id, state: window.__bestel.getChatState()})"
+
+[[step]]
+type = "new-chat"
+
+[[step]]
+type = "send"
+text = "what are talismans in poe2 and what slot do they go in"
+
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 240000
+
+[[step]]
+type = "eval"
+expr = "JSON.stringify({test:'T7_PoE2Talisman_v4pro', model: window.__bestel.getActiveModel()?.id, state: window.__bestel.getChatState()})"
