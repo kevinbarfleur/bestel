@@ -1,0 +1,125 @@
+name = "sheet-interview-flow"
+description = """
+Sheet-interview end-to-end smoke test across the 3 cheap-to-mid-tier
+models. For each model, we:
+
+  1. Attach the Penance Brand build
+  2. Delete any existing sheet (force `Build sheet: absent`)
+  3. Ask a build-specific question that should trigger interview
+  4. Wait for `sheet_open_interview` to render the BSInterviewPanel
+  5. Auto-fill the panel and submit
+  6. Wait for the assistant's post-submission turn (sheet_finalize_request
+     + answer to the original question)
+  7. Capture the final chat-state for inspection
+
+If step 4 times out, the slim broke the absent flow. If step 6 times out,
+the slim broke the finalize-then-answer flow.
+"""
+
+# ============================================================
+# MODEL 1: Haiku 4.5
+# ============================================================
+[[step]]
+type = "set-model"
+id = "anthropic-haiku-4-5"
+
+[[step]]
+type = "new-chat"
+build = "C:/Users/kbarf/Documents/Path of Building/Builds/3.26/Penance Brand.xml"
+
+[[step]]
+type = "delete-sheet"
+
+[[step]]
+type = "send"
+text = "can you review my build and tell me what's holding me back"
+
+# The agent should do deep analysis (~7 tool calls) then sheet_open_interview.
+# After sheet_open_interview, the turn ends silently so wait-completion
+# returns. We then probe for the interview panel.
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 300000
+
+[[step]]
+type = "wait-for-interview"
+timeout_ms = 30000
+
+[[step]]
+type = "submit-interview"
+notes = "Pinnacle / red-map focus, no Mageblood budget"
+timeout_ms = 240000
+
+[[step]]
+type = "eval"
+expr = "window.__bestel.invoke('list_build_sheets').then(s => JSON.stringify({model: window.__bestel.getActiveModel()?.id, q: 'interview_haiku', sheets: s.length, state: window.__bestel.getChatState()}))"
+
+# ============================================================
+# MODEL 2: DeepSeek V4-Flash
+# ============================================================
+[[step]]
+type = "set-model"
+id = "deepseek-v4-flash"
+
+[[step]]
+type = "new-chat"
+build = "C:/Users/kbarf/Documents/Path of Building/Builds/3.26/Penance Brand.xml"
+
+[[step]]
+type = "delete-sheet"
+
+[[step]]
+type = "send"
+text = "can you review my build and tell me what's holding me back"
+
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 300000
+
+[[step]]
+type = "wait-for-interview"
+timeout_ms = 30000
+
+[[step]]
+type = "submit-interview"
+notes = "Pinnacle / red-map focus, no Mageblood budget"
+timeout_ms = 240000
+
+[[step]]
+type = "eval"
+expr = "window.__bestel.invoke('list_build_sheets').then(s => JSON.stringify({model: window.__bestel.getActiveModel()?.id, q: 'interview_v4flash', sheets: s.length, state: window.__bestel.getChatState()}))"
+
+# ============================================================
+# MODEL 3: DeepSeek V4-Pro
+# ============================================================
+[[step]]
+type = "set-model"
+id = "deepseek-v4-pro"
+
+[[step]]
+type = "new-chat"
+build = "C:/Users/kbarf/Documents/Path of Building/Builds/3.26/Penance Brand.xml"
+
+[[step]]
+type = "delete-sheet"
+
+[[step]]
+type = "send"
+text = "can you review my build and tell me what's holding me back"
+
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 360000
+
+[[step]]
+type = "wait-for-interview"
+timeout_ms = 30000
+
+[[step]]
+type = "submit-interview"
+notes = "Pinnacle / red-map focus, no Mageblood budget"
+timeout_ms = 300000
+
+[[step]]
+type = "eval"
+expr = "window.__bestel.invoke('list_build_sheets').then(s => JSON.stringify({model: window.__bestel.getActiveModel()?.id, q: 'interview_v4pro', sheets: s.length, state: window.__bestel.getChatState()}))"

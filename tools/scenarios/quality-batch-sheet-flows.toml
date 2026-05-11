@@ -1,0 +1,178 @@
+name = "quality-batch-sheet-flows"
+description = """
+Complement to quality-batch-3-models.toml: explicitly exercises the
+three Build Sheet branches across all three models. Each model runs
+the same diagnostic question 3 times with different sheet states:
+
+  Phase A — sheet ABSENT (deleted before): Bestel must run the one-shot
+            interview flow (deep analysis cap ~7 tool calls + ONE
+            sheet_open_interview call). End of turn = silent until user
+            submits the interview. We don't submit ; we just verify the
+            interview was opened (chat state has a sheet_interview segment).
+
+  Phase B — sheet FRESH (interview just submitted previously): Bestel
+            calls get_active_build_sheet, reads sections, cites them.
+            We can't easily synthesize a fresh sheet without going
+            through the interview, so we just check that AFTER phase A
+            the sheet is at least partially authored. SKIPPED if the
+            interview phase didn't complete.
+
+  Phase C — sheet STALE (kept from a previous chat): Bestel calls
+            get_active_build_sheet, surfaces the drift, cites the
+            sheet for context, re-derives numbers via pob_calc. We
+            achieve this by NOT deleting the sheet ; if Penance Brand
+            already has a saved sheet from prior tests, it's stale by
+            design (PoB hash drift on each new-chat).
+
+Output captures each turn's chat-state JSON for downstream verification.
+"""
+
+# ============================================================
+# MODEL 1: Haiku 4.5
+# ============================================================
+[[step]]
+type = "set-model"
+id = "anthropic-haiku-4-5"
+
+# ----- Phase A: sheet ABSENT -----
+[[step]]
+type = "eval"
+expr = "(async () => { const sheets = await window.__bestel.invoke('list_build_sheets'); for (const s of sheets) { await window.__bestel.invoke('delete_build_sheet', {id: s.id}); } return {deleted: sheets.length}; })()"
+
+[[step]]
+type = "new-chat"
+build = "C:/Users/kbarf/Documents/Path of Building/Builds/3.26/Penance Brand.xml"
+
+[[step]]
+type = "send"
+text = "give me a thorough audit of my build, what should i upgrade next"
+
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 240000
+
+[[step]]
+type = "eval"
+expr = "JSON.stringify({phase: 'A_absent', model: window.__bestel.getActiveModel()?.id, state: window.__bestel.getChatState()})"
+
+# Sleep so the watcher / sheet store settle if the interview was opened.
+[[step]]
+type = "sleep"
+ms = 2000
+
+# ----- Phase C: sheet STALE (whatever was authored above stays) -----
+# We do NOT delete. If a sheet was created during phase A interview
+# panel, it stays — though without an INTERVIEW SUBMISSION the sheet
+# is NOT actually finalized to disk. So this phase tests "no sheet
+# yet" again unless prior runs left one. Either way, captures the
+# behavior on a cold-ish 2nd diagnostic turn.
+
+[[step]]
+type = "new-chat"
+build = "C:/Users/kbarf/Documents/Path of Building/Builds/3.26/Penance Brand.xml"
+
+[[step]]
+type = "send"
+text = "can you look at my char and tell me why i die so much to elemental hits"
+
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 240000
+
+[[step]]
+type = "eval"
+expr = "JSON.stringify({phase: 'C_post_interview', model: window.__bestel.getActiveModel()?.id, state: window.__bestel.getChatState()})"
+
+# ============================================================
+# MODEL 2: DeepSeek V4-Flash
+# ============================================================
+[[step]]
+type = "set-model"
+id = "deepseek-v4-flash"
+
+[[step]]
+type = "eval"
+expr = "(async () => { const sheets = await window.__bestel.invoke('list_build_sheets'); for (const s of sheets) { await window.__bestel.invoke('delete_build_sheet', {id: s.id}); } return {deleted: sheets.length}; })()"
+
+[[step]]
+type = "new-chat"
+build = "C:/Users/kbarf/Documents/Path of Building/Builds/3.26/Penance Brand.xml"
+
+[[step]]
+type = "send"
+text = "give me a thorough audit of my build, what should i upgrade next"
+
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 300000
+
+[[step]]
+type = "eval"
+expr = "JSON.stringify({phase: 'A_absent', model: window.__bestel.getActiveModel()?.id, state: window.__bestel.getChatState()})"
+
+[[step]]
+type = "sleep"
+ms = 2000
+
+[[step]]
+type = "new-chat"
+build = "C:/Users/kbarf/Documents/Path of Building/Builds/3.26/Penance Brand.xml"
+
+[[step]]
+type = "send"
+text = "can you look at my char and tell me why i die so much to elemental hits"
+
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 300000
+
+[[step]]
+type = "eval"
+expr = "JSON.stringify({phase: 'C_post_interview', model: window.__bestel.getActiveModel()?.id, state: window.__bestel.getChatState()})"
+
+# ============================================================
+# MODEL 3: DeepSeek V4-Pro
+# ============================================================
+[[step]]
+type = "set-model"
+id = "deepseek-v4-pro"
+
+[[step]]
+type = "eval"
+expr = "(async () => { const sheets = await window.__bestel.invoke('list_build_sheets'); for (const s of sheets) { await window.__bestel.invoke('delete_build_sheet', {id: s.id}); } return {deleted: sheets.length}; })()"
+
+[[step]]
+type = "new-chat"
+build = "C:/Users/kbarf/Documents/Path of Building/Builds/3.26/Penance Brand.xml"
+
+[[step]]
+type = "send"
+text = "give me a thorough audit of my build, what should i upgrade next"
+
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 300000
+
+[[step]]
+type = "eval"
+expr = "JSON.stringify({phase: 'A_absent', model: window.__bestel.getActiveModel()?.id, state: window.__bestel.getChatState()})"
+
+[[step]]
+type = "sleep"
+ms = 2000
+
+[[step]]
+type = "new-chat"
+build = "C:/Users/kbarf/Documents/Path of Building/Builds/3.26/Penance Brand.xml"
+
+[[step]]
+type = "send"
+text = "can you look at my char and tell me why i die so much to elemental hits"
+
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 300000
+
+[[step]]
+type = "eval"
+expr = "JSON.stringify({phase: 'C_post_interview', model: window.__bestel.getActiveModel()?.id, state: window.__bestel.getChatState()})"

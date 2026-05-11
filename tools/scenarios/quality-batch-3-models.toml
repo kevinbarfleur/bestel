@@ -1,0 +1,265 @@
+name = "quality-batch-3-models"
+description = """
+Quality batch: 6 representative real-user prompts run against each of
+the 3 cheap-to-mid-tier models (Haiku, V4-Flash, V4-Pro). Captures the
+full chat-state per question for downstream factual verification.
+
+Prompts cover the categories the verifier and agentic flow most need
+to handle correctly:
+
+  Q1 mechanics_rt_accuracy       — pure mechanics, no PoB needed
+  Q2 mechanics_more_vs_increased — conceptual math (verifier-eligible)
+  Q3 vague_squishy_build         — should ask clarification, not dump advice
+  Q4 diag_ele_oneshot            — diagnostic with PoB attached (full agent flow)
+  Q5 boss_sirus_die_beam         — boss-specific mechanic + dodge tip
+  Q6 refuse_other_arpg           — off-topic, must refuse in character
+
+Total: 6 × 3 = 18 test sessions. Estimated runtime ~15-30 min depending
+on thinking depth per model.
+"""
+
+# ============================================================
+# MODEL 1: Haiku 4.5
+# ============================================================
+[[step]]
+type = "set-model"
+id = "anthropic-haiku-4-5"
+
+# Q1 — RT accuracy
+[[step]]
+type = "new-chat"
+[[step]]
+type = "send"
+text = "do i need accuracy if i have resolute technique"
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 120000
+[[step]]
+type = "eval"
+expr = "JSON.stringify({model: window.__bestel.getActiveModel()?.id, q: 'mechanics_rt_accuracy', state: window.__bestel.getChatState()})"
+
+# Q2 — more vs increased
+[[step]]
+type = "new-chat"
+[[step]]
+type = "send"
+text = "whats the difference between more and increased damage"
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 120000
+[[step]]
+type = "eval"
+expr = "JSON.stringify({model: window.__bestel.getActiveModel()?.id, q: 'mechanics_more_vs_increased', state: window.__bestel.getChatState()})"
+
+# Q3 — vague squishy
+[[step]]
+type = "new-chat"
+[[step]]
+type = "send"
+text = "my build feels like ass, what am i doing wrong"
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 120000
+[[step]]
+type = "eval"
+expr = "JSON.stringify({model: window.__bestel.getActiveModel()?.id, q: 'vague_squishy_build', state: window.__bestel.getChatState()})"
+
+# Q4 — ele oneshot diagnostic with PoB
+[[step]]
+type = "new-chat"
+build = "C:/Users/kbarf/Documents/Path of Building/Builds/3.26/Penance Brand.xml"
+[[step]]
+type = "send"
+text = "can you look at my char and tell me why i die so much to elemental hits"
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 240000
+[[step]]
+type = "eval"
+expr = "JSON.stringify({model: window.__bestel.getActiveModel()?.id, q: 'diag_ele_oneshot', state: window.__bestel.getChatState()})"
+
+# Q5 — Sirus die beam
+[[step]]
+type = "new-chat"
+[[step]]
+type = "send"
+text = "how do i dodge sirus die beam i keep eating it"
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 120000
+[[step]]
+type = "eval"
+expr = "JSON.stringify({model: window.__bestel.getActiveModel()?.id, q: 'boss_sirus_die_beam', state: window.__bestel.getChatState()})"
+
+# Q6 — refuse other ARPG
+[[step]]
+type = "new-chat"
+[[step]]
+type = "send"
+text = "whats a good aRPG to play while i wait for the new league"
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 120000
+[[step]]
+type = "eval"
+expr = "JSON.stringify({model: window.__bestel.getActiveModel()?.id, q: 'refuse_other_arpg', state: window.__bestel.getChatState()})"
+
+# ============================================================
+# MODEL 2: DeepSeek V4-Flash
+# ============================================================
+[[step]]
+type = "set-model"
+id = "deepseek-v4-flash"
+
+[[step]]
+type = "new-chat"
+[[step]]
+type = "send"
+text = "do i need accuracy if i have resolute technique"
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 180000
+[[step]]
+type = "eval"
+expr = "JSON.stringify({model: window.__bestel.getActiveModel()?.id, q: 'mechanics_rt_accuracy', state: window.__bestel.getChatState()})"
+
+[[step]]
+type = "new-chat"
+[[step]]
+type = "send"
+text = "whats the difference between more and increased damage"
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 180000
+[[step]]
+type = "eval"
+expr = "JSON.stringify({model: window.__bestel.getActiveModel()?.id, q: 'mechanics_more_vs_increased', state: window.__bestel.getChatState()})"
+
+[[step]]
+type = "new-chat"
+[[step]]
+type = "send"
+text = "my build feels like ass, what am i doing wrong"
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 180000
+[[step]]
+type = "eval"
+expr = "JSON.stringify({model: window.__bestel.getActiveModel()?.id, q: 'vague_squishy_build', state: window.__bestel.getChatState()})"
+
+[[step]]
+type = "new-chat"
+build = "C:/Users/kbarf/Documents/Path of Building/Builds/3.26/Penance Brand.xml"
+[[step]]
+type = "send"
+text = "can you look at my char and tell me why i die so much to elemental hits"
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 240000
+[[step]]
+type = "eval"
+expr = "JSON.stringify({model: window.__bestel.getActiveModel()?.id, q: 'diag_ele_oneshot', state: window.__bestel.getChatState()})"
+
+[[step]]
+type = "new-chat"
+[[step]]
+type = "send"
+text = "how do i dodge sirus die beam i keep eating it"
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 180000
+[[step]]
+type = "eval"
+expr = "JSON.stringify({model: window.__bestel.getActiveModel()?.id, q: 'boss_sirus_die_beam', state: window.__bestel.getChatState()})"
+
+[[step]]
+type = "new-chat"
+[[step]]
+type = "send"
+text = "whats a good aRPG to play while i wait for the new league"
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 120000
+[[step]]
+type = "eval"
+expr = "JSON.stringify({model: window.__bestel.getActiveModel()?.id, q: 'refuse_other_arpg', state: window.__bestel.getChatState()})"
+
+# ============================================================
+# MODEL 3: DeepSeek V4-Pro
+# ============================================================
+[[step]]
+type = "set-model"
+id = "deepseek-v4-pro"
+
+[[step]]
+type = "new-chat"
+[[step]]
+type = "send"
+text = "do i need accuracy if i have resolute technique"
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 180000
+[[step]]
+type = "eval"
+expr = "JSON.stringify({model: window.__bestel.getActiveModel()?.id, q: 'mechanics_rt_accuracy', state: window.__bestel.getChatState()})"
+
+[[step]]
+type = "new-chat"
+[[step]]
+type = "send"
+text = "whats the difference between more and increased damage"
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 180000
+[[step]]
+type = "eval"
+expr = "JSON.stringify({model: window.__bestel.getActiveModel()?.id, q: 'mechanics_more_vs_increased', state: window.__bestel.getChatState()})"
+
+[[step]]
+type = "new-chat"
+[[step]]
+type = "send"
+text = "my build feels like ass, what am i doing wrong"
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 180000
+[[step]]
+type = "eval"
+expr = "JSON.stringify({model: window.__bestel.getActiveModel()?.id, q: 'vague_squishy_build', state: window.__bestel.getChatState()})"
+
+[[step]]
+type = "new-chat"
+build = "C:/Users/kbarf/Documents/Path of Building/Builds/3.26/Penance Brand.xml"
+[[step]]
+type = "send"
+text = "can you look at my char and tell me why i die so much to elemental hits"
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 300000
+[[step]]
+type = "eval"
+expr = "JSON.stringify({model: window.__bestel.getActiveModel()?.id, q: 'diag_ele_oneshot', state: window.__bestel.getChatState()})"
+
+[[step]]
+type = "new-chat"
+[[step]]
+type = "send"
+text = "how do i dodge sirus die beam i keep eating it"
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 180000
+[[step]]
+type = "eval"
+expr = "JSON.stringify({model: window.__bestel.getActiveModel()?.id, q: 'boss_sirus_die_beam', state: window.__bestel.getChatState()})"
+
+[[step]]
+type = "new-chat"
+[[step]]
+type = "send"
+text = "whats a good aRPG to play while i wait for the new league"
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 120000
+[[step]]
+type = "eval"
+expr = "JSON.stringify({model: window.__bestel.getActiveModel()?.id, q: 'refuse_other_arpg', state: window.__bestel.getChatState()})"

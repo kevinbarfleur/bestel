@@ -824,6 +824,16 @@ async fn dispatch_get_active_build(ctx: &ToolCtx) -> Result<String> {
     // payload makes it unmissable. Anthropic / DeepSeek tool-results are
     // strings ; the model parses the whole content textually, so a
     // pre-JSON banner is naturally read first.
+    //
+    // NOTE: the anti-hallucination directive (anchor claims to this JSON,
+    // do not extrapolate) lives in the runtime tag injected by
+    // `crates/bestel-core/src/llm/anthropic.rs::run` — NOT here. Prepending
+    // it to the tool result text breaks `ArtPoBImport.vue`'s
+    // JSON.parse(segment.output), which falls back to a raw text dump
+    // visible to the user (the entire banner + 30k-token JSON). The
+    // runtime tag is in the system prompt context, never shown to the
+    // exile, and is read by the model at every turn start — same
+    // attentional position with zero UI side-effects.
     let priority_directive = compute_sheet_priority_directive(active_build.as_ref());
 
     let mut value: Value = match serde_json::from_str(&base) {
