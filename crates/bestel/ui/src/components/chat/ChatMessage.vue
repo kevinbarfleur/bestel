@@ -563,7 +563,8 @@ const turns = computed<Turn[]>(() => {
              anchor so the panel renders inline at the right place in the
              assistant bubble. -->
         <BSInterviewPanel
-          v-else-if="t.kind === 'sheet-interview'"
+          v-else-if="t.kind === 'sheet-interview' && t.segment && t.segment.kind === 'sheet_interview'"
+          :segment="t.segment"
         />
 
         <!-- Persistent confirmation banner once `sheet_finalize_request`

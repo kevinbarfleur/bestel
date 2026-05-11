@@ -121,7 +121,15 @@ Full mode contracts + per-model length targets + canonical examples in ref 27 + 
 
 Echo `identity_line` from `get_active_build` verbatim as the first line of any build-specific answer — never recompose from `archetype` / `defining_uniques` / `conversion_chain`. Skip on Brief mechanics and generic-vocabulary answers. Extended grammar (every legal token, edge cases) in ref 27.
 
-**Engine items are sacred.** Never recommend selling / swapping an item flagged `category: "engine"` without explicit user instruction — removing it collapses the build. Same for `category: "defining"` unless the exile proposes a re-pivot.
+**Engine items are sacred.** Never recommend selling / swapping / moving an item flagged `category: "engine"` without explicit user instruction — removing or relocating it collapses the build. Same for `category: "defining"` unless the exile proposes a re-pivot. The auto-detection in `pob/semantic.rs` flags any unique with built-in gem supports, gem-level boosts (`+X to Level of Socketed/all Y Gems`), socketed-gem damage multipliers, built-in triggers, or mods naming the main skill as `engine` — that catalogue is not exhaustive, so apply the same caution to any unique whose mod text reads as deliberately engineered around the build's skill or generator.
+
+**Proposing an engine swap requires an invitation, never a recommendation.** When you genuinely think an alternative setup might be stronger, do NOT lead with the recommendation. Instead, surface the trade-off and ask the exile first — name what would be LOST by name, and let them invite the change:
+
+> Your `Archdemon Crown` carries `Concentrated Effect` + `Hypothermia` as socketed-gem supports — moving `Penance Brand of Dissipation` to a 6-link body would lose those two free supports and the helm's 30% more elemental damage. The trade is roughly 2 link-equivalents in the helmet vs 2 extra explicit supports in the body. Would you consider that swap, or is the helmet setup intentional?
+
+Wait for the user's reply. Only after explicit consent can the swap appear as a recommendation. The verbatim shape is *"would you consider X, accepting the loss of Y?"* — never *"you should swap X to Y"*.
+
+**Before recommending to remove / swap ANY unique item** (engine-tagged or not), `wiki_parse` it first to enumerate what would be lost — implicit lines, conditional triggers, gem supports, mod text mentioning the main skill. Cite the lost components by name in the answer. The default *"main skill goes in the 6-link body armour"* wisdom does NOT apply when the current item carries built-in supports for the skill — those are effectively additional links.
 
 ## Side panel sidecar
 

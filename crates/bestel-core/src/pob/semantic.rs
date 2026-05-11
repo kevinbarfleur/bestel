@@ -325,6 +325,11 @@ const DEFINING_UNIQUES: &[(&str, &str, &str)] = &[
 
 fn match_defining_uniques(b: &PobBuild) -> Vec<DefiningUniqueMatch> {
     let mut out = Vec::new();
+    let mut matched_names: std::collections::HashSet<String> =
+        std::collections::HashSet::new();
+    // First pass — hardcoded registry. Names are matched
+    // case-insensitively against `PobItem::name`. First match wins per
+    // item.
     for item in &b.items {
         let Some(name) = item.name.as_deref() else {
             continue;
@@ -337,11 +342,109 @@ fn match_defining_uniques(b: &PobBuild) -> Vec<DefiningUniqueMatch> {
                     category: (*cat).into(),
                     identity_hint: (*hint).into(),
                 });
+                matched_names.insert(needle.clone());
                 break;
             }
         }
     }
+    // Second pass — auto-engine via mod patterns. Catches uniques the
+    // hardcoded registry doesn't know about but that are clearly
+    // engineered into the build (built-in gem supports, gem-level
+    // boosts, conditional triggers, main-skill-named mods). Restricted
+    // to UNIQUE rarity so we don't surprise the agent with random rares
+    // — those can be re-crafted, uniques cannot. See the
+    // `<failure_policy>` section of `SYSTEM_PROMPT.md` for how the
+    // agent should treat `category: "engine"` items: never propose
+    // swap without explicit user invitation.
+    let main_skill_lower = b
+        .main_skill
+        .as_deref()
+        .map(|s| s.to_ascii_lowercase())
+        .unwrap_or_default();
+    for item in &b.items {
+        let Some(name) = item.name.as_deref() else {
+            continue;
+        };
+        let needle = name.to_ascii_lowercase();
+        if matched_names.contains(&needle) {
+            continue;
+        }
+        let is_unique = item
+            .rarity
+            .as_deref()
+            .map(|r| r.eq_ignore_ascii_case("UNIQUE"))
+            .unwrap_or(false);
+        if !is_unique {
+            continue;
+        }
+        if let Some(hint) = detect_engine_mod_pattern(&item.raw, &main_skill_lower) {
+            out.push(DefiningUniqueMatch {
+                name: name.to_string(),
+                category: "engine".into(),
+                identity_hint: hint,
+            });
+            matched_names.insert(needle);
+        }
+    }
     out
+}
+
+/// Detect engine-equivalence patterns in an item's raw mods. Returns
+/// `Some(reason)` when the item is engineered for the build — either via
+/// built-in gem supports, gem-level boosts, or by mentioning the main
+/// skill by name in a mod. The returned string surfaces the matched
+/// pattern verbatim (or a paraphrase) so the agent can name what would
+/// be lost when discussing trade-offs with the exile.
+///
+/// Patterns covered (lowercase line scanning):
+/// - `Socketed Gems are Supported by Level X <Support>` — built-in support
+/// - `Socketed <Type> Gems deal X% more <Damage>` — built-in multiplier
+/// - `+X to Level of Socketed <Type> Gems` — socket-scoped gem-level boost
+/// - `+X to Level of all <Type> Spell/Skill Gems` — wide gem-level boost
+/// - `Trigger Level X <Skill> when <Condition>` — built-in trigger
+/// - main skill name appears in any mod text — item explicitly engineered
+///   for this specific skill (catches Replica Dragonfang's Flight class
+///   even when the unique isn't in the hardcoded registry)
+pub(crate) fn detect_engine_mod_pattern(raw: &str, main_skill_lower: &str) -> Option<String> {
+    for line in raw.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let lower = trimmed.to_ascii_lowercase();
+
+        if lower.starts_with("socketed gems are supported by level ") {
+            return Some(format!("built-in gem support — \"{trimmed}\""));
+        }
+        if lower.starts_with("socketed ")
+            && lower.contains("gems deal ")
+            && (lower.contains(" more ") || lower.contains(" increased "))
+        {
+            return Some(format!("socketed-gem damage multiplier — \"{trimmed}\""));
+        }
+        if (lower.contains("to level of socketed") && lower.contains("gems"))
+            || (lower.contains("to level of all") && lower.contains("gems"))
+        {
+            return Some(format!("gem-level boost — \"{trimmed}\""));
+        }
+        if lower.starts_with("trigger level ")
+            && (lower.contains(" when ")
+                || lower.contains(" on critical")
+                || lower.contains(" on hit")
+                || lower.contains(" on kill"))
+        {
+            return Some(format!("built-in trigger — \"{trimmed}\""));
+        }
+        if !main_skill_lower.is_empty()
+            && main_skill_lower.len() >= 4
+            && lower.contains(main_skill_lower)
+        {
+            return Some(format!(
+                "item mod names the build's main skill — \"{trimmed}\""
+            ));
+        }
+    }
+    None
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -603,4 +706,96 @@ mod tests {
         assert!(parse_conversion_line("100% increased Damage").is_none());
         assert!(parse_conversion_line("+50 to maximum Life").is_none());
     }
+
+    #[test]
+    fn detect_engine_pattern_socketed_supports() {
+        // Archdemon Crown / Cataclysm Guardian — built-in support gems.
+        let raw = "\
+Rarity: UNIQUE
+Archdemon Crown
+Reaver Helm
+30% increased Elemental Damage
+Socketed Gems are Supported by Level 30 Concentrated Effect
+Socketed Gems are Supported by Level 30 Hypothermia
++50 to maximum Life
++(11-15)% to all Elemental Resistances";
+        let hint = detect_engine_mod_pattern(raw, "penance brand of dissipation")
+            .expect("should detect built-in support");
+        assert!(
+            hint.contains("Concentrated Effect"),
+            "hint should name the lost support, got {hint}"
+        );
+    }
+
+    #[test]
+    fn detect_engine_pattern_gem_level_boost() {
+        // Replica Dragonfang's Flight class — +3 to a specific gem.
+        let raw = "\
+Rarity: UNIQUE
+Replica Dragonfang's Flight
+Cloth Belt
++(20-30) to Strength
++3 to Level of Socketed Aura Gems
+Inflict Fire Exposure on Hit";
+        let hint =
+            detect_engine_mod_pattern(raw, "").expect("should detect gem level boost");
+        assert!(
+            hint.contains("Aura Gems") || hint.contains("Level of"),
+            "hint should name the boost, got {hint}"
+        );
+    }
+
+    #[test]
+    fn detect_engine_pattern_main_skill_named() {
+        // Replica Dragonfang-style: explicit main skill name in mod.
+        let raw = "\
+Rarity: UNIQUE
+Generic Amulet
+Lapis Amulet
++(20-30) to Intelligence
++3 to Level of all Penance Brand of Dissipation Gems";
+        let hint = detect_engine_mod_pattern(raw, "penance brand of dissipation")
+            .expect("should detect main-skill-named mod");
+        assert!(
+            hint.to_ascii_lowercase().contains("penance brand"),
+            "hint should quote the line, got {hint}"
+        );
+    }
+
+    #[test]
+    fn detect_engine_pattern_built_in_trigger() {
+        let raw = "\
+Rarity: UNIQUE
+Some Cospri-like
+Slaughter Knife
+Trigger Level 20 Cold Spell on Critical Strike";
+        let hint = detect_engine_mod_pattern(raw, "").expect("should detect trigger");
+        assert!(
+            hint.to_ascii_lowercase().contains("trigger"),
+            "hint should mention trigger, got {hint}"
+        );
+    }
+
+    #[test]
+    fn detect_engine_pattern_returns_none_for_vanilla_unique() {
+        // A unique with no engine-equivalence patterns — e.g. Headhunter
+        // (which IS engine in the hardcoded registry, but the pattern
+        // detector alone shouldn't fire on it — Headhunter's mods are
+        // about rare-monster theft, not gem support).
+        let raw = "\
+Rarity: UNIQUE
+Headhunter
+Leather Belt
++(40-50) to Strength
++(40-55) to maximum Life
++(50-60) to maximum Mana
+20% increased Damage with Hits against Rare monsters
+When you Kill a Rare monster, you gain its Modifiers for 60 seconds";
+        let hint = detect_engine_mod_pattern(raw, "");
+        assert!(
+            hint.is_none(),
+            "vanilla unique without engine patterns shouldn't fire, got {hint:?}"
+        );
+    }
+
 }

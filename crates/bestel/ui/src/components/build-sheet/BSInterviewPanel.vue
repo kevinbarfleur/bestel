@@ -5,10 +5,27 @@ import { storeToRefs } from 'pinia';
 import { renderMarkdown } from '../../api/markdown';
 import { useBuildStore } from '../../stores/build';
 import { useChatStore } from '../../stores/chat';
+import type { SheetInterviewSegment } from '../../stores/chat';
 import { useSheetStore } from '../../stores/sheet';
-import type { InterviewQuestion, InterviewSection } from '../../stores/sheet';
+import type {
+  ActiveInterview,
+  InterviewAnswer,
+  InterviewQuestion,
+  InterviewSection,
+} from '../../stores/sheet';
 import { INTERVIEW_SECTION_ORDER } from '../../stores/sheet';
 import BSSectionHead from './BSSectionHead.vue';
+
+/**
+ * Optional `segment` prop — when provided, the panel falls back to it
+ * when the live sheet-store interview is null. This keeps the submitted
+ * digest visible in chat history forever, including past the
+ * `sheet_finalize_request` call (which nulls `activeInterview` so the
+ * NEXT chat starts clean).
+ */
+const props = defineProps<{
+  segment?: SheetInterviewSegment;
+}>();
 
 /**
  * One-shot Build Sheet interview panel (Sprint UX-2).
@@ -38,9 +55,73 @@ const { activeInterview, interviewReady } = storeToRefs(sheet);
 /** PoE game (poe1 / poe2) for the markdown renderer's wiki-link router. */
 const renderGame = computed(() => buildStore.current?.game ?? 'poe1');
 
+/** Snapshot the segment's payload+state into an `ActiveInterview`-shaped
+ * object. Used in history mode when the live store has been cleared
+ * by `sheet_finalize_request` but the chat-history segment still carries
+ * the full submission. */
+function rehydratedFromSegment(): ActiveInterview | null {
+  const seg = props.segment;
+  if (!seg || !seg.payload) return null;
+  const sections: InterviewSection[] = seg.payload.sections.map((s) => ({
+    id: s.id as InterviewSection['id'],
+    title: s.title,
+    draftBody: s.draft_body,
+  }));
+  const questions: InterviewQuestion[] = seg.payload.questions.map((q) => ({
+    questionId: q.question_id,
+    sectionId: q.section_id as InterviewQuestion['sectionId'],
+    title: q.title,
+    subtitle: q.subtitle ?? null,
+    options: q.options,
+    multi: q.multi ?? false,
+    hasOther: q.has_other ?? true,
+  }));
+  const answers = new Map<string, InterviewAnswer>();
+  const state = seg.state;
+  for (const q of questions) {
+    const a = state?.answers?.[q.questionId];
+    answers.set(q.questionId, {
+      selected: a?.selected ? [...a.selected] : [],
+      otherText: a?.otherText ?? '',
+    });
+  }
+  const sectionEdits = new Map<string, string>();
+  if (state?.sectionEdits) {
+    for (const [k, v] of Object.entries(state.sectionEdits)) {
+      sectionEdits.set(k, v);
+    }
+  }
+  return {
+    sections,
+    questions,
+    notesPrompt: seg.payload.notes_prompt,
+    answers,
+    sectionEdits,
+    notes: state?.notes ?? '',
+    submitted: state?.submitted ?? true,
+  };
+}
+
+/** Live store wins; segment is the history fallback. When both are null,
+ * the panel renders nothing (the v-if in ChatMessage.vue ensures the
+ * component only mounts when there's something to show). */
+const displayInterview = computed<ActiveInterview | null>(
+  () => activeInterview.value ?? rehydratedFromSegment(),
+);
+
+/** True when we're showing a frozen submission from chat history (live
+ * store is null but the segment carries the submitted payload). The
+ * template uses this to skip the interactive-form branch entirely and
+ * always render the read-only summary, regardless of `submitted` flag
+ * on the segment state. */
+const isHistoryOnly = computed(
+  () => activeInterview.value === null && rehydratedFromSegment() !== null,
+);
+
 const orderedSections = computed<InterviewSection[]>(() => {
-  if (!activeInterview.value) return [];
-  return [...activeInterview.value.sections].sort(
+  const iv = displayInterview.value;
+  if (!iv) return [];
+  return [...iv.sections].sort(
     (a, b) =>
       INTERVIEW_SECTION_ORDER.indexOf(a.id) -
       INTERVIEW_SECTION_ORDER.indexOf(b.id),
@@ -48,8 +129,9 @@ const orderedSections = computed<InterviewSection[]>(() => {
 });
 
 function questionsFor(sectionId: InterviewQuestion['sectionId']) {
-  if (!activeInterview.value) return [];
-  return activeInterview.value.questions.filter((q) => q.sectionId === sectionId);
+  const iv = displayInterview.value;
+  if (!iv) return [];
+  return iv.questions.filter((q) => q.sectionId === sectionId);
 }
 
 /** Sections the agent always pre-drafts from PoB analysis (vs. axes that
@@ -86,11 +168,11 @@ function cancelSectionEdit(sectionId: string) {
 }
 
 function bodyFor(sectionId: string, draftBody: string): string {
-  return activeInterview.value?.sectionEdits.get(sectionId) ?? draftBody;
+  return displayInterview.value?.sectionEdits.get(sectionId) ?? draftBody;
 }
 
 function isEdited(sectionId: string): boolean {
-  return activeInterview.value?.sectionEdits.has(sectionId) ?? false;
+  return displayInterview.value?.sectionEdits.has(sectionId) ?? false;
 }
 
 /** Render the section body through the project's markdown pipeline so
@@ -154,14 +236,20 @@ const notes = computed({
   set: (v: string) => sheet.setNotes(v),
 });
 
-const submitted = computed(() => activeInterview.value?.submitted === true);
+/** Submitted when the live store says so OR when we're showing a frozen
+ *  history-only segment (which is always in submitted shape since the
+ *  agent only reaches `sheet_finalize_request` after a real submission).
+ */
+const submitted = computed(
+  () => displayInterview.value?.submitted === true || isHistoryOnly.value,
+);
 
 /** Live progress counter for the footer + parity with the sidebar card.
  *  A question counts as "answered" when at least one chip is selected OR
  *  the Other text is non-empty. */
-const totalQuestions = computed(() => activeInterview.value?.questions.length ?? 0);
+const totalQuestions = computed(() => displayInterview.value?.questions.length ?? 0);
 const answeredCount = computed(() => {
-  const iv = activeInterview.value;
+  const iv = displayInterview.value;
   if (!iv) return 0;
   let n = 0;
   for (const q of iv.questions) {
@@ -176,7 +264,7 @@ const answeredCount = computed(() => {
  *  Selected option labels joined by ` · `, optionally followed by the
  *  Other text. Returns `(skipped)` when nothing is selected. */
 function formatAnswer(question: InterviewQuestion): string {
-  const ans = activeInterview.value?.answers.get(question.questionId);
+  const ans = displayInterview.value?.answers.get(question.questionId);
   if (!ans) return '(skipped)';
   const selectedLabels = ans.selected
     .map((i) => question.options[i])
@@ -402,8 +490,13 @@ watch(
     </div>
   </div>
 
-  <!-- ─── SUMMARY MODE — submitted, read-only digest ────────────────────── -->
-  <div v-else-if="activeInterview && submitted" class="bs-iv bs-iv--summary">
+  <!-- ─── SUMMARY MODE — submitted, read-only digest ─────────────────────
+       Renders both when the live store has just been submitted (between
+       submit click and `sheet_finalize_request` completion) AND when only
+       the chat-history segment carries the interview (post-finalize, the
+       live store was nulled by `loadActiveSheet`). The `isHistoryOnly`
+       branch keeps the panel visible forever in chat history. -->
+  <div v-else-if="displayInterview && submitted" class="bs-iv bs-iv--summary">
     <!-- Header -->
     <div class="bs-iv__head">
       <span class="bs-iv__tag bs-iv__tag--ok">✓ build sheet · submitted</span>
@@ -414,7 +507,12 @@ watch(
     </div>
 
     <p class="bs-iv__lede bs-iv__lede--summary">
-      Your answers, recorded. Bestel is finalizing the sheet and will answer your question next.
+      <template v-if="isHistoryOnly">
+        Submission record — the sheet is persisted and the agent has continued the conversation below.
+      </template>
+      <template v-else>
+        Your answers, recorded. Bestel is finalizing the sheet and will answer your question next.
+      </template>
     </p>
 
     <!-- Sections (read-only) -->
@@ -447,8 +545,8 @@ watch(
     <!-- Notes -->
     <div class="bs-iv__section">
       <BSSectionHead :index="orderedSections.length + 1">Notes</BSSectionHead>
-      <div v-if="activeInterview.notes.trim().length > 0" class="bs-iv__notes-summary">
-        {{ activeInterview.notes }}
+      <div v-if="(displayInterview?.notes ?? '').trim().length > 0" class="bs-iv__notes-summary">
+        {{ displayInterview?.notes }}
       </div>
       <div v-else class="bs-iv__notes-summary bs-iv__notes-summary--empty">
         (no notes)
