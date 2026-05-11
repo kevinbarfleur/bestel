@@ -3,11 +3,15 @@ import { createPinia } from 'pinia';
 import { listen } from '@tauri-apps/api/event';
 
 import PromptEditorRoot from './components/prompt-editor/PromptEditorRoot.vue';
+import { installGlobalAnchorGuard } from './api/tauri';
 
 import './styles/tokens.css';
 import './styles/fonts.css';
 import './styles/global.css';
 import './styles/prompt-editor.css';
+
+// Defense-in-depth anchor guard — see comments in main.ts.
+installGlobalAnchorGuard();
 
 function applyTheme(theme: 'light' | 'dark') {
   document.documentElement.classList.toggle('theme-dark', theme === 'dark');

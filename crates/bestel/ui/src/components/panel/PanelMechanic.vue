@@ -2,6 +2,7 @@
 import { computed } from 'vue';
 import { useBuildStore } from '../../stores/build';
 import { renderMarkdown } from '../../api/markdown';
+import { interceptAnchorClick } from '../../api/tauri';
 
 interface MechanicSection {
   heading: string;
@@ -43,7 +44,11 @@ function renderBody(md: string): string {
         :class="{ 'panel-mech__section--last': i === data.sections.length - 1 }"
       >
         <h4 class="panel-mech__heading">{{ sec.heading }}</h4>
-        <div class="markdown-body panel-mech__body" v-html="renderBody(sec.body_md ?? '')" />
+        <div
+          class="markdown-body panel-mech__body"
+          v-html="renderBody(sec.body_md ?? '')"
+          @click="interceptAnchorClick"
+        />
       </section>
     </div>
 

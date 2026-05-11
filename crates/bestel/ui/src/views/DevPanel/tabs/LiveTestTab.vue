@@ -7,6 +7,7 @@ import {
   clearActiveBuild,
   getActiveBuild,
   getActiveModel,
+  interceptAnchorClick,
   listModels,
   onLlmDelta,
   setActiveBuild,
@@ -326,7 +327,12 @@ const stateLabel = computed(() => {
                 <span v-if="t.summary" class="lt__tool-summary">{{ t.summary }}</span>
               </div>
             </div>
-            <div v-if="finalText" class="lt__md" v-html="renderedHtml" />
+            <div
+              v-if="finalText"
+              class="lt__md"
+              v-html="renderedHtml"
+              @click="interceptAnchorClick"
+            />
             <div v-else-if="!isRunning" class="lt__empty">
               <div class="lt__empty-circle">
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">

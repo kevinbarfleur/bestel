@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 
 import { renderMarkdown } from '../../api/markdown';
+import { interceptAnchorClick } from '../../api/tauri';
 import { useBuildStore } from '../../stores/build';
 import { useChatStore } from '../../stores/chat';
 import type { SheetInterviewSegment } from '../../stores/chat';
@@ -393,6 +394,7 @@ watch(
           <div
             class="bs-iv__confirm-body"
             v-html="bodyHtml(section.id, section.draftBody)"
+            @click="interceptAnchorClick"
           />
           <div class="bs-iv__confirm-meta">
             <span
@@ -416,6 +418,7 @@ watch(
         <div
           class="bs-iv__body"
           v-html="bodyHtml(section.id, section.draftBody)"
+          @click="interceptAnchorClick"
         />
         <button
           type="button"
@@ -612,6 +615,7 @@ watch(
             <div
               class="bs-iv__body"
               v-html="bodyHtml(section.id, section.draftBody)"
+              @click="interceptAnchorClick"
             />
             <div
               v-for="q in questionsFor(section.id)"

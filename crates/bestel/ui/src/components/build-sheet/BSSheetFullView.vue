@@ -2,6 +2,7 @@
 import { computed } from 'vue';
 
 import { renderMarkdown } from '../../api/markdown';
+import { interceptAnchorClick } from '../../api/tauri';
 import { INTERVIEW_SECTION_ORDER } from '../../stores/sheet';
 import BSSectionHead from './BSSectionHead.vue';
 
@@ -88,6 +89,7 @@ const gapsSectionIndex = computed(
       <div
         class="bs-full__body"
         v-html="bodyHtml(section.body)"
+        @click="interceptAnchorClick"
       />
     </div>
 

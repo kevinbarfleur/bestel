@@ -2,6 +2,7 @@
 import { computed } from 'vue';
 import { useBuildStore } from '../../stores/build';
 import { renderMarkdown } from '../../api/markdown';
+import { interceptAnchorClick } from '../../api/tauri';
 
 export interface MarkdownPayload {
   body_md?: string;
@@ -23,7 +24,12 @@ const html = computed(() => renderMarkdown(body.value, game.value));
 
 <template>
   <div class="panel-md">
-    <div v-if="body" class="markdown-body panel-md__body" v-html="html" />
+    <div
+      v-if="body"
+      class="markdown-body panel-md__body"
+      v-html="html"
+      @click="interceptAnchorClick"
+    />
     <p v-else class="panel-md__empty">No content.</p>
   </div>
 </template>

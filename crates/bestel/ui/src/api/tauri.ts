@@ -130,6 +130,78 @@ export async function openLink(url: string): Promise<void> {
   useUiStore().openLinkViewer(url);
 }
 
+/**
+ * Click handler for any `v-html` container that may render markdown
+ * `<a>` links. Intercepts the click, prevents the default webview
+ * navigation (which would otherwise replace the whole app view with the
+ * external page — the bug pattern fixed in the link-bug sprint), and
+ * routes the URL through {@link openLink} which respects the user's
+ * `linkBehavior` setting (in-app overlay vs OS browser).
+ *
+ * Does NOT handle panel-button clicks — those still live in
+ * `ChatMessage.handleClick` because they need access to the message's
+ * `panelMap` for artifact resolution.
+ *
+ * Idempotent: it's safe to register this on a container that already
+ * has another `@click` listener — the inner handler's `e.preventDefault()`
+ * only fires when an anchor is the actual target.
+ */
+export function interceptAnchorClick(e: MouseEvent): void {
+  const target = e.target as HTMLElement | null;
+  if (!target) return;
+  const anchor = target.closest('a') as HTMLAnchorElement | null;
+  if (!anchor) return;
+  const href = anchor.dataset.wikiUrl ?? anchor.getAttribute('href');
+  if (!href) return;
+  // Allow in-document anchors and mailto/javascript scheme to fall
+  // through. Only swallow http(s) and file: URLs that would otherwise
+  // hijack the main webview.
+  if (
+    href.startsWith('#') ||
+    href.startsWith('mailto:') ||
+    href.startsWith('javascript:')
+  ) {
+    return;
+  }
+  // Same-origin tauri.localhost navigation (in-app routes) is also
+  // safe — vue-router or other internal mechanisms own those.
+  try {
+    const u = new URL(href, window.location.href);
+    if (u.origin === window.location.origin) {
+      return;
+    }
+  } catch {
+    // malformed URL — fall through and treat as external for safety.
+  }
+  e.preventDefault();
+  void openLink(href);
+}
+
+/**
+ * Document-level defense in depth. Attaches a single capturing-phase
+ * `click` listener that catches ANY anchor click anywhere in the page —
+ * including v-html containers that forgot to wire {@link interceptAnchorClick}
+ * directly. Without this guard, an unhandled `<a href="https://...">` click
+ * navigates the entire WebView to the external URL, replacing the app
+ * (and stranding the user, since the title bar's window controls go with
+ * the navigation).
+ *
+ * Idempotent: re-calling does NOT register multiple listeners (uses a
+ * Symbol marker on `document`).
+ */
+const GUARD_INSTALLED = Symbol.for('bestel.linkGuard');
+
+export function installGlobalAnchorGuard(): void {
+  // The Symbol-keyed sentinel is sticky across hot-reloads, so we don't
+  // accumulate listeners in dev mode either.
+  const doc = document as Document & { [k: symbol]: boolean };
+  if (doc[GUARD_INSTALLED]) return;
+  doc[GUARD_INSTALLED] = true;
+  // Capture phase so we beat any inline `<a>` default before bubbling
+  // hits the WebView's navigation logic.
+  document.addEventListener('click', interceptAnchorClick, { capture: true });
+}
+
 export const listDebugRuns = (): Promise<DebugRunDto[]> => invoke('list_debug_runs');
 export const getDebugRun = (id: string): Promise<DebugRunDto | null> =>
   invoke('get_debug_run', { id });

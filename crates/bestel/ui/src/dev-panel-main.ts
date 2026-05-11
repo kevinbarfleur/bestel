@@ -3,11 +3,16 @@ import { createPinia } from 'pinia';
 import { listen } from '@tauri-apps/api/event';
 
 import DevPanelRoot from './views/DevPanel/DevPanelRoot.vue';
+import { installGlobalAnchorGuard } from './api/tauri';
 
 import './styles/tokens.css';
 import './styles/fonts.css';
 import './styles/global.css';
 import './styles/dev-panel.css';
+
+// Defense-in-depth anchor guard — see comments in main.ts. Dev panel
+// renders rendered markdown in LiveTestTab so it needs the same hook.
+installGlobalAnchorGuard();
 
 function applyTheme(theme: 'light' | 'dark') {
   document.documentElement.classList.toggle('theme-dark', theme === 'dark');
