@@ -1,0 +1,278 @@
+name = "value-purge-live"
+description = """
+Live validation of the value-purge sprint — focused scope per user
+request: Haiku 4.5 (7 tests, full audit hit list), DeepSeek V4-Flash
+(5 tests, mid-coverage), Anthropic Sonnet 4.6 (3 tests, sanity).
+
+Each test fires a known-stale claim from the 2026-05-12 audit. The
+post-sprint expectation:
+  - the assistant called wiki_parse / repoe_lookup this turn,
+  - the answer cites the live value with the wiki URL OR says
+    "the chronicles are silent" if the fetch fails,
+  - the historically-stale value does NOT appear unsourced.
+
+The `eval` step at the end of each session captures the chat state
+JSON so we can inspect the tool-call sequence + final text offline.
+"""
+
+# ============================================================
+# MODEL: Haiku 4.5 — primary enforcement target (full 7-test sweep)
+# ============================================================
+[[step]]
+type = "set-model"
+id = "anthropic-haiku-4-5"
+
+# T1 — Mind Over Matter (refs cited 30%, wiki says 40%)
+[[step]]
+type = "new-chat"
+
+[[step]]
+type = "send"
+text = "how much damage does Mind over Matter actually mitigate"
+
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 180000
+
+[[step]]
+type = "eval"
+expr = "JSON.stringify({test:'haiku_T1_MoM', model: window.__bestel.getActiveModel()?.id, state: window.__bestel.getChatState()})"
+
+# T2 — Spine Bow APS (refs cited 1.50, wiki says 1.40)
+[[step]]
+type = "new-chat"
+
+[[step]]
+type = "send"
+text = "is spine bow really 1.5 attacks per second"
+
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 180000
+
+[[step]]
+type = "eval"
+expr = "JSON.stringify({test:'haiku_T2_SpineBow', model: window.__bestel.getActiveModel()?.id, state: window.__bestel.getChatState()})"
+
+# T3 — Trinity Support (refs cited 50%, wiki says 16% at lvl 20)
+[[step]]
+type = "new-chat"
+
+[[step]]
+type = "send"
+text = "what does trinity support actually give at maximum stacks"
+
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 180000
+
+[[step]]
+type = "eval"
+expr = "JSON.stringify({test:'haiku_T3_Trinity', model: window.__bestel.getActiveModel()?.id, state: window.__bestel.getChatState()})"
+
+# T4 — Flame Dash (refs cited 3 charges / 10s, wiki says 3.5s cooldown)
+[[step]]
+type = "new-chat"
+
+[[step]]
+type = "send"
+text = "how many flame dash charges and what's the cooldown"
+
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 180000
+
+[[step]]
+type = "eval"
+expr = "JSON.stringify({test:'haiku_T4_FlameDash', model: window.__bestel.getActiveModel()?.id, state: window.__bestel.getChatState()})"
+
+# T5 — Bone Helmet (refs cited +30%, wiki says 15-20% since 3.17)
+[[step]]
+type = "new-chat"
+
+[[step]]
+type = "send"
+text = "what's the minion damage implicit range on a bone helmet"
+
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 180000
+
+[[step]]
+type = "eval"
+expr = "JSON.stringify({test:'haiku_T5_BoneHelmet', model: window.__bestel.getActiveModel()?.id, state: window.__bestel.getChatState()})"
+
+# T6 — Threshold-file inverse (must read threshold + frame as community)
+[[step]]
+type = "new-chat"
+build = "C:/Users/kbarf/Documents/Path of Building/Builds/3.26/Penance Brand.xml"
+
+[[step]]
+type = "send"
+text = "am i ready for red maps with 1m dps"
+
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 240000
+
+[[step]]
+type = "eval"
+expr = "JSON.stringify({test:'haiku_T6_ThresholdInverse', model: window.__bestel.getActiveModel()?.id, state: window.__bestel.getChatState()})"
+
+# T7 — PoE2 Talisman item class (refs said amulet, wiki says 2H weapon)
+[[step]]
+type = "new-chat"
+
+[[step]]
+type = "send"
+text = "what are talismans in poe2 and what slot do they go in"
+
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 180000
+
+[[step]]
+type = "eval"
+expr = "JSON.stringify({test:'haiku_T7_PoE2Talisman', model: window.__bestel.getActiveModel()?.id, state: window.__bestel.getChatState()})"
+
+# ============================================================
+# MODEL: DeepSeek V4-Flash — mid-coverage (5 tests)
+# ============================================================
+[[step]]
+type = "set-model"
+id = "deepseek-v4-flash"
+
+# T1 — MoM
+[[step]]
+type = "new-chat"
+
+[[step]]
+type = "send"
+text = "how much damage does Mind over Matter actually mitigate"
+
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 180000
+
+[[step]]
+type = "eval"
+expr = "JSON.stringify({test:'v4flash_T1_MoM', model: window.__bestel.getActiveModel()?.id, state: window.__bestel.getChatState()})"
+
+# T3 — Trinity
+[[step]]
+type = "new-chat"
+
+[[step]]
+type = "send"
+text = "what does trinity support actually give at maximum stacks"
+
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 180000
+
+[[step]]
+type = "eval"
+expr = "JSON.stringify({test:'v4flash_T3_Trinity', model: window.__bestel.getActiveModel()?.id, state: window.__bestel.getChatState()})"
+
+# T4 — Flame Dash
+[[step]]
+type = "new-chat"
+
+[[step]]
+type = "send"
+text = "how many flame dash charges and what's the cooldown"
+
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 180000
+
+[[step]]
+type = "eval"
+expr = "JSON.stringify({test:'v4flash_T4_FlameDash', model: window.__bestel.getActiveModel()?.id, state: window.__bestel.getChatState()})"
+
+# T5 — Bone Helmet
+[[step]]
+type = "new-chat"
+
+[[step]]
+type = "send"
+text = "what's the minion damage implicit range on a bone helmet"
+
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 180000
+
+[[step]]
+type = "eval"
+expr = "JSON.stringify({test:'v4flash_T5_BoneHelmet', model: window.__bestel.getActiveModel()?.id, state: window.__bestel.getChatState()})"
+
+# T7 — PoE2 Talisman
+[[step]]
+type = "new-chat"
+
+[[step]]
+type = "send"
+text = "what are talismans in poe2 and what slot do they go in"
+
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 180000
+
+[[step]]
+type = "eval"
+expr = "JSON.stringify({test:'v4flash_T7_PoE2Talisman', model: window.__bestel.getActiveModel()?.id, state: window.__bestel.getChatState()})"
+
+# ============================================================
+# MODEL: Anthropic Sonnet 4.6 — sanity (3 tests)
+# ============================================================
+[[step]]
+type = "set-model"
+id = "anthropic-sonnet-4-6"
+
+# T1 — MoM
+[[step]]
+type = "new-chat"
+
+[[step]]
+type = "send"
+text = "how much damage does Mind over Matter actually mitigate"
+
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 240000
+
+[[step]]
+type = "eval"
+expr = "JSON.stringify({test:'sonnet_T1_MoM', model: window.__bestel.getActiveModel()?.id, state: window.__bestel.getChatState()})"
+
+# T3 — Trinity
+[[step]]
+type = "new-chat"
+
+[[step]]
+type = "send"
+text = "what does trinity support actually give at maximum stacks"
+
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 240000
+
+[[step]]
+type = "eval"
+expr = "JSON.stringify({test:'sonnet_T3_Trinity', model: window.__bestel.getActiveModel()?.id, state: window.__bestel.getChatState()})"
+
+# T7 — PoE2 Talisman
+[[step]]
+type = "new-chat"
+
+[[step]]
+type = "send"
+text = "what are talismans in poe2 and what slot do they go in"
+
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 240000
+
+[[step]]
+type = "eval"
+expr = "JSON.stringify({test:'sonnet_T7_PoE2Talisman', model: window.__bestel.getActiveModel()?.id, state: window.__bestel.getChatState()})"
