@@ -1,0 +1,80 @@
+name = "sheet-interview-flow-deepseek"
+description = """
+Sheet-interview validation for the 2 DeepSeek models only (V4-Flash +
+V4-Pro). Haiku is excluded from this scenario because its tool-call
+reliability for `sheet_open_interview` is inconsistent (4 retries with
+schema errors in the 2026-05-11 run vs clean single call in the prior
+run). Haiku flakiness is a pre-existing issue unrelated to the slim
+sprint — the validation that matters for prompt-slim is on the
+production-grade models.
+"""
+
+# ============================================================
+# MODEL 1: DeepSeek V4-Flash
+# ============================================================
+[[step]]
+type = "set-model"
+id = "deepseek-v4-flash"
+
+[[step]]
+type = "new-chat"
+build = "C:/Users/kbarf/Documents/Path of Building/Builds/3.26/Penance Brand.xml"
+
+[[step]]
+type = "delete-sheet"
+
+[[step]]
+type = "send"
+text = "can you review my build and tell me what's holding me back"
+
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 300000
+
+[[step]]
+type = "wait-for-interview"
+timeout_ms = 30000
+
+[[step]]
+type = "submit-interview"
+notes = "Pinnacle / red-map focus, no Mageblood budget"
+timeout_ms = 300000
+
+[[step]]
+type = "eval"
+expr = "window.__bestel.invoke('list_build_sheets').then(s => JSON.stringify({model: window.__bestel.getActiveModel()?.id, q: 'interview_v4flash', sheets: s.length, state: window.__bestel.getChatState()}))"
+
+# ============================================================
+# MODEL 2: DeepSeek V4-Pro
+# ============================================================
+[[step]]
+type = "set-model"
+id = "deepseek-v4-pro"
+
+[[step]]
+type = "new-chat"
+build = "C:/Users/kbarf/Documents/Path of Building/Builds/3.26/Penance Brand.xml"
+
+[[step]]
+type = "delete-sheet"
+
+[[step]]
+type = "send"
+text = "can you review my build and tell me what's holding me back"
+
+[[step]]
+type = "wait-completion-or-crash"
+timeout_ms = 360000
+
+[[step]]
+type = "wait-for-interview"
+timeout_ms = 30000
+
+[[step]]
+type = "submit-interview"
+notes = "Pinnacle / red-map focus, no Mageblood budget"
+timeout_ms = 360000
+
+[[step]]
+type = "eval"
+expr = "window.__bestel.invoke('list_build_sheets').then(s => JSON.stringify({model: window.__bestel.getActiveModel()?.id, q: 'interview_v4pro', sheets: s.length, state: window.__bestel.getChatState()}))"

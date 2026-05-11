@@ -22,6 +22,7 @@ import VerifyClaimsCard from './VerifyClaimsCard.vue';
 import ArtThinking from './artifacts/ArtThinking.vue';
 import ArtPoBImport from './artifacts/ArtPoBImport.vue';
 import ArtWikiPage from './artifacts/ArtWikiPage.vue';
+import ArtInterviewSubmission from './artifacts/ArtInterviewSubmission.vue';
 import AttachmentChip from './artifacts/AttachmentChip.vue';
 import BSDraftedCard from '../build-sheet/BSDraftedCard.vue';
 import BSAskCard from '../build-sheet/BSAskCard.vue';
@@ -134,6 +135,15 @@ const userText = computed(() => {
   const seg = props.message.segments.find((s): s is TextSegment => s.kind === 'text');
   return seg?.text ?? '';
 });
+
+/** Detect the structured `[INTERVIEW SUBMISSION ...]` user message
+ * emitted by `useSheetStore().submitInterview()` so we can replace the
+ * raw markdown body with a compact, persistent artifact card. The
+ * tag is fixed and documented in `prompts/references/32_build_sheets.md`
+ * § Phase 3 — any drift here is a bug to fix at the source. */
+const isInterviewSubmission = computed(() =>
+  !isAssistant.value && userText.value.startsWith('[INTERVIEW SUBMISSION'),
+);
 
 const isThinkingOnly = computed(
   () => isAssistant.value && isStreaming.value && props.message.segments.length === 0,
@@ -449,7 +459,11 @@ const turns = computed<Turn[]>(() => {
           :removable="false"
         />
       </div>
-      <p v-if="userText" class="turn__user-text">{{ userText }}</p>
+      <ArtInterviewSubmission
+        v-if="isInterviewSubmission"
+        :text="userText"
+      />
+      <p v-else-if="userText" class="turn__user-text">{{ userText }}</p>
     </div>
   </article>
 

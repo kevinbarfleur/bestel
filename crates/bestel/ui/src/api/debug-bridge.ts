@@ -14,6 +14,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { useBuildStore } from '../stores/build';
 import { useChatStore } from '../stores/chat';
 import { useSettingsStore } from '../stores/settings';
+import { useSheetStore } from '../stores/sheet';
 
 interface MemoryStats {
   /** JS heap currently used (bytes). Edge/Chromium-only — null on others. */
@@ -47,8 +48,29 @@ interface BestelDebugBridge {
   setActiveModel: (id: string) => Promise<unknown>;
   /** Generic Tauri command bridge — useful for any backend probe. */
   invoke: (cmd: string, args?: unknown) => Promise<unknown>;
+  /** Sheet store probe — returns the active interview payload (sections,
+   * questions, notes prompt) as plain JSON, or null when no interview is
+   * in flight. Driver scenarios use this to detect when the agent has
+   * opened a one-shot interview panel after `Build sheet: absent`. */
+  getActiveInterview: () => unknown;
+  /** Auto-fill the active interview with sensible defaults (first option
+   * for every leverage question, empty notes, no section edits) — or with
+   * user-provided overrides — then synthesize the structured
+   * `[INTERVIEW SUBMISSION ...]` user message and SEND it via the chat
+   * pipeline. The agent's next turn finalizes the sheet and answers the
+   * original question. Returns the submission text that was sent. Throws
+   * if no interview is in flight. */
+  autoSubmitInterview: (opts?: {
+    /** Map of question_id → selected option indices. Missing questions
+     * default to [0]. */
+    answers?: Record<string, number[]>;
+    /** Map of section_id → custom body (overrides the agent's draft). */
+    sections?: Record<string, string>;
+    /** Optional notes prompt response. Empty by default. */
+    notes?: string;
+  }) => Promise<string>;
   /** Schema version — bumped on breaking bridge changes. */
-  readonly version: 2;
+  readonly version: 3;
 }
 
 declare global {
@@ -93,9 +115,10 @@ export async function installDebugBridge(): Promise<void> {
   const chat = useChatStore();
   const build = useBuildStore();
   const settings = useSettingsStore();
+  const sheet = useSheetStore();
 
   window.__bestel = {
-    version: 2,
+    version: 3,
     async newChat(buildPath?: string) {
       chat.reset();
       if (buildPath) {
@@ -135,8 +158,57 @@ export async function installDebugBridge(): Promise<void> {
     async invoke(cmd: string, args?: unknown) {
       return await invoke(cmd, args as Record<string, unknown> | undefined);
     },
+    getActiveInterview() {
+      const iv = sheet.activeInterview;
+      if (!iv) return null;
+      // Serialize the Map fields explicitly — JSON.stringify drops Map entries.
+      return {
+        sections: iv.sections.map((s) => ({
+          id: s.id,
+          title: s.title,
+          draftBody: s.draftBody,
+        })),
+        questions: iv.questions.map((q) => ({
+          questionId: q.questionId,
+          sectionId: q.sectionId,
+          title: q.title,
+          subtitle: q.subtitle,
+          options: q.options,
+          multi: q.multi,
+          hasOther: q.hasOther,
+        })),
+        notesPrompt: iv.notesPrompt,
+        answers: Object.fromEntries(
+          Array.from(iv.answers.entries()).map(([k, v]) => [
+            k,
+            { selected: [...v.selected], otherText: v.otherText },
+          ]),
+        ),
+        sectionEdits: Object.fromEntries(iv.sectionEdits.entries()),
+        notes: iv.notes,
+        submitted: iv.submitted,
+      };
+    },
+    async autoSubmitInterview(opts) {
+      const iv = sheet.activeInterview;
+      if (!iv) throw new Error('autoSubmitInterview: no active interview');
+      const answersOverride = opts?.answers ?? {};
+      const sectionsOverride = opts?.sections ?? {};
+      const notes = opts?.notes ?? '';
+      for (const q of iv.questions) {
+        const userAns = answersOverride[q.questionId];
+        const selected =
+          Array.isArray(userAns) && userAns.length > 0 ? userAns : [0];
+        sheet.setAnswer(q.questionId, selected, '');
+      }
+      for (const [sectionId, body] of Object.entries(sectionsOverride)) {
+        sheet.setSectionEdit(sectionId, body);
+      }
+      sheet.setNotes(notes);
+      const message = sheet.submitInterview();
+      await chat.send(message);
+      return message;
+    },
   };
-  // Loud log so the driver's `logs --filter bestel.debug` immediately picks
-  // up that the bridge is live and version-stamped.
-  console.log('[bestel.debug] window.__bestel installed', { version: 2 });
+  console.log('[bestel.debug] window.__bestel installed', { version: 3 });
 }

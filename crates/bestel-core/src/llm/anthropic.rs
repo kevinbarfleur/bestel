@@ -57,7 +57,18 @@ impl AnthropicClient {
             api_url: API_URL.to_string(),
             cost_per_mtok: active.cost_per_mtok,
             http: reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(120))
+                // SSE streaming for long agentic turns can exceed 5 min with
+                // DeepSeek-V4-Pro's reasoning + deep analysis chains (we saw
+                // 190s of pure analysis before the model emits
+                // sheet_open_interview). The previous 120s overall timeout
+                // killed those streams mid-response → reqwest
+                // "error decoding response body" on the next chunk. Bumping
+                // to 30 min covers worst-case multi-tool agentic loops
+                // without leaving the user hanging forever if the provider
+                // truly gets stuck. Connect timeout stays short (10s) so
+                // dead endpoints fail fast.
+                .connect_timeout(std::time::Duration::from_secs(10))
+                .timeout(std::time::Duration::from_secs(1800))
                 .build()?,
         })
     }
@@ -84,7 +95,18 @@ impl AnthropicClient {
             api_url,
             cost_per_mtok,
             http: reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(120))
+                // SSE streaming for long agentic turns can exceed 5 min with
+                // DeepSeek-V4-Pro's reasoning + deep analysis chains (we saw
+                // 190s of pure analysis before the model emits
+                // sheet_open_interview). The previous 120s overall timeout
+                // killed those streams mid-response → reqwest
+                // "error decoding response body" on the next chunk. Bumping
+                // to 30 min covers worst-case multi-tool agentic loops
+                // without leaving the user hanging forever if the provider
+                // truly gets stuck. Connect timeout stays short (10s) so
+                // dead endpoints fail fast.
+                .connect_timeout(std::time::Duration::from_secs(10))
+                .timeout(std::time::Duration::from_secs(1800))
                 .build()?,
         })
     }
@@ -336,9 +358,37 @@ impl AnthropicClient {
                     "cache_control": { "type": "ephemeral", "ttl": "1h" }
                 }));
             }
+            let mut state_block = format!("[{build_state_line}]");
+            // Sprint M — anti-hallucination anchor. The 2026-05-10 quality
+            // batch caught Haiku 4.5 fabricating build stats: Q1 invented
+            // a "Ranger Kinetic Blast" PoB that didn't match the loaded
+            // Inquisitor, and Q3 invented life/ES/evasion numbers. The
+            // model called `get_active_build` correctly but treated the
+            // JSON as decorative rather than authoritative. We surface an
+            // explicit "cite ONLY this JSON" directive as a runtime tag
+            // BEFORE `get_active_build` runs — same attentional weight as
+            // the build state tag, zero UI side-effects (runtime tags live
+            // in the system prompt, never rendered to the exile).
+            //
+            // Put inside the same dynamic block as `Build state:` so it
+            // sits AFTER the cached blocks (no cache_control here) — the
+            // build identity can change turn-to-turn but the directive is
+            // always identical when a build is loaded, so the model sees
+            // both in the same uncached chunk.
+            if has_active_build {
+                state_block.push_str(
+                    "\n[Build data directive: when get_active_build returns, the JSON it carries \
+                     is the AUTHORITATIVE snapshot of the exile's build. Cite ONLY values present \
+                     in that payload — life, ES, resistances, ascendancy, main skill, defining \
+                     uniques, stat IDs, gem levels, tree allocations. Do NOT extrapolate, infer, \
+                     or recall from training data — if a field is absent or null, say so plainly. \
+                     Numbers reported MUST match the JSON byte-for-byte or be flagged as derived \
+                     via pob_calc.]",
+                );
+            }
             system_blocks.push(json!({
                 "type": "text",
-                "text": format!("[{}]", build_state_line),
+                "text": state_block,
             }));
             if !build_sheet_line.is_empty() {
                 let mut tag = format!("[{build_sheet_line}]");
@@ -543,7 +593,35 @@ impl AnthropicClient {
             let mut stop_reason: Option<String> = None;
 
             while let Some(chunk) = stream.next().await {
-                let bytes = chunk?;
+                let bytes = match chunk {
+                    Ok(b) => b,
+                    Err(e) => {
+                        // Stream broke mid-flight — typical when DeepSeek's
+                        // Anthropic-compat endpoint truncates the response on
+                        // a large tool_use payload (sheet_open_interview with
+                        // 6 sections + 3-7 questions can push the SSE body
+                        // past their internal limit). Without explicit cleanup,
+                        // any `current_tool_index` entry whose tool_use_start
+                        // arrived but whose tool_use_end never came stays in
+                        // `running` status forever in the chat UI, blocking
+                        // the next turn. Emit ToolEnd(Failed) for each pending
+                        // tool so the frontend resolves the orphans, then
+                        // propagate the error.
+                        let msg = format!("stream interrupted: {e}");
+                        for (_idx, pending) in &current_tool_index {
+                            let _ = deltas.send(LlmDelta::ToolEnd {
+                                id: pending.id.clone(),
+                                status: ToolStatus::Failed,
+                                summary: Some(
+                                    "tool call truncated — provider stream interrupted mid-tool"
+                                        .to_string(),
+                                ),
+                            });
+                        }
+                        let _ = deltas.send(LlmDelta::Error(msg.clone()));
+                        return Err(anyhow!(msg));
+                    }
+                };
                 buf.push_str(&String::from_utf8_lossy(&bytes));
 
                 while let Some(pos) = buf.find("\n\n") {

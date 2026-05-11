@@ -873,3 +873,47 @@ pub async fn delete_build_sheet(id: String) -> Result<bool, String> {
         .map_err(|e| format!("delete sheet: {e}"))
 }
 
+/// Convenience: delete the Build Sheet (if any) attached to the currently
+/// active build's fingerprint. Returns `(deleted, sheet_id)` — `deleted`
+/// is true if a row was removed, `sheet_id` is `None` when no sheet
+/// existed in the first place. Used by `bestel-driver` test scenarios to
+/// force the `Build sheet: absent` runtime tag without going through the
+/// UI's sheet picker.
+#[tauri::command]
+pub async fn delete_active_build_sheet(
+    state: State<'_, AppState>,
+) -> Result<DeleteActiveSheetResult, String> {
+    let Some(build) = state.build_ctx.get() else {
+        return Err("no active build".to_string());
+    };
+    let Some(fingerprint) = bestel_core::sheets::compute_fingerprint_from_pob(&build) else {
+        return Err("failed to compute fingerprint for active build".to_string());
+    };
+    let db = bestel_core::persistence::global_db()
+        .ok_or_else(|| "database is not initialized".to_string())?;
+    let Some(row) = bestel_core::sheets::store::find_by_fingerprint(&db, &fingerprint)
+        .map_err(|e| format!("find_by_fingerprint: {e}"))?
+    else {
+        return Ok(DeleteActiveSheetResult {
+            deleted: false,
+            sheet_id: None,
+            fingerprint,
+        });
+    };
+    let id = row.id.clone();
+    bestel_core::sheets::store::delete_sheet(&db, &id)
+        .map_err(|e| format!("delete sheet: {e}"))?;
+    Ok(DeleteActiveSheetResult {
+        deleted: true,
+        sheet_id: Some(id),
+        fingerprint,
+    })
+}
+
+#[derive(serde::Serialize)]
+pub struct DeleteActiveSheetResult {
+    pub deleted: bool,
+    pub sheet_id: Option<String>,
+    pub fingerprint: String,
+}
+

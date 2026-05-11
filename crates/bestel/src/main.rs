@@ -1609,6 +1609,7 @@ fn run_tauri() {
                 commands::list_build_sheets,
                 commands::get_build_sheet,
                 commands::delete_build_sheet,
+                commands::delete_active_build_sheet,
                 titlebar::window_minimize,
                 titlebar::window_toggle_maximize,
                 titlebar::window_close,

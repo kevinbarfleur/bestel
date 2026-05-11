@@ -89,6 +89,47 @@ pub enum Step {
     Eval {
         expr: String,
     },
+    /// Switch the active LLM model profile by id (e.g. `anthropic-haiku-4-5`,
+    /// `deepseek-v4-flash`, `deepseek-v4-pro`). Lets a single scenario
+    /// run the same prompts against multiple models for quality comparison.
+    SetModel {
+        id: String,
+    },
+    /// Delete the persisted Build Sheet (if any) for the currently-active
+    /// build. Forces the `Build sheet: absent` runtime tag on the next
+    /// turn — useful to test the one-shot interview flow without going
+    /// through the UI's sheet picker. Returns the deleted sheet's id, or
+    /// `null` when no sheet existed. Fails if no build is attached.
+    DeleteSheet,
+    /// Clear the active build (force `Build state: detached` runtime tag
+    /// on the next turn). Mirrors clicking the build detach button in the
+    /// UI.
+    ClearActiveBuild,
+    /// Poll for an active one-shot interview (sheet_open_interview tool
+    /// result rendered into a BSInterviewPanel). Returns the interview
+    /// payload (sections, questions, notes prompt) once detected. Times
+    /// out with an explicit error if no interview appears.
+    WaitForInterview {
+        #[serde(default = "default_timeout")]
+        timeout_ms: u64,
+    },
+    /// Auto-fill the active interview and submit it. The driver picks the
+    /// first option for every leverage question by default ; overrides
+    /// can be supplied per question via `answers`. Section bodies use the
+    /// agent's drafts unless overridden via `sections`. The synthesized
+    /// `[INTERVIEW SUBMISSION ...]` user message is sent through the
+    /// chat pipeline, and the driver then waits for the assistant's
+    /// post-submission turn (sheet_finalize_request + answer).
+    SubmitInterview {
+        #[serde(default)]
+        answers: std::collections::HashMap<String, Vec<usize>>,
+        #[serde(default)]
+        sections: std::collections::HashMap<String, String>,
+        #[serde(default)]
+        notes: String,
+        #[serde(default = "default_timeout")]
+        timeout_ms: u64,
+    },
 }
 
 fn default_probe_interval() -> u64 {
@@ -197,6 +238,11 @@ fn step_type(step: &Step) -> &'static str {
         Step::Screenshot { .. } => "screenshot",
         Step::Sleep { .. } => "sleep",
         Step::Eval { .. } => "eval",
+        Step::SetModel { .. } => "set-model",
+        Step::DeleteSheet => "delete-sheet",
+        Step::ClearActiveBuild => "clear-active-build",
+        Step::WaitForInterview { .. } => "wait-for-interview",
+        Step::SubmitInterview { .. } => "submit-interview",
     }
 }
 
@@ -277,6 +323,80 @@ async fn run_step(
             let value = run_js(page, expr, true).await?;
             Ok(json!({"action": "eval", "expr": expr, "result": value}))
         }
+        Step::SetModel { id } => {
+            let js = format!(
+                "window.__bestel.setActiveModel({})",
+                serde_json::to_string(id)?
+            );
+            let value = run_js(page, &js, true).await?;
+            Ok(json!({"action": "set-model", "id": id, "result": value}))
+        }
+        Step::DeleteSheet => {
+            let js =
+                "window.__bestel.invoke('delete_active_build_sheet')".to_string();
+            let value = run_js(page, &js, true).await?;
+            Ok(json!({"action": "delete-sheet", "result": value}))
+        }
+        Step::ClearActiveBuild => {
+            let js = "window.__bestel.invoke('clear_active_build')".to_string();
+            run_js(page, &js, true).await?;
+            Ok(json!({"action": "clear-active-build"}))
+        }
+        Step::WaitForInterview { timeout_ms } => {
+            let deadline = Duration::from_millis(*timeout_ms);
+            wait_for_interview(page, deadline).await
+        }
+        Step::SubmitInterview {
+            answers,
+            sections,
+            notes,
+            timeout_ms,
+        } => {
+            let payload = json!({
+                "answers": answers,
+                "sections": sections,
+                "notes": notes,
+            });
+            let js = format!(
+                "window.__bestel.autoSubmitInterview({})",
+                serde_json::to_string(&payload)?
+            );
+            let submission_text = run_js(page, &js, true).await?;
+            // Now wait for the agent's post-submission turn to finish
+            // (sheet_finalize_request + answer to the original question).
+            let deadline = Duration::from_millis(*timeout_ms);
+            let post_wait = wait_completion_or_crash(page, deadline).await?;
+            Ok(json!({
+                "action": "submit-interview",
+                "submitted_message": submission_text,
+                "post_wait": post_wait,
+            }))
+        }
+    }
+}
+
+/// Poll `window.__bestel.getActiveInterview()` every 1s until non-null
+/// or the deadline expires. Returns the interview payload on success.
+async fn wait_for_interview(page: &Page, deadline: Duration) -> Result<Value> {
+    let started = Instant::now();
+    let interval = Duration::from_secs(1);
+    loop {
+        if started.elapsed() > deadline {
+            return Err(anyhow!(
+                "wait-for-interview timed out after {} ms — no interview panel detected",
+                started.elapsed().as_millis()
+            ));
+        }
+        let value = run_js(page, "window.__bestel.getActiveInterview()", false).await?;
+        if !value.is_null() {
+            return Ok(json!({
+                "action": "wait-for-interview",
+                "outcome": "interview-detected",
+                "elapsed_ms": started.elapsed().as_millis(),
+                "interview": value,
+            }));
+        }
+        sleep(interval).await;
     }
 }
 
