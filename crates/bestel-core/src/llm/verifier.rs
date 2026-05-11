@@ -182,6 +182,145 @@ pub fn should_verify(text: &str) -> bool {
     false
 }
 
+/// Sprint `value-purge` — fetch-aware extension of [`should_verify`].
+///
+/// Forces a verifier pass when the draft contains a numerical claim about a
+/// PoE mechanic but the agent did NOT call any of the fetch tools
+/// (`wiki_parse`, `wiki_cargo`, `repoe_lookup`, `pob_calc`, `web_fetch`)
+/// during the same turn. The bundled references no longer carry values, so
+/// an unsourced number in the draft is, by definition, recalled from
+/// training data — the exact failure mode the sprint is designed to catch.
+///
+/// Backward compatible: if `should_verify` already fires, we short-circuit
+/// and return true (preserving every existing trigger). The fetch-aware
+/// check only adds NEW triggers, never removes them.
+pub fn should_verify_with_context(text: &str, fetch_tool_calls: usize) -> bool {
+    if should_verify(text) {
+        return true;
+    }
+    has_unsourced_numeric_claim(text, fetch_tool_calls)
+}
+
+/// Detects a numerical claim about a PoE mechanic in the draft without an
+/// accompanying same-turn fetch. Cheap heuristic: regex-free, byte-scan
+/// based, runs early-exit.
+///
+/// Returns `false` when at least one fetch tool was called this turn — the
+/// claim is assumed grounded by that fetch and the existing pipeline
+/// (extract → judge → revise) will validate the actual value.
+///
+/// Returns `true` only when:
+/// 1. No fetch tool was called this turn, AND
+/// 2. The draft contains a magnitude pattern (`\d+%`, `\d+ sec`, etc.), AND
+/// 3. The draft also contains a mechanic keyword (cooldown, suppression,
+///    mitigate, regen, …) close enough to the magnitude.
+pub fn has_unsourced_numeric_claim(text: &str, fetch_tool_calls: usize) -> bool {
+    if fetch_tool_calls > 0 {
+        return false;
+    }
+    let lower = text.to_lowercase();
+    let has_magnitude = has_magnitude_pattern(&lower);
+    if !has_magnitude {
+        return false;
+    }
+    // Generic mechanic keywords — when present alongside a magnitude in a
+    // draft with zero fetches this turn, the number is almost certainly
+    // recalled from training data.
+    const MECHANIC_KEYWORDS: &[&str] = &[
+        "suppression",
+        "mitigate",
+        "mitigation",
+        "reduction",
+        "cooldown",
+        "recovery",
+        "charges",
+        "regen",
+        "cap on",
+        "cap is",
+        "penetration",
+        "multiplier",
+        "magnitude",
+        "implicit",
+        "tier",
+        "more damage",
+        "less damage",
+        "more multiplier",
+        "increased damage",
+        "attack speed",
+        "cast speed",
+        "crit chance",
+        "crit multi",
+        "crit multiplier",
+    ];
+    if MECHANIC_KEYWORDS.iter().any(|kw| lower.contains(kw)) {
+        return true;
+    }
+    // Named value-bearing PoE entities — mirrors the anthropic.rs hit list
+    // from the 2026-05-12 audit. Naming one of these in the same draft as
+    // a magnitude is a textbook recall pattern (e.g. "Mind over Matter
+    // diverts 30% of damage taken from mana") — caught here even when the
+    // surrounding prose doesn't use a mechanic-keyword.
+    const VALUE_ENTITIES: &[&str] = &[
+        "soul of solaris",
+        "mind over matter",
+        "spell suppression",
+        "spine bow",
+        "bone helmet",
+        "marble amulet",
+        "trinity",
+        "flame dash",
+        "elemental overload",
+        "cast on crit",
+        "cast on critical",
+        "righteous fire",
+        "voices",
+        "cluster jewel",
+        "eldritch implicit",
+        "watcher's eye",
+        "tabula rasa",
+        "lineage support",
+        "resolute technique",
+        "pain attunement",
+        "fracturing orb",
+        "awakener's orb",
+    ];
+    VALUE_ENTITIES.iter().any(|e| lower.contains(e))
+}
+
+/// Byte-scan helper: returns true if the text contains a numeric magnitude
+/// followed (possibly across one whitespace) by a unit token. Matches
+/// patterns like `40%`, `3.5 sec`, `8s`, `350% more`, `+30 to`, `(15-20)%`.
+fn has_magnitude_pattern(lower: &str) -> bool {
+    let bytes = lower.as_bytes();
+    let len = bytes.len();
+    let mut i = 0;
+    while i < len {
+        if bytes[i].is_ascii_digit() {
+            let mut j = i + 1;
+            while j < len && (bytes[j].is_ascii_digit() || bytes[j] == b'.') {
+                j += 1;
+            }
+            if j < len && bytes[j] == b' ' {
+                j += 1;
+            }
+            if j < len {
+                let unit = bytes[j];
+                if unit == b'%'
+                    || unit == b's'
+                    || unit == b'm'
+                    || unit == b'x'
+                {
+                    return true;
+                }
+            }
+            i = j;
+        } else {
+            i += 1;
+        }
+    }
+    false
+}
+
 fn has_numerical_claim(lower: &str) -> bool {
     let units = [
         "dps", "ehp", "max-hit", "max hit", "armour", "evasion", "ms ttk",
@@ -586,11 +725,12 @@ pub async fn verify_factored(
     model: &str,
     user_question: &str,
     draft: &str,
+    fetch_tool_calls: usize,
 ) -> VerifierVerdict {
     if draft.trim().is_empty() {
         return VerifierVerdict::pass_with_note("draft was empty; nothing to verify");
     }
-    if !should_verify(draft) {
+    if !should_verify_with_context(draft, fetch_tool_calls) {
         return VerifierVerdict::pass_empty();
     }
     let _ = user_question; // reserved for future judge prompts
@@ -889,6 +1029,69 @@ mod tests {
         assert_eq!(v.findings[0].category, "verifier_unavailable");
         assert!(v.claims_checked.is_empty());
         assert_eq!(v.corrections_count, 0);
+    }
+
+    #[test]
+    fn unsourced_numeric_claim_fires_when_no_fetch() {
+        // Plain mechanic + magnitude + zero fetch tools = should trigger.
+        assert!(has_unsourced_numeric_claim(
+            "Mind over Matter diverts 30% of damage taken from mana.",
+            0,
+        ));
+        assert!(has_unsourced_numeric_claim(
+            "Flame Dash has 3 charges with 10s cooldown.",
+            0,
+        ));
+        assert!(has_unsourced_numeric_claim(
+            "Trinity Support grants 50% elemental penetration at 3 stacks.",
+            0,
+        ));
+    }
+
+    #[test]
+    fn unsourced_numeric_claim_silent_when_fetch_happened() {
+        // Same drafts but ≥1 fetch tool call this turn → trust the pipeline.
+        assert!(!has_unsourced_numeric_claim(
+            "Mind over Matter diverts 30% of damage taken from mana.",
+            1,
+        ));
+        assert!(!has_unsourced_numeric_claim(
+            "Flame Dash has 3 charges with 10s cooldown.",
+            2,
+        ));
+    }
+
+    #[test]
+    fn unsourced_numeric_claim_silent_on_pure_narrative() {
+        // No magnitude / no mechanic keyword → does not trigger even with
+        // zero fetches.
+        assert!(!has_unsourced_numeric_claim(
+            "Your build feels strong on bosses.",
+            0,
+        ));
+        assert!(!has_unsourced_numeric_claim(
+            "Consider running Pathfinder over Trickster for survivability.",
+            0,
+        ));
+    }
+
+    #[test]
+    fn should_verify_with_context_or_logic() {
+        // Existing trigger still fires regardless of fetch count.
+        assert!(should_verify_with_context(
+            "Identity: defense=life, hit_model=crit.",
+            5,
+        ));
+        // New trigger fires when fetch count is zero.
+        assert!(should_verify_with_context(
+            "Spell Suppression caps at 50% prevented.",
+            0,
+        ));
+        // Both negative → returns false.
+        assert!(!should_verify_with_context(
+            "Glad to hear the build is feeling smoother now.",
+            0,
+        ));
     }
 
     #[test]

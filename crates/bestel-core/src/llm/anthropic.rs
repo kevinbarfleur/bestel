@@ -304,6 +304,13 @@ impl AnthropicClient {
             .find(|m| matches!(m.role, super::Role::User))
             .map(|m| m.content.clone())
             .filter(|s| !s.trim().is_empty());
+        // Sprint value-purge — snapshot the last user message in lowercase
+        // so the per-iteration mechanics-directive heuristic can read it
+        // without re-borrowing from the consumed `last_user_question`.
+        let last_user_lower: String = last_user_question
+            .as_deref()
+            .map(|s| s.to_ascii_lowercase())
+            .unwrap_or_default();
         let mut tool_ctx = ToolCtx::new(ctx).context("build ToolCtx")?;
         tool_ctx = tool_ctx.with_deltas(deltas.clone());
         if let Some(q) = last_user_question {
@@ -384,6 +391,35 @@ impl AnthropicClient {
                      or recall from training data — if a field is absent or null, say so plainly. \
                      Numbers reported MUST match the JSON byte-for-byte or be flagged as derived \
                      via pob_calc.]",
+                );
+            }
+            // Sprint value-purge — mechanics directive. The 2026-05-12 audit
+            // found ~60% of hardcoded numeric values in references were stale
+            // or wrong (MoM = 30% in refs vs 40% live since patch 3.19,
+            // Trinity 50% pen vs 16% live, Bone Helmet +30% vs 15-20% live,
+            // Flame Dash 10s vs 3.5s live). Root cause: a value in context
+            // discourages the model from fetching the live wiki value at
+            // answer-time. We strip values from references AND surface this
+            // directive so the model is forced to fetch when the question is
+            // mechanic-coded. Fires when no build is loaded (generalist mode
+            // = no engine ground truth) OR when the question matches the
+            // mechanic heuristic. Build-loaded turns without mechanic intent
+            // are already covered by the [Build data directive] above.
+            let mechanic_coded =
+                !has_active_build || is_mechanic_question(&last_user_lower);
+            if mechanic_coded {
+                state_block.push_str(
+                    "\n[Mechanics directive: any numerical claim in this turn's answer \
+                     — percent, cooldown, charge count, socket count, magnitude, mod tier, \
+                     drop level, base stat, breakpoint — MUST be backed by a same-turn call \
+                     to wiki_parse, wiki_cargo, repoe_lookup, pob_calc, or web_fetch. \
+                     Bundled references (`prompts/references/...`) carry methodology only; \
+                     their values are by design stripped, stale, or community-heuristic and \
+                     NEVER ground a numerical claim. Exceptions: fields from get_active_build \
+                     / get_active_build_sheet (already engine-grounded) and the `thresholds/` \
+                     files (must be cited as community-aggregate, never as wiki fact). If a \
+                     value is needed and no tool call is appropriate, say plainly: \"the old \
+                     chronicles are silent on the current value, exile — fetch the wiki.\"]",
                 );
             }
             system_blocks.push(json!({
@@ -1008,8 +1044,15 @@ impl AnthropicClient {
         // (numbers / sources / cached / banned phrases / identity / patch /
         // tier). Latency budget: ~2s typical; never propagates errors back to
         // the user (a failing verifier is a `pass_with_note`, not a failure).
+        //
+        // Sprint value-purge — count fetch tool calls this turn so the
+        // verifier gate can fire on unsourced numeric claims. A draft
+        // citing a number without any wiki/repoe/pob_calc/web_fetch this
+        // turn is recalled from training data (the references no longer
+        // carry values), which is precisely what we need to catch.
+        let fetch_tool_calls = count_fetch_tool_calls(&messages);
         let verified_text = self
-            .run_verifier_pass(&history, &full_assistant, &deltas)
+            .run_verifier_pass(&history, &full_assistant, fetch_tool_calls, &deltas)
             .await;
         let _ = deltas.send(LlmDelta::MessageEnd);
         Ok(verified_text)
@@ -1019,10 +1062,11 @@ impl AnthropicClient {
         &self,
         history: &[ChatMessage],
         draft: &str,
+        fetch_tool_calls: usize,
         deltas: &mpsc::UnboundedSender<LlmDelta>,
     ) -> String {
         // Cheap heuristic gate first — most drafts skip the API call entirely.
-        if !super::verifier::should_verify(draft) {
+        if !super::verifier::should_verify_with_context(draft, fetch_tool_calls) {
             return draft.to_string();
         }
         // User toggle: when off, the CoVe pipeline is skipped wholesale and
@@ -1049,6 +1093,7 @@ impl AnthropicClient {
             &self.model,
             last_user,
             draft,
+            fetch_tool_calls,
         )
         .await;
         let result = match verdict.status {
@@ -1202,6 +1247,49 @@ fn accumulate_usage(total: &mut super::UsageStats, usage: &Value) {
     }
 }
 
+/// Sprint `value-purge` — count fetch-tool calls across the entire
+/// assembled `messages` array. Used by the verifier gate to decide whether
+/// numeric claims in the draft are sourced (≥1 fetch this turn) or recalled
+/// from training data (0 fetches). Counts every assistant `tool_use` block
+/// whose `name` is one of the value-source tools — `wiki_parse`,
+/// `wiki_cargo`, `wiki_search`, `wiki_synergies`, `repoe_lookup`,
+/// `pob_calc`, or `web_fetch`. Tools that DON'T ground a numeric claim
+/// (`get_active_build`, `read_internal_reference`, `kb_search`, sheet
+/// tools) are excluded — citing the build payload is already covered by
+/// the dedicated [Build data directive] in the system prompt.
+fn count_fetch_tool_calls(messages: &[Value]) -> usize {
+    const FETCH_TOOLS: &[&str] = &[
+        "wiki_parse",
+        "wiki_cargo",
+        "wiki_search",
+        "wiki_synergies",
+        "repoe_lookup",
+        "pob_calc",
+        "web_fetch",
+    ];
+    let mut count = 0usize;
+    for m in messages {
+        if m.get("role").and_then(|v| v.as_str()) != Some("assistant") {
+            continue;
+        }
+        let Some(content) = m.get("content").and_then(|c| c.as_array()) else {
+            continue;
+        };
+        for block in content {
+            if block.get("type").and_then(|t| t.as_str()) != Some("tool_use") {
+                continue;
+            }
+            let Some(name) = block.get("name").and_then(|n| n.as_str()) else {
+                continue;
+            };
+            if FETCH_TOOLS.contains(&name) {
+                count += 1;
+            }
+        }
+    }
+    count
+}
+
 /// Walk the assembled `messages` array and return true when ANY assistant
 /// message has already produced a `tool_use` block whose `name` equals the
 /// supplied tool name. Used by the Sprint UX-2 deferred-force logic in the
@@ -1287,4 +1375,111 @@ fn cached_tool_schemas() -> Vec<Value> {
         }
     }
     schemas
+}
+
+/// Heuristic for the Sprint `value-purge` mechanics directive: returns true
+/// when the user's question looks "mechanic-coded" — i.e. asks for a value
+/// or names a known value-bearing entity. False positives over-trigger the
+/// directive (forcing an extra fetch, acceptable failure mode); false
+/// negatives let through bare mechanic answers, caught by the verifier's
+/// `has_unsourced_numeric_claim` heuristic post-draft.
+///
+/// Input is expected to already be lowercased.
+fn is_mechanic_question(lower: &str) -> bool {
+    const VALUE_QUESTION_CUES: &[&str] = &[
+        "how much",
+        "how many",
+        "what's the",
+        "what is the",
+        "what does",
+        "how long",
+        "how often",
+        "%",
+        "percent",
+        "cooldown",
+        "charges",
+        "socket",
+        "duration",
+        "drop level",
+        " tier",
+        "implicit",
+        "base stat",
+        "breakpoint",
+        "cap on",
+        "max ",
+        "regen",
+    ];
+    // Known value-bearing entities — names that historically pull the model
+    // into reciting a stale stat (sourced from the 2026-05-12 audit's hit
+    // list). When any of these appear in the question, we always surface
+    // the directive even if the cue list misses.
+    const VALUE_ENTITIES: &[&str] = &[
+        "soul of solaris",
+        "mind over matter",
+        "spell suppression",
+        "spine bow",
+        "bone helmet",
+        "marble amulet",
+        "trinity",
+        "flame dash",
+        "elemental overload",
+        "cast on crit",
+        "cast on critical",
+        "righteous fire",
+        "voices",
+        "cluster jewel",
+        "eldritch implicit",
+        "watcher's eye",
+        "tabula rasa",
+        "lineage support",
+        "resolute technique",
+        "pain attunement",
+        "fracturing orb",
+        "awakener's orb",
+    ];
+    VALUE_QUESTION_CUES.iter().any(|c| lower.contains(c))
+        || VALUE_ENTITIES.iter().any(|e| lower.contains(e))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mechanic_question_detects_value_cues() {
+        assert!(is_mechanic_question(
+            "how much does mind over matter actually mitigate"
+        ));
+        assert!(is_mechanic_question("what's the cap on spell suppression"));
+        assert!(is_mechanic_question(
+            "is spine bow really 1.5 attacks per second"
+        ));
+        assert!(is_mechanic_question(
+            "how many flame dash charges and what's the cd"
+        ));
+        assert!(is_mechanic_question(
+            "what does trinity support actually give"
+        ));
+    }
+
+    #[test]
+    fn mechanic_question_ignores_pure_narrative() {
+        assert!(!is_mechanic_question("my build feels bad"));
+        assert!(!is_mechanic_question(
+            "should i go pathfinder or trickster"
+        ));
+        assert!(!is_mechanic_question("how was your day exile"));
+        assert!(!is_mechanic_question(""));
+    }
+
+    #[test]
+    fn mechanic_question_detects_value_entities() {
+        assert!(is_mechanic_question(
+            "tell me about bone helmet"
+        ));
+        assert!(is_mechanic_question("voices unique jewel"));
+        assert!(is_mechanic_question(
+            "i'm running righteous fire chieftain"
+        ));
+    }
 }
