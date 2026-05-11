@@ -1,11 +1,22 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 
 import type { ToolSegment } from '../../../stores/chat';
 import ArtShell from './ArtShell.vue';
 import ArtHead from './ArtHead.vue';
 
 const props = defineProps<{ segment: ToolSegment }>();
+
+/**
+ * Collapsed by default. The PoB import payload is ~30 KB of JSON live
+ * and gets truncated to 5 KB by `persistReplacer` for localStorage,
+ * which then breaks `JSON.parse(output)` after a reload → fallback to
+ * raw text dump in the chat. The mini-card (rows from a successful
+ * parse) is still shown when available, but the raw body — and the
+ * "JSON unavailable" placeholder when parse fails — is only revealed
+ * when the user clicks Expand. Matches the chevron pattern of other
+ * tool segments. */
+const expanded = ref(false);
 
 const parsed = computed(() => {
   if (!props.segment.output) return null;
@@ -96,7 +107,15 @@ const meta = computed(() => {
         <span class="leader__v" :style="r.vColor ? { color: r.vColor } : {}">{{ r.v }}</span>
       </div>
     </div>
-    <p v-if="!parsed && segment.output" class="pob-plain">{{ segment.output }}</p>
+    <button
+      v-if="segment.output"
+      type="button"
+      class="pob-toggle"
+      @click="expanded = !expanded"
+    >
+      {{ expanded ? '− hide raw payload' : '+ show raw payload' }}
+    </button>
+    <pre v-if="expanded && segment.output" class="pob-raw">{{ segment.output }}</pre>
   </ArtShell>
 </template>
 
@@ -135,11 +154,35 @@ const meta = computed(() => {
   flex: 0 0 auto;
   white-space: nowrap;
 }
-.pob-plain {
-  margin: 0;
-  font-family: var(--hand);
-  font-size: 12px;
+.pob-toggle {
+  margin-top: 8px;
+  background: transparent;
+  border: none;
+  color: var(--ink-faint);
+  font-family: var(--label);
+  font-size: 9px;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  cursor: pointer;
+  padding: 2px 4px;
+  align-self: flex-start;
+}
+.pob-toggle:hover {
   color: var(--ink-soft);
+}
+.pob-raw {
+  margin: 6px 0 0 0;
+  padding: 8px 10px;
+  font-family: var(--mono, ui-monospace, SFMono-Regular, monospace);
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--ink-faint);
+  background: var(--paper-tint, rgba(0, 0, 0, 0.03));
+  border: 1px dotted var(--paper-line);
+  border-radius: 4px;
   white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 320px;
+  overflow-y: auto;
 }
 </style>

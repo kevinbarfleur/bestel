@@ -1610,6 +1610,7 @@ fn run_tauri() {
                 commands::get_build_sheet,
                 commands::delete_build_sheet,
                 commands::delete_active_build_sheet,
+                commands::get_active_build_sheet_for_ui,
                 titlebar::window_minimize,
                 titlebar::window_toggle_maximize,
                 titlebar::window_close,
