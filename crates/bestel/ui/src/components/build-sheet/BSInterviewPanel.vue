@@ -282,6 +282,55 @@ async function onSubmit() {
   await chat.send(message);
 }
 
+/** Show / hide the "Voir tout" overlay with the full submission digest.
+ *  Local UI state — never persisted; tied to the lifetime of this
+ *  component instance. Reopened on every visit. */
+const showFullModal = ref(false);
+
+/** Identity section's draftBody trimmed to one short line for the
+ *  compact summary header. Strips leading `**...**` markdown emphasis
+ *  and chops at the first ` | ` separator (typical pattern: "Inquisitor
+ *  Penance Brand crit caster | Hybrid armour+life | 4040 life, 2060
+ *  ES, 75% res"). Returns null when the identity section is absent or
+ *  empty so the template can skip the line entirely. */
+const identityHeadline = computed<string | null>(() => {
+  const iv = displayInterview.value;
+  if (!iv) return null;
+  const id = iv.sections.find((s) => s.id === 'identity');
+  if (!id) return null;
+  const raw = bodyFor(id.id, id.draftBody);
+  const cleaned = raw.replace(/\*\*/g, '').trim();
+  if (!cleaned) return null;
+  return cleaned.split(/\s*\|\s*/)[0].trim();
+});
+
+interface CompactAnswerRow {
+  questionId: string;
+  label: string;
+  value: string;
+}
+
+/** Top-of-summary answer rows: every question with a non-skipped answer,
+ *  formatted as `<short label> → <first-clause answer>`. The template
+ *  caps the visible slice at 3 and renders a `+ N more` line for the
+ *  rest, so a verbose interview doesn't blow past the ~80px target
+ *  height in the compact card. */
+const answeredQuestions = computed<CompactAnswerRow[]>(() => {
+  const iv = displayInterview.value;
+  if (!iv) return [];
+  const rows: CompactAnswerRow[] = [];
+  for (const q of iv.questions) {
+    const formatted = formatAnswer(q);
+    if (formatted === '(skipped)') continue;
+    rows.push({
+      questionId: q.questionId,
+      label: q.title.replace(/[—–\-:].*$/, '').trim(),
+      value: formatted.replace(/\s*\|\s.*$/, '').trim(),
+    });
+  }
+  return rows;
+});
+
 function onCancel() {
   sheet.cancelInterview();
 }
@@ -490,12 +539,13 @@ watch(
     </div>
   </div>
 
-  <!-- ─── SUMMARY MODE — submitted, read-only digest ─────────────────────
+  <!-- ─── SUMMARY MODE — submitted, compact digest ────────────────────────
        Renders both when the live store has just been submitted (between
        submit click and `sheet_finalize_request` completion) AND when only
        the chat-history segment carries the interview (post-finalize, the
        live store was nulled by `loadActiveSheet`). The `isHistoryOnly`
-       branch keeps the panel visible forever in chat history. -->
+       branch keeps the panel visible forever in chat history. Compact
+       layout (~80px) — full breakdown moved to the `Voir tout` modal. -->
   <div v-else-if="displayInterview && submitted" class="bs-iv bs-iv--summary">
     <!-- Header -->
     <div class="bs-iv__head">
@@ -506,53 +556,91 @@ watch(
       </span>
     </div>
 
-    <p class="bs-iv__lede bs-iv__lede--summary">
-      <template v-if="isHistoryOnly">
-        Submission record — the sheet is persisted and the agent has continued the conversation below.
-      </template>
-      <template v-else>
-        Your answers, recorded. Bestel is finalizing the sheet and will answer your question next.
-      </template>
+    <p v-if="identityHeadline" class="bs-iv__compact-identity">
+      {{ identityHeadline }}
     </p>
 
-    <!-- Sections (read-only) -->
-    <div
-      v-for="(section, i) in orderedSections"
-      :key="section.id"
-      class="bs-iv__section"
-    >
-      <BSSectionHead :index="i + 1">{{ section.title }}</BSSectionHead>
+    <div v-if="answeredQuestions.length" class="bs-iv__compact-answers">
       <div
-        class="bs-iv__body"
-        v-html="bodyHtml(section.id, section.draftBody)"
-      />
-
-      <!-- Per-question answers, inline -->
-      <div
-        v-for="q in questionsFor(section.id)"
-        :key="q.questionId"
-        class="bs-iv__qsum"
+        v-for="row in answeredQuestions.slice(0, 3)"
+        :key="row.questionId"
+        class="bs-iv__compact-row"
       >
-        <span class="bs-iv__qsum-title">{{ q.title }}</span>
-        <span class="bs-iv__qsum-rule" />
-        <span
-          class="bs-iv__qsum-ans"
-          :class="{ 'bs-iv__qsum-ans--skip': formatAnswer(q) === '(skipped)' }"
-        >{{ formatAnswer(q) }}</span>
+        <span class="bs-iv__compact-k">{{ row.label }}</span>
+        <span class="bs-iv__compact-arr">→</span>
+        <span class="bs-iv__compact-v">{{ row.value }}</span>
       </div>
+      <p
+        v-if="answeredQuestions.length > 3"
+        class="bs-iv__compact-more"
+      >
+        + {{ answeredQuestions.length - 3 }} more
+      </p>
     </div>
 
-    <!-- Notes -->
-    <div class="bs-iv__section">
-      <BSSectionHead :index="orderedSections.length + 1">Notes</BSSectionHead>
-      <div v-if="(displayInterview?.notes ?? '').trim().length > 0" class="bs-iv__notes-summary">
-        {{ displayInterview?.notes }}
-      </div>
-      <div v-else class="bs-iv__notes-summary bs-iv__notes-summary--empty">
-        (no notes)
-      </div>
+    <div class="bs-iv__compact-actions">
+      <button
+        type="button"
+        class="bs-iv__btn bs-iv__btn--ghost"
+        @click="showFullModal = true"
+      >Voir tout</button>
     </div>
   </div>
+
+  <!-- ─── FULL DETAILS MODAL — "Voir tout" overlay ──────────────────────── -->
+  <Teleport v-if="showFullModal" to="body">
+    <div class="bs-iv-modal" role="dialog" aria-modal="true" @click.self="showFullModal = false">
+      <div class="bs-iv-modal__box">
+        <div class="bs-iv-modal__head">
+          <span class="bs-iv__tag bs-iv__tag--ok">✓ build sheet · submitted</span>
+          <button
+            type="button"
+            class="bs-iv-modal__close"
+            aria-label="Close"
+            @click="showFullModal = false"
+          >✕</button>
+        </div>
+
+        <div class="bs-iv-modal__scroll">
+          <!-- Sections (read-only) -->
+          <div
+            v-for="(section, i) in orderedSections"
+            :key="section.id"
+            class="bs-iv__section"
+          >
+            <BSSectionHead :index="i + 1">{{ section.title }}</BSSectionHead>
+            <div
+              class="bs-iv__body"
+              v-html="bodyHtml(section.id, section.draftBody)"
+            />
+            <div
+              v-for="q in questionsFor(section.id)"
+              :key="q.questionId"
+              class="bs-iv__qsum"
+            >
+              <span class="bs-iv__qsum-title">{{ q.title }}</span>
+              <span class="bs-iv__qsum-rule" />
+              <span
+                class="bs-iv__qsum-ans"
+                :class="{ 'bs-iv__qsum-ans--skip': formatAnswer(q) === '(skipped)' }"
+              >{{ formatAnswer(q) }}</span>
+            </div>
+          </div>
+
+          <!-- Notes -->
+          <div class="bs-iv__section">
+            <BSSectionHead :index="orderedSections.length + 1">Notes</BSSectionHead>
+            <div v-if="(displayInterview?.notes ?? '').trim().length > 0" class="bs-iv__notes-summary">
+              {{ displayInterview?.notes }}
+            </div>
+            <div v-else class="bs-iv__notes-summary bs-iv__notes-summary--empty">
+              (no notes)
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -988,5 +1076,118 @@ watch(
 .bs-iv__notes-summary--empty {
   color: var(--ink-faint);
   font-style: italic;
+}
+
+/* ─── Compact summary card (history mode) ─────────────────────────── */
+.bs-iv__compact-identity {
+  margin: 8px 0 6px 0;
+  font-family: var(--hand);
+  font-size: 13px;
+  color: var(--ink);
+  line-height: 1.4;
+}
+.bs-iv__compact-answers {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 4px;
+}
+.bs-iv__compact-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-family: var(--hand);
+  font-size: 11px;
+  color: var(--ink-soft);
+  line-height: 1.4;
+}
+.bs-iv__compact-k {
+  color: var(--ink-faint);
+  flex-shrink: 0;
+  white-space: nowrap;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.bs-iv__compact-arr {
+  color: var(--ink-faint);
+  flex-shrink: 0;
+}
+.bs-iv__compact-v {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bs-iv__compact-more {
+  margin: 4px 0 0 0;
+  font-family: var(--label);
+  font-size: 9px;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.bs-iv__compact-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px dotted var(--paper-line);
+}
+
+/* ─── Modal overlay ───────────────────────────────────────────────── */
+.bs-iv-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 24px;
+  animation: bs-iv-modal-fade 0.12s ease-out;
+}
+@keyframes bs-iv-modal-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.bs-iv-modal__box {
+  background: var(--paper);
+  border: 1px solid var(--good);
+  border-radius: 8px;
+  max-width: 720px;
+  width: 100%;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.45);
+}
+.bs-iv-modal__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 18px 12px;
+  border-bottom: 1px solid var(--paper-line);
+}
+.bs-iv-modal__head .bs-iv__tag {
+  flex: 1;
+}
+.bs-iv-modal__close {
+  background: transparent;
+  border: none;
+  color: var(--ink-soft);
+  font-size: 16px;
+  line-height: 1;
+  padding: 4px 8px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.bs-iv-modal__close:hover {
+  background: var(--paper-tint, rgba(0, 0, 0, 0.05));
+  color: var(--ink);
+}
+.bs-iv-modal__scroll {
+  overflow-y: auto;
+  padding: 14px 18px 18px;
 }
 </style>
