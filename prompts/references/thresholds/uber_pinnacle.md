@@ -5,11 +5,21 @@ fetch_when: User asks about uber pinnacle readiness, mentions "uber Sirus / Mave
 
 # Thresholds — Uber pinnacle bosses
 
-> The top tier of the game. Bars below are conservative; "carry-attempt" builds can run lower DPS but expect deaths and consumable burn.
+> ⚠ **COMMUNITY HEURISTICS — NOT FACTS. Uber tier is the most volatile.**
 >
-> **Trade SC assumed.** HC ubers require +50% across the board with 3+ defensive layer redundancy (any single layer failure = death).
+> The numbers in this file are aggregated from uber-kill videos, top-tier creator attempts (Pohx, Mathil, Ben_, Quin, Ruetoo), and Reddit "did anyone do X with my budget?" threads. They are **NOT engine-derived, NOT official, NOT patch-stable**. Uber damage scaling is rebalanced more aggressively than sub-uber and the bars drift hard every major patch.
 >
-> **Numbers drift hard across patches.** Uber thresholds shift on every major patch — re-verify against current Pohx / Mathil / Ben_ uber-attempt videos for the active league.
+> **When citing any threshold from this file:**
+>
+> 1. State it as a directional bar, not a hard line. Phrase: *"rough community ceiling"*, *"top-tier creator-aggregate"*, *"around N for a comfortable kill"*.
+> 2. Tag the source as "community-aggregate" in your reply; **never present these as wiki facts**.
+> 3. Top-tier of the game — "carry-attempt" builds can run lower DPS but expect deaths and consumable burn. Don't sell that as a clean kill.
+> 4. When in doubt, run `pob_calc` against the user's actual build and compare to the bar — engine output supersedes heuristic.
+> 5. Re-baseline against the current Pohx / Mathil / Ben_ uber-attempt videos every patch boundary.
+>
+> The numbers below are the calibration as of 2026-05-08 (last audit). They are NOT current-patch authoritative.
+>
+> **Trade SC assumed.** HC ubers require substantially higher bars with multiple redundant defensive layers — any single layer failure tends to mean death.
 
 ## What makes uber different from sub-uber
 

@@ -5,11 +5,20 @@ fetch_when: User asks "am I ready for red maps?", "what's the bar for tier X?", 
 
 # Thresholds — Red maps
 
-> Conservative bars. A build *can* function below these but the gap shows up as deaths / damage stalls. PoE1 numbers; PoE2 mostly comparable but verify against current `poe2/00_version_pinning.md`.
+> ⚠ **COMMUNITY HEURISTICS — NOT FACTS.**
 >
-> **Trade SC assumed.** HC bars are higher (typically +20-30% on EHP, max hit, recovery). SSF bars depend on what you've found.
+> The numbers in this file are aggregated from creator videos, Reddit "did I make it?" megathreads, and historical Maxroll / Pohx / Ben_ guides. They are **NOT engine-derived, NOT official, NOT patch-stable**. They drift every league, sometimes within a league when a major mechanic changes.
 >
-> Numbers drift across patches. Re-check against current Maxroll / Pohx league guides for the active league. **Once `pob_calc` ships (Sprint 2), use it to verify these directly against the user's PoB.**
+> **When citing any threshold from this file:**
+>
+> 1. State it as a directional bar, not a hard line. Phrase: *"rough community floor"*, *"ballpark target"*, *"creator-aggregate"*, *"around N"*.
+> 2. Tag the source as "community-aggregate" in your reply; **never present these as wiki facts**.
+> 3. When in doubt, run `pob_calc` against the user's actual build instead of citing a static bar — engine output supersedes heuristic.
+> 4. Re-baseline against the current Maxroll / Pohx / Ben_ league guides if the league changed since last calibration.
+>
+> The numbers below are the calibration as of 2026-05-08 (last audit). They are NOT current-patch authoritative.
+>
+> **Trade SC assumed.** HC bars are higher across the board. SSF bars depend on what you've found.
 
 ## Universal floor (any archetype)
 

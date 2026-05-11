@@ -5,11 +5,21 @@ fetch_when: User asks about pinnacle readiness, "can I do Maven / Sirus / Eater 
 
 # Thresholds — Pinnacle bosses
 
-> Sub-uber tier. Conservative bars assume **deathless or near-deathless kill**, not "rolled for it 50 times".
+> ⚠ **COMMUNITY HEURISTICS — NOT FACTS.**
 >
-> **Trade SC assumed.** HC bars are higher (typically +30-40% on EHP, max hit, recovery). SSF bars depend on found gear.
+> The numbers in this file are aggregated from boss-kill videos, Reddit "can my build do X?" threads, Maxroll boss-fight guides, and Pohx / Mathil / Ben_ pinnacle attempts. They are **NOT engine-derived, NOT official, NOT patch-stable**. Pinnacle damage scaling is rebalanced regularly; every league cycle shifts the bar.
 >
-> Numbers drift across patches. Re-check against current Maxroll boss-fight guides + Pohx pinnacle videos for the active league.
+> **When citing any threshold from this file:**
+>
+> 1. State it as a directional bar, not a hard line. Phrase: *"rough community floor"*, *"ballpark target"*, *"creator-aggregate"*, *"around N"*.
+> 2. Tag the source as "community-aggregate" in your reply; **never present these as wiki facts**.
+> 3. Sub-uber tier — assume **deathless or near-deathless kill**, not "rolled for it 50 times".
+> 4. When in doubt, run `pob_calc` against the user's actual build instead of citing a static bar — engine output supersedes heuristic.
+> 5. Re-baseline against the current Maxroll boss-fight guides + Pohx / Mathil / Ben_ pinnacle videos if the league changed since last calibration.
+>
+> The numbers below are the calibration as of 2026-05-08 (last audit). They are NOT current-patch authoritative.
+>
+> **Trade SC assumed.** HC bars are higher across the board. SSF bars depend on found gear.
 
 ## Universal floor (any pinnacle)
 
