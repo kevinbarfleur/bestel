@@ -20,7 +20,7 @@ Each character earns ascendancy points by completing trials. Both trial systems 
 | Trial of the Sekhemas | Multi-room dungeon, run-based, relic-modified. | Honor-resource management; persistent state per run. | Methodical, low-twitch, RNG-tolerant. |
 | Trial of Chaos | Combat-arena format, escalating wave difficulty. | Wave-based combat; defensive-bar-checked. | Direct combat skill, DPS-bar gated. |
 
-**Ascendancy points across both**: typically 8 total per character (2 from level 30, 4 from level 60, etc. — verify current per-version).
+**Ascendancy points across both**: a fixed total per character, distributed across trial tiers and gated by progression milestones. The exact point count and level/quest gates are patch-volatile — fetch `wiki_parse https://www.poe2wiki.net/wiki/Ascendancy_class` for the current calibration.
 
 ## Trial of the Sekhemas characteristics
 
@@ -49,7 +49,7 @@ Each character earns ascendancy points by completing trials. Both trial systems 
 
 - Honor management is critical; ignore-the-mechanic players often fail.
 - Relic management is a meta-game in itself.
-- Time-cost per trial run higher than Chaos (~10-20 min vs ~5-10 min Chaos).
+- Time-cost per trial run is meaningfully higher than Chaos; the gap is build- and player-dependent.
 
 ## Trial of Chaos characteristics
 
@@ -95,14 +95,9 @@ Each character earns ascendancy points by completing trials. Both trial systems 
 
 ## Ascendancy progression schedule
 
-Approximate (verify per current version):
+Ascendancy points accrue across multiple trial completions, with each tier (entry / mid / endgame) granting a fixed bundle. The exact per-tier bundles and the total are patch-volatile — **fetch `wiki_parse https://www.poe2wiki.net/wiki/Ascendancy_class` before quoting a number**.
 
-- **2 points** — first trial completion (low-tier).
-- **4 more points** — mid-tier trial.
-- **6 more points** — endgame trial.
-- **8 total** — at endgame trial completion.
-
-Some builds save the "weak-tier ascendancy nodes" until after they have stronger gear; others rush all 8 points early. Both are valid strategies.
+Some builds save the weak-tier ascendancy nodes until after they have stronger gear; others rush every available point early. Both are valid strategies.
 
 ## Pitfalls (common LLM hallucinations)
 

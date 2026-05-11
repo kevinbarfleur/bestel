@@ -34,13 +34,13 @@ This lets a build commit to two distinct weapon paths without overlap penalty.
 
 ### Limit
 
-The Book of Specialization grants a **fixed number of "marker" points** (typically lower than your total tree allocation). Most build slots are still global — only the marked subset is per-set. Verify current count via PoE2 wiki.
+The Book of Specialization grants a specific, version-pinned number of "marker" points (lower than your total tree allocation). Most build slots are still global — only the marked subset is per-set. **Always fetch the current count via `wiki_parse https://www.poe2wiki.net/wiki/Weapon_set`** before quoting how many per-set points a build can allocate.
 
 ## Active set switching
 
 - Hotkey-bound (default key bind shown in options menu).
-- **Animation cost**: ~250ms swap animation (verify per current version).
-- During the swap animation:
+- **Swap timing** is patch-volatile and has changed in past patches (was animated, then made instant). Always fetch `wiki_parse https://www.poe2wiki.net/wiki/Weapon_set` before quoting any latency value.
+- During whatever swap window exists:
   - Skills auto-buffered? Some yes, some no — depends on skill class.
   - Persistent buffs (heralds, auras) don't reset.
   - Charges generally persist across swap.
