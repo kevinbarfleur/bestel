@@ -31,21 +31,21 @@ Once `pob_calc` ships (Sprint 2), use it to verify scaling-lever stacking. Until
 - **Scaling levers**: crit chance × crit multi × added flat × more multipliers. Penetration / exposure for capped-resist bosses. Power Charges if using Assassin / Inquisitor.
 - **Defensive defaults**: max resists 75-80%, Spell Suppression cap (Acrobatics or evasion-based), Phasing or Pathfinder flask uptime, hybrid Life+ES is common. Recovery via leech.
 - **Common pitfalls**:
-  - **Crit cap not reached** — base crit on weapon × Diamond Flask × tree increased % must hit ~95%+. Below this, "more damage on crit" supports do nothing on most hits.
-  - **Accuracy floor missed** — 100% hit chance against bosses requires accuracy-stacking; missing = no crit roll.
+  - **Crit cap not reached** — effective crit chance (base weapon crit × Diamond Flask × tree-increased) must approach the per-hit cap for "more damage on crit" supports to fire consistently. Cap value: `wiki_parse https://www.poewiki.net/wiki/Critical_strike_chance`.
+  - **Accuracy floor missed** — hit chance against bosses requires accuracy-stacking; missed hit = no crit roll. The cap and the accuracy formula are wiki-current — fetch before tuning.
   - **Multimods drowning** — too many "increased X" sources hit diminishing returns; one well-chosen "more" support beats five increased.
-- **Diagnostic checklist**: ① crit chance against boss-tier accuracy applied — actually 95%+? ② crit multi above 350%? ③ "more" multipliers above 3-4 stacked (Hypothermia + Conc Effect + Awakened gem variant + Damage on Full Life etc.)? ④ enemy resists addressed via penetration or curse on hit? ⑤ accuracy 100% against boss level via Precision / tree / Mark of the Shaper?
+- **Diagnostic checklist**: ① effective crit chance against boss-tier accuracy at the per-hit cap (fetch the cap)? ② crit multiplier appropriate for the build's "more" stack (no static target — fetch per-archetype creator guide)? ③ stacked "more" multipliers counted (`pob_calc` will list them)? ④ enemy resists addressed via penetration or curse on hit? ⑤ accuracy at the cap against boss level via Precision / tree / Mark of the Shaper?
 
 ### Hit / non-crit (Elemental Overload, more-mult chassis)
 
 - **Identifying tags**: Elemental Overload keystone allocated, low or zero base crit, gem tag `spell` or `attack`. Often `attack` builds running Resolute Technique. Common ascendancies: Trickster (Polymath), Champion, Slayer (Vaal Pact + leech).
-- **Scaling levers**: more multipliers compound (Trickster Polymath, Awakened gems, ailment-of supports). Trinity support (50% pen at 3 stacks) or Wise Oak. Conversion chains (e.g., Phys → Cold → Fire via Hatred + Cold-to-Fire support).
+- **Scaling levers**: more multipliers compound (Trickster Polymath, Awakened gems, ailment-of supports). Trinity Support provides elemental penetration when all three resonances are stacked — current penetration per resonance and cap: `wiki_parse https://www.poewiki.net/wiki/Trinity_Support` (the 2026-05-12 audit corrected a stale "50% pen" claim — fetch live). Wise Oak or curses are alternatives. Conversion chains (e.g., Phys → Cold → Fire via Hatred + Cold-to-Fire support).
 - **Defensive defaults**: max resists 78%+ (overcap chaos), Aegis Aurora or Vaal Pact leech for sustain, often life-stack with Replica Soul Tether + ES recharge as backup.
 - **Common pitfalls**:
-  - **EO uptime gap** — Elemental Overload requires *a crit in the last 8s*. Without a low-crit "trigger" source, builds fall off mid-fight.
-  - **Trinity uptime gap** — needs 3 elements dealing damage simultaneously. Dropping one breaks the +50% pen.
+  - **EO uptime gap** — Elemental Overload requires a recent crit (window duration is version-pinned — `wiki_parse https://www.poewiki.net/wiki/Elemental_Overload`). Without a low-crit "trigger" source, builds fall off mid-fight.
+  - **Trinity uptime gap** — needs 3 elements dealing damage simultaneously. Dropping one breaks the penetration bonus (current magnitude is wiki-fetched, see above).
   - **More-mult double-counting** — players assume two "more X damage" supports stack additively; they don't.
-- **Diagnostic checklist**: ① EO active at the moment of measurement? ② How many distinct "more" multipliers (count them — 4 is good, 6 is great)? ③ Conversion chain modeled correctly in PoB Calcs? ④ Resist mitigation via Trinity / Wise Oak / curse — which? ⑤ Vaal Pact + leech rate sustaining hits?
+- **Diagnostic checklist**: ① EO active at the moment of measurement? ② How many distinct "more" multipliers in `pob_calc`? ③ Conversion chain modeled correctly in PoB Calcs? ④ Resist mitigation via Trinity / Wise Oak / curse — which? ⑤ Vaal Pact + leech rate sustaining hits?
 
 ### Ailment-stack (ignite-prolif, poison-stack, bleed-explode)
 
@@ -55,14 +55,14 @@ Once `pob_calc` ships (Sprint 2), use it to verify scaling-lever stacking. Until
 - **Common pitfalls**:
   - **Hit damage neglected** — players cap "more ailment damage" stacking but ignore the hit damage that ailments scale from.
   - **Ailment magnitude vs duration confusion** — ignite scales with magnitude (1 ignite cap); poison scales with stack count (cap from skill API). Different scaling.
-  - **Application chance below 100%** — chance to ignite/poison/bleed must be ~100% from gear + tree + supports; below that, RNG ailment uptime kills DPS.
-- **Diagnostic checklist**: ① application chance 100% on every hit? ② ailment magnitude scaling via "more ailment damage" *and* hit damage scaling? ③ proliferation source (Cospri's Will, Wildfire jewel, Voltaxic Burst, Master of Pain mastery)? ④ `<Calcs>` ailment uptime modelling realistic monster density? ⑤ if poison-stack: stack cap (often 60+) reached within phase?
+  - **Application chance below the cap** — chance to ignite/poison/bleed must reach the per-hit cap from gear + tree + supports; below that, RNG ailment uptime kills DPS. Cap value: per-ailment, fetch via `wiki_parse` on the ailment page.
+- **Diagnostic checklist**: ① application chance at the per-hit cap on every hit? ② ailment magnitude scaling via "more ailment damage" *and* hit damage scaling? ③ proliferation source (Cospri's Will, Wildfire jewel, Voltaxic Burst, Master of Pain mastery)? ④ `<Calcs>` ailment uptime modelling realistic monster density? ⑤ for poison-stack: stack-cap reached within phase? The cap is per-build (scales with skills / supports / ascendancy) — confirm via `pob_calc` rather than assuming a static number.
 
 ### Damage-over-time (RF, Bane, ED-Contagion, Soulrend Totem)
 
 - **Identifying tags**: gem tag `dot` / `degeneration`, Anomalous Bane (PoE1), Awakened Cast While Channelling, Burning Damage / Withering Touch. Chieftain (RF), Occultist (ED-Contagion), Hierophant (Soulrend Totem).
 - **Scaling levers**: more DoT multiplier (key — increased % hits diminishing returns fast), area for proliferation, faster ailments / hexes for tick rate, ailment magnitude for ignite-DoT.
-- **Defensive defaults**: high regen (RF 8%+ life), Cloak of Flame for phys mitigation, MoM stack for spell-heavy maps. ED-Contagion leans on suppression + ES recharge.
+- **Defensive defaults**: high regen for RF (the exact % depends on the Chieftain ascendancy + Beacon-tier gear + tree — fetch `wiki_parse https://www.poewiki.net/wiki/Righteous_Fire` for the current self-burn rate to sustain against), Cloak of Flame for phys mitigation, MoM stack for spell-heavy maps. ED-Contagion leans on suppression + ES recharge.
 - **Common pitfalls**:
   - **DoT cap unawareness** — RF, Caustic Arrow, Corrupting Fever all hit per-skill DoT caps. Once at cap, increased % does nothing — only more multipliers and ailment magnitude help.
   - **Single-target hole** — Maven, Sirus, pinnacle bosses degen DoT slowly compared to phase windows. Need a separate single-target burst (Cremation totem, Soul Mantle DD trigger, etc.) or accept slow kills.
@@ -76,7 +76,7 @@ Once `pob_calc` ships (Sprint 2), use it to verify scaling-lever stacking. Until
 - **Defensive defaults**: stationary playstyle = high EHP needed. MoM stack typical for Hierophant. Saboteur leans on Born in the Shadows blind chance.
 - **Common pitfalls**:
   - **Placement speed bottleneck** — slow placement = totems don't stay up between mob packs.
-  - **Totem cap not reached** — most totem skills cap at 4+ active totems; need ascendancy + tree to enable.
+  - **Totem cap not reached** — base totem limit is low (fetch `wiki_parse https://www.poewiki.net/wiki/Totem` for the current base + Hierophant + cluster jewel scaling); endgame totem builds usually need ascendancy + tree investment to expand the cap.
   - **Totem AI / range gap** — totems can't path; melee-totem builds (Holy Flame Totem) need positioning.
 - **Diagnostic checklist**: ① max totems / mines / traps active per skill? ② placement speed adequate for current map tier? ③ MoM stack health sustained under spell pressure? ④ totem damage via `Multiple Totems` / `Spell Totem` support comparisons? ⑤ enemy resist mitigation via totems' own curse-on-hit / penetration / Voltaic Mark?
 
@@ -97,7 +97,7 @@ Once `pob_calc` ships (Sprint 2), use it to verify scaling-lever stacking. Until
 - **Scaling levers**: trigger source uptime (the channelling skill / hit / damage-taken event), cooldown gating (CoC 0.15s), attack rate, supports for the *triggered* skill rather than the trigger.
 - **Defensive defaults**: highly variable. CoC / CWC builds usually combine attack-or-cast-speed defensive layers (Pathfinder flask, Trickster ES recharge). CWDT setups often layer a defensive guard skill auto-fired.
 - **Common pitfalls**:
-  - **Cooldown bottleneck** — CoC at 0.15s server cooldown caps trigger rate; over-stacking attack speed wastes hits.
+  - **Cooldown bottleneck** — Cast on Critical Strike has a hard server-side cooldown that caps trigger rate; over-stacking attack speed beyond it wastes hits. Current cooldown value: `wiki_parse https://www.poewiki.net/wiki/Cast_on_Critical_Strike_Support`.
   - **Trigger source death** — channelling builds (CWC) need uptime; if interrupted, no damage.
   - **Mana sustain** — triggered spells cost mana; mana flask / leech / Indigon stacking mandatory.
 - **Diagnostic checklist**: ① trigger source uptime mechanic verified (e.g., CoC attack speed × cooldown hits ratio)? ② mana sustain on the triggered spell — flask, leech, or absurd regen? ③ supports stacked on triggered spell, *not* on trigger source skill? ④ defensive guard skill (Steelskin, Molten Shell) auto-firing? ⑤ Calcs `<usePowerCharges>`/`<useFrenzyCharges>` matching what trigger generates?
@@ -167,7 +167,7 @@ Once `pob_calc` ships (Sprint 2), use it to verify scaling-lever stacking. Until
 - **Scaling levers**: number of heralds simultaneously active; Spirit reservation reduction; herald-specific damage and effect modifiers.
 - **Defensive defaults**: Spirit-heavy, mana sustain still required for skill costs. Often aura-stack ES chassis.
 - **Common pitfalls**:
-  - **Spirit overflow** — players forget they need ~30% extra Spirit to fit all heralds at base reservation.
+  - **Spirit overflow** — players forget they need a meaningful Spirit headroom to fit all heralds at base reservation. Exact required headroom is herald-specific × current league's Spirit costs; `wiki_parse https://www.poe2wiki.net/wiki/Spirit` and the relevant herald pages.
   - **Herald-of-X interaction misread** — heralds explode on conditions (Herald of Ash on ignite, Herald of Ice on freeze-shatter); without the condition, they're inert.
   - **Mana-cost spiral** — heralds reserve Spirit, but skills cost mana; Indigon-style mana scaling can break the herald-stack flow.
 - **Diagnostic checklist**: ① Spirit budget *with* reservation reduction modeled? ② trigger condition for each herald present (ignite for HoA, freeze for HoI)? ③ mana sustain on the main skill? ④ defensive plan when one herald is missing? ⑤ scaling herald damage vs main skill damage — which dominates?
@@ -181,7 +181,7 @@ Once `pob_calc` ships (Sprint 2), use it to verify scaling-lever stacking. Until
   - **Set-swap latency in panic moments** — fumble the swap and you're in the wrong configuration.
   - **Per-set passive duplication** — wasting points by allocating both sets to the same notable.
   - **Resist gap on weapon swap** — swapping a weapon with `+% all res` craft drops you out of cap.
-- **Diagnostic checklist**: ① Book of Specialization passives non-overlapping between sets? ② resist plan covers both weapon-set configurations? ③ swap-latency budget realistic for combat (typically 0.3s)? ④ Set 1 vs Set 2 designated roles (clear vs boss) clear? ⑤ animation cancel plan for set-swap mid-combat?
+- **Diagnostic checklist**: ① Book of Specialization passives non-overlapping between sets? ② resist plan covers both weapon-set configurations? ③ swap-latency understood for the current patch (fetched from `wiki_parse https://www.poe2wiki.net/wiki/Weapon_set`)? ④ Set 1 vs Set 2 designated roles (clear vs boss) clear? ⑤ animation cancel plan for set-swap mid-combat?
 
 ### Hit + ailment-stack hybrid (PoE2)
 

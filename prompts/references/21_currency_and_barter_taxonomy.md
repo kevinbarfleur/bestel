@@ -39,8 +39,8 @@ The bread-and-butter of crafting. Each one solves a different sub-problem.
 | Orb of Scouring | Item → Normal. Strip a craft and start over. |
 | Orb of Chance | Normal → Magic / Rare / Unique with weighted probability. Niche; targeted Headhunter chance recipes (Leather Belt) etc. |
 | Vaal Orb | Item → Corrupted (random outcome: re-roll / +1 socket / no-change / brick). Permanent change; cannot un-corrupt. |
-| Exalted Orb | Rare with 4-5 mods → +1 mod (preserves existing). High-end finishing currency in PoE1; less central since Settlers shifted economy. |
-| Divine Orb | Re-roll *numerical values* within current mod ranges. Does not change which mods exist. The dominant high-end currency in modern PoE1 since Settlers economy shift. |
+| Exalted Orb | Rare → adds 1 mod (preserves existing). The exact mod-count gate and economic weight have shifted across patches — fetch the current rules from `wiki_parse https://www.poewiki.net/wiki/Exalted_Orb` and live pricing from poe.ninja. |
+| Divine Orb | Re-roll *numerical values* within current mod ranges. Does not change which mods exist. Economic weight vs Chaos / Exalted shifts each league — check poe.ninja before quoting "the dominant currency". |
 | Mirror of Kalandra | Duplicates an item once. Rarest currency tier; mirror-tier items are showcase pieces. |
 
 **Key conceptual distinction**: Chaos *re-rolls which mods exist*; Divine *re-rolls the values within mod ranges that already exist*. Mixing these up is one of the most common LLM hallucinations on PoE.
@@ -52,7 +52,7 @@ The bread-and-butter of crafting. Each one solves a different sub-problem.
 | Whetstone | Weapon quality (more physical damage). |
 | Armourer's Scrap | Armour quality (more armour/evasion/ES). |
 | Glassblower's Bauble | Flask quality. |
-| Catalyst (Turbulent / Tempering / etc., 7 types) | Jewellery quality with stat-tag specialisation (more X-tagged mods). |
+| Catalyst (Turbulent / Tempering / Imbued / Abrasive / Fertile / Prismatic / Intrinsic / Sinistral / Dextral / Tainted / etc.) | Jewellery quality with stat-tag specialisation (more X-tagged mods). The complete current list of catalyst names + their tag biases lives at `wiki_parse https://www.poewiki.net/wiki/Catalyst`. |
 | Gemcutter's Prism | Skill gem quality. |
 
 Quality matters because it scales the local property by quality % — a 20%-quality bow rolls higher base damage than a 0%-quality one.
@@ -65,7 +65,7 @@ Quality matters because it scales the local property by quality % — a 20%-qual
 | Orb of Fusing | Re-roll *links* between sockets. |
 | Chromatic Orb | Re-roll *colours* of sockets. |
 | Vaal Orb (corruption variant) | Can corrupt to 6L; risky. |
-| Tainted Chromatic / Fusing / Jeweller's | Corrupted-only socket/link/colour orbs from Heist. Can break the item. |
+| Tainted Chromatic / Fusing / Jeweller's | Corrupted-only socket/link/colour orbs originating in Scourge-era tainted-currency mechanics (not Heist). Can break the item. Specific success/failure rules per orb: `wiki_parse https://www.poewiki.net/wiki/Tainted_Chromatic_Orb`. |
 
 Most builds need a 6L body armour, often 5L weapon. Socket-coloring on off-stat bases (Sorcerer Boots with red sockets for str-str-int) is a classic crafting puzzle.
 
@@ -73,8 +73,8 @@ Most builds need a 6L body armour, often 5L weapon. Socket-coloring on off-stat 
 
 | Item | Function |
 |---|---|
-| Sacrifice Fragments (Dawn / Dusk / Midnight / Noon) | Atziri / Uber Atziri access. |
-| Mortal Fragments (Hope / Grief / Rage / Ignorance) | Uber Atziri. |
+| Sacrifice Fragments (Dawn / Dusk / Midnight / Noon) | Atziri (Apex of Sacrifice) access. |
+| Mortal Fragments (Hope / Grief / Rage / Ignorance) | Uber Atziri (Alluring Abyss). |
 | Fragment of Constriction / Enslavement / Eradication / Purification | Shaper / Elder. |
 | Pure Breachstone (per breach lord, 4 tiers) | Domain bosses; XP-farming via Pure Esh's. |
 | Maven's Writ | Uber Maven. |
@@ -97,7 +97,7 @@ Splinters drop in stacks during the matching mechanic, gradually building up to 
 
 ### Scarabs (atlas modifiers)
 
-Pre-3.25: scarabs apply to the map device, modifying a single map run. Post-3.25 Settlers: scarabs remain, expanded into ~5 per league mechanic with Awakened/Greater/Polished tiers.
+Scarabs are atlas modifiers applied to the map device, modifying a single map run. The scarab system has been reworked multiple times (notably the major 3.24-era restructure that retired the Rusted/Polished/Gilded/Winged tier ladder). **For the current scarab families, tier structure, and per-mechanic counts, fetch `wiki_parse https://www.poewiki.net/wiki/Scarab`** — citing a remembered tier name (Awakened / Greater / Polished etc.) is the audit's classic stale-claim pattern.
 
 | Scarab family (examples) | Effect domain |
 |---|---|
@@ -109,18 +109,13 @@ Pre-3.25: scarabs apply to the map device, modifying a single map run. Post-3.25
 
 Scarabs are a major lever in farming-strategy optimisation — pick scarabs that match your atlas tree allocation.
 
-### Tablets (post-3.25 Settlers)
+### Atlas-region modifiers (Sextants / Tablets / Astrolabes — patch-volatile)
 
-| Tablet type | Effect |
-|---|---|
-| Map Tablet | Applied to towers; radiates effects to maps in range. |
-| Dispatch Tablet | Used at dock for currency exchange. |
+The mechanic that applies a modifier to a region of the Atlas has been reworked multiple times — Sextants on watchstones (pre-Settlers), Tablets on towers (Settlers 3.25-era), and successor systems in subsequent leagues. **Always fetch `wiki_parse https://www.poewiki.net/wiki/Atlas_of_Worlds` or the current patch notes before describing which system is live** — the audit found that hardcoding "Tablets replaced Sextants in 3.25" mislabels the current state if a newer rework has shipped.
 
-Tablets replaced Sextants in 3.25. The tablet → tower → map-radius pattern is the modern equivalent of "applying sextants to your watchstones".
+### Currency Exchange (bulk-trade infrastructure)
 
-### Currency Exchange (Settlers)
-
-A 1:N bulk-trade infrastructure tied to the Settlers Kingsmarch system. Send a worker with a stack of Currency A; they return with Currency B at a market rate. The most reliable bulk-conversion tool in modern PoE1, **inside the league mechanic** rather than via player trade.
+PoE1 has a 1:N bulk-trade system originally introduced in the Settlers Kingsmarch league (3.25) and since persisted via Faustus / asynchronous trade / Trade Market in subsequent patches. Send a worker (or place an order) with a stack of Currency A; they return with Currency B at a market rate. The most reliable bulk-conversion tool in modern PoE1. **Fetch current patch notes** to confirm which form the system takes in the active league.
 
 ---
 
@@ -130,55 +125,47 @@ PoE2 deliberately narrows the currency tree. The conceptual deltas:
 
 ### Rolling currencies — tier system
 
-PoE2 uses a **Lesser → Greater → Perfect** tier hierarchy on rolling orbs (crystallised in 0.2):
+PoE2 uses a Lesser → Greater → Perfect tier hierarchy on rolling orbs, systematised across the 0.2-0.3 patch cycle:
 
 | PoE2 currency | Role |
 |---|---|
-| Orb of Transmutation | Normal → Magic (1 mod). |
-| Orb of Augmentation | Magic 1-mod → 2-mod. |
+| Orb of Transmutation | Normal → Magic. Mod count: `wiki_parse https://www.poe2wiki.net/wiki/Orb_of_Transmutation`. |
+| Orb of Augmentation | Magic upgrade. |
 | Regal Orb | Magic → Rare (adds 1 mod, keeping existing). |
 | Greater Orb of Transmutation/Augmentation | Higher tier rolling orb (better mod-tier weighting). |
-| Perfect Orb of Transmutation/Augmentation | Top tier, T1 mod weighting. |
-| Orb of Alchemy | Normal → Rare (4 mods); much more expensive in PoE2 vs PoE1. |
+| Perfect Orb of Transmutation/Augmentation | Top tier (T1 mod weighting bias). |
+| Orb of Alchemy | Normal → Rare. Mod count and rarity vs PoE1: `wiki_parse https://www.poe2wiki.net/wiki/Orb_of_Alchemy`. |
 | Chaos Orb | Re-roll *one mod* on a Rare (NOT full re-roll). Different from PoE1 Chaos. |
-| Exalted Orb | Add a mod to a Rare (similar to PoE1 Exalt; cheaper relatively). |
+| Exalted Orb | Add a mod to a Rare (similar to PoE1 Exalt; relative economic weight differs). |
 | Divine Orb | Re-roll numerical values within mod ranges (same as PoE1). |
 | Vaal Orb | Corrupt (same role as PoE1). |
 | Mirror of Kalandra | Duplicate (same role as PoE1). |
 
 **Rot trigger for AI**: PoE2 Chaos Orb is *not* a full re-roll. It re-rolls a single mod. Conflating PoE1 Chaos and PoE2 Chaos is a common error — see `26_validation_and_self_correction.md` Rule 4.
 
-### Runes (socket-fed gems on items)
+### Runes (socketable modifier items)
 
-PoE2 introduces **Runes** — items socketed into bases that grant a passive effect. Conceptually a "currency you find" rather than "currency you craft with":
-
-- Iron Rune: + flat phys damage on weapons.
-- Body Rune: + life on armours.
-- Many more, scaling by ilvl and rarity.
+PoE2 has **Runes** — items socketed into rune sockets on bases that grant a passive effect. Conceptually a "currency you find" rather than "currency you craft with". The current rune family list, naming, and per-rune magnitudes are version-pinned and have shifted across patches — see `poe2/04_runes_soul_cores_talismans.md` and `wiki_parse https://www.poe2wiki.net/wiki/Rune`. **Do not recite specific rune names or magnitudes from memory.**
 
 Runes are not crafting currencies — they're modifiers applied to bases via specific sockets the base provides.
 
-### Soul Cores (corrupted-base modifier system)
+### Soul Cores
 
-Late-game currency that imbues corrupted items with additional modifiers. Niche compared to runes; rare and high-impact.
+Higher-tier rune-equivalents primarily acquired from trial / boss / sanctum tiers in PoE2. See `poe2/04_runes_soul_cores_talismans.md` for the categorical detail and `wiki_parse https://www.poe2wiki.net/wiki/Soul_core` for current acquisition / behaviour.
 
-### Talismans (PoE2 neck-slot mechanic)
+### Talismans
 
-Talismans are amulets that gain charges while in play; charges can be spent for buffs / curse-immunity / etc. They are an **item slot** with currency-like charge accumulation, not an orb.
+In PoE2 Talismans are a **two-handed melee weapon class** used by shapeshift archetypes — NOT amulet-slot charge items. The previous "neck-slot charge accumulation" description in this file was wrong. See `poe2/04_runes_soul_cores_talismans.md` and `wiki_parse https://www.poe2wiki.net/wiki/Talisman`.
 
-### Gold (PoE2 crafting bench currency)
+### Gold (PoE2 account-bound currency)
 
-PoE2 introduced **gold** as a crafting-bench currency. Used for re-roll / crafting recipes at NPCs. Conceptually closer to a typical RPG gold than the orb economy.
+PoE2 has **gold** as an account-bound currency used at vendors, currency exchange, passive respec, and asynchronous trade. The exact list of use cases shifts with patches — `wiki_parse https://www.poe2wiki.net/wiki/Gold`. Conceptually closer to a typical RPG gold than the orb economy.
 
-### 0.5 additions (2026-05-29)
+### 0.5 additions — PLACEHOLDER
 
-⚠️ Pre-launch from GGG announcement materials — verify on launch day:
+⚠️ **DO NOT QUOTE as facts.** Pre-launch datamining + GGG announcement materials. Authoritative content goes in `poe2/06_runes_of_aldur.md` once the 0.5 patch notes ship.
 
-- **Verisium**: new currency tied to "Runes of Aldur" league mechanic.
-- **Runic Ward**: defensive buff with rune-derived effects.
-- **Alloys**: crafting modifier (datamining suggests). Likely augments runes or creates rune variants.
-
-Fill `poe2/06_runes_of_aldur.md` with authoritative content on launch.
+Expected entities (subject to GGG confirmation): a league mechanic named **Runes of Aldur**, a currency named **Verisium**, a defensive layer named **Runic Ward**, a crafting modifier referred to as **Alloys**. Mechanics are not verified — refuse to give specifics until the placeholder is filled.
 
 ---
 

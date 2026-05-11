@@ -34,10 +34,14 @@ These are the *narrow* feel-stats. They scale only their respective category.
 
 ### Breakpoints to watch
 
-- **Sub-1.0 attacks/sec total**: feels stiff, hard to react.
-- **3-4 attacks/sec**: comfortable mapping.
-- **5+ attacks/sec**: clearspeed-tier; very smooth.
-- **Cast speed for trigger setups**: trigger has a fixed cooldown; cast speed beyond that wastes mana with no DPS gain.
+Attack-speed comfort breakpoints are directional, not exact — they depend on skill animation length, buffer windows, server tick alignment, and player skill. Categorical bands:
+
+- **Very low attack speed**: feels stiff, hard to react / reposition mid-swing.
+- **Comfortable mapping range**: smooth-enough for white / yellow maps without burning attention on rhythm.
+- **Clearspeed-tier**: rapid, animation-blurry; rewarded in maps, sometimes punished in boss windows.
+- **Cast speed for trigger setups**: trigger has a fixed cooldown; cast speed beyond that wastes mana with no DPS gain. **Fetch the specific trigger's cooldown via `wiki_parse` on the trigger skill / support gem page before tuning toward a breakpoint.**
+
+For specific APS / cast-speed numbers per build, derive from `pob_calc` on the actual setup rather than reciting a static breakpoint table.
 
 ## Animation cancelling (PoE1)
 
@@ -57,8 +61,8 @@ Several skills can be **canceled into another skill** mid-windup, freeing the pl
 
 | Skill | Best for | Notes |
 |---|---|---|
-| Flame Dash | Caster, ranged, MoM stack | 3 charges, 10s recovery; Vaal Flame Dash for emergency. |
-| Dash | Generic | Smaller distance; cooldown-based. |
+| Flame Dash | Caster, ranged, MoM stack | Multi-charge with per-charge cooldown — fetch current charge count + cooldown via `wiki_parse https://www.poewiki.net/wiki/Flame_Dash` before quoting. Vaal Flame Dash for emergency. |
+| Dash | Generic | Single-cast, cooldown-based, shorter range than Flame Dash. Range/cooldown version-pinned — `wiki_parse` if it matters. |
 | Leap Slam | Strength-attack builds | Attack-speed scaled; mounts onto targets. |
 | Shield Charge | Block / phys-stack | Attack-speed scaled, knockback. |
 | Whirling Blades | Dual-wield / dagger | Attack-speed scaled; chains seamlessly. |
@@ -71,15 +75,15 @@ Several skills can be **canceled into another skill** mid-windup, freeing the pl
 
 Separate stat from cast speed. Matters for Hierophant / Chieftain / Soulwrest builds that spam totems.
 
-- Sources: cluster jewel notable (`Place Totem 16% faster`), specific gloves implicit, Hierophant ascendancy.
+- Sources: cluster jewel notable (totem-placement-speed), specific gloves implicit, Hierophant ascendancy. Exact magnitudes are version-pinned — fetch `wiki_parse https://www.poewiki.net/wiki/Totem` or `repoe_lookup` on the specific mod / notable name.
 - **Diagnostic**: a totem build that "feels slow" usually has cast speed but no totem placement speed. The two stack but solve different problems.
 
 ## Cooldown recovery rate (PoE1 / PoE2)
 
 A separate stat that scales the rate at which **cooldowns** of skills/flasks recharge.
 
-- Affects: Flame Dash (3 charges), Vaal skill recovery (rare), specific guard-skill recoveries (Steelskin, Molten Shell).
-- **Build-feel impact**: a Flame Dash with 50% cooldown recovery feels dramatically smoother than one with 0%. Often missed by sub-optimal gear.
+- Affects: Flame Dash (multi-charge), Vaal skill recovery (rare), specific guard-skill recoveries (Steelskin, Molten Shell).
+- **Build-feel impact**: cooldown recovery rate on a movement skill is the single biggest "smoothness" lever. Often missed by sub-optimal gear. The threshold at which a skill feels smooth depends on the skill's base cooldown — verify against the skill's wiki page before recommending a target percent.
 - Belt + Boots Eldritch implicit (Searing Exarch) commonly grants this.
 
 ## PoE2 — distinct feel layer
@@ -100,16 +104,16 @@ PoE2 deliberately chose a **slower, more committal combat** model. Veteran PoE1 
 
 ### Weapon-swap timing
 
-- Switching Weapon Set 1 ↔ Weapon Set 2 has a fixed animation (~250ms; verify per current version).
-- Frequent swap-builds need a "buffer skill" planted before the swap to absorb the lock.
+- Switching Weapon Set 1 ↔ Weapon Set 2 has a swap window that has changed across PoE2 patches (was animated, then made instant). **Always fetch `wiki_parse https://www.poe2wiki.net/wiki/Weapon_set` before quoting any swap latency**.
+- Frequent swap-builds historically benefit from a "buffer skill" planted before the swap to absorb any lock; whether one is needed in the current patch depends on the swap window.
 - Skills auto-bound to specific weapon sets: a skill in Set 2 sockets cannot fire while Set 1 is active.
 
 ### Combo skill timing (Monk / Huntress / Druid)
 
 PoE2 introduces the **combo** framework: a "primer" skill applies a status (freeze, electrocute, stun, ignite, primal mark), an "executor" skill consumes it for amplified damage.
 
-- **Primer uptime is the limiting factor**. A 10M-burst executor on a build that cannot maintain primer is 4M effective DPS.
-- Window between primer apply and executor fire: 1-3 seconds typical (verify per skill / current patch).
+- **Primer uptime is the limiting factor**. A burst-DPS executor on a build that cannot maintain primer effectively loses a large fraction of its theoretical damage; the loss ratio is build-specific, not a fixed number.
+- Window between primer apply and executor fire is skill-specific and version-pinned. **For any specific combo, fetch the primer skill's wiki page** (e.g. `wiki_parse https://www.poe2wiki.net/wiki/Tempest_Bell`) for the current duration; don't recite a generic "1-3 seconds" from memory.
 - **Diagnostic**: when a Monk / Huntress build "feels weak vs bosses", the issue is usually primer uptime, not executor scaling.
 
 ### Channelling and persistent skills

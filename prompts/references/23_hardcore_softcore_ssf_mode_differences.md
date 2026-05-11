@@ -25,7 +25,7 @@ The matrix matters because **a "great build" is mode-relative**. A 30M-DPS Mageb
 
 ## Trade SC — the baseline
 
-- **Death penalty**: 5% XP loss in maps + drop nothing.
+- **Death penalty**: XP loss on death in maps + drop nothing. Exact percent is version-pinned — fetch `wiki_parse https://www.poewiki.net/wiki/Experience` if it matters to the answer.
 - **Trade access**: full.
 - **Build pressure**: maximise damage / clearspeed / boss kill speed.
 - **Typical chase**: Mageblood, Headhunter, Original Sin, perfect Awakened gems, mirror-tier rare gear.
@@ -42,16 +42,16 @@ If a user doesn't state their mode, assume Trade SC. If they sound HC/SSF-flavou
 ### HC-specific advice deltas (vs SC)
 
 - **Max hit > DPS** — clear speed comes after EHP, max-hit-per-element, instant recovery.
-- **Recovery cap**: 30-40% higher than SC bars. 5k+ life/sec at red maps; 8k+ at pinnacle.
+- **Recovery cap**: HC recovery bars sit meaningfully above SC bars at every progression tier — order of magnitude is multiple-thousands per second by red maps and substantially higher at pinnacle. Specific bars are community heuristics — fetch current Pohx / Ben_ HC creator videos via `web_fetch` against tier-7 hosts, not from memory. The `thresholds/` files carry the latest snapshot but they are explicitly community-aggregate, not facts.
 - **Defensive layer redundancy**: spell suppression *and* block, armour *and* fortify, Pantheon *and* charm — two layers per damage source.
 - **Avoid certain mechanics**: Trial of the Sekhemas / Lab can't fail in HC; if your build can't deathlessly clear them, plan around (carry runs, rerollable trial).
 - **Avoid certain map mods**: -max-resists, ele weakness on certain builds, no-leech, etc. Are run-stoppers in HC.
 - **Phase-skip before combat**: ranged > melee at high tier; skip phases via DPS bursts vs taking hits.
-- **Slow-and-steady**: HC progression is 2-4× slower than SC. Don't push tier until comfortable.
+- **Slow-and-steady**: HC progression is meaningfully slower than SC. Don't push tier until comfortable. Multiplier is player- and meta-dependent; don't quote one.
 
 ## SSF SC — self-found viability
 
-- **Death penalty**: 5% XP loss only.
+- **Death penalty**: XP loss in maps only (drop nothing). Same magnitude as Trade SC — version-pinned, see above.
 - **Trade access**: none. What drops is what you have.
 - **Build pressure**: every gear slot must be filled with what's findable.
 

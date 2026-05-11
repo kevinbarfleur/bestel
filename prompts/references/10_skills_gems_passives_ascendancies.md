@@ -29,7 +29,7 @@ PoE1 uses skill gems socketed in equipment. Supports must be linked to skills. I
 
 ## PoE2 gems
 
-PoE2 reasons differently: skill gems live in the Skills Panel and the sockets sit on the gem itself. The `Gem socket` page states that skill gems can have 2 to 5 sockets, expandable via Jeweller's Orbs. The `Gem` page states that gems can grant a skill or modify a skill, and includes skill gems, support gems, meta gems, and spirit gems.
+PoE2 reasons differently: skill gems live in the Skills Panel and the sockets sit on the gem itself. The `Gem socket` page states that skill gems have a small number of sockets expandable via Jeweller's Orbs — **fetch `wiki_parse https://www.poe2wiki.net/wiki/Gem_socket` for the current min/max socket count and expansion rules**. The `Gem` page states that gems can grant a skill or modify a skill, and includes skill gems, support gems, meta gems, and spirit gems.
 
 For the agent:
 

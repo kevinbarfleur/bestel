@@ -1,195 +1,212 @@
-# Known mechanics tripwires — frequently misremembered facts
+# Known mechanics tripwires — frequently misremembered zones
 
-This reference holds the mechanics that the audit 2026-05-08 caught models hallucinating or contradicting themselves on. Each entry is a single canonical fact plus the citation. **None of these entries replace a wiki fetch** — they exist so that when a model recalls a half-correct fragment from training data, the correct fragment is right here for cross-check. Always confirm the live value via `wiki_parse` before quoting in the answer; this reference is a tripwire, not a citation.
+This reference flags the mechanics where the 2026-05-12 audit caught LLM-class models hallucinating, recalling stale values, or conflating PoE1 with PoE2. **None of the entries below carry numeric values by design** — the audit found that storing values here was the failure mode: the model would recite the cached value (often wrong by then) instead of fetching the wiki.
 
-## Spell suppression — cap
+The new contract for this file: **list the zones of confusion + force a fetch**. If a user's question touches one of these zones, the agent MUST call the cited tool (`wiki_parse`, `repoe_lookup`, or `pob_calc`) before giving a number.
 
-**Cap is 100%.** Reaching 100% chance to suppress means every spell hit triggers the suppression check; the damage reduction itself is fixed at 50% (raisable via specific keystones / ascendancy nodes, e.g. the Slayer's "Unstoppable Hero" or `Wind Dancer` keystone interactions).
+> **Hard rule (mirrors SYSTEM_PROMPT Rule 2b)**: never cite a percentage, cooldown, charge count, socket count, magnitude, or implicit-tier value from memory while answering a question about any entity in this file. The wiki URL is provided next to each entry — call it.
 
-Common wrong answer: 75% (confusion with hard resistance cap). Common wrong answer: 50% (confusion between the suppression chance and the damage-reduction value).
+## Spell Suppression — cap and prevented-damage value
 
-Source: `https://www.poewiki.net/wiki/Spell_suppression`.
+**What gets misremembered**: the chance-to-suppress cap AND the percentage of spell damage prevented at that cap. Both are commonly stated wrong. The audit caught a "50% prevented" recall that had been stale since a wiki rebalance.
 
-## Medium cluster jewel — Small cluster sockets
+**Always fetch**: `wiki_parse https://www.poewiki.net/wiki/Spell_Suppression` — state both the current cap and the prevented-damage value as printed on the wiki.
 
-**A Medium cluster jewel hosts exactly one Small cluster jewel socket.** Not two, not three. The hierarchy is: Large hosts up to 2 Mediums, each Medium hosts 1 Small.
+**Cross-game watch**: PoE2's spell-defence layer is NOT the same system. Don't transfer suppression intuition.
 
-Common wrong answer: 2 small sockets per Medium. This is the single most common cluster-math mistake — it implies a tree-wide cluster network larger than what's actually possible.
+## Cluster jewel hierarchy — socket / notable counts
 
-Source: `https://www.poewiki.net/wiki/Cluster_Jewel`.
+**What gets misremembered**: how many Mediums fit in a Large, how many Smalls fit in a Medium, how many notables each size can roll. Cluster math is the single most-confused PoE1 mechanic.
 
-## Voices — total clusters in one tree
+**Always fetch**: `wiki_parse https://www.poewiki.net/wiki/Cluster_Jewel` — state the current ladder verbatim.
 
-**Voices replaces a single jewel socket with three Small cluster jewel sockets.** Each Small holds 2 notable passives. The interaction with regular cluster sockets in the rest of the tree is independent — Voices does NOT change the count of Large or Medium sockets allocatable elsewhere.
+**Cross-game watch**: PoE2 does NOT have cluster jewels. The names `Voices`, `Megalomaniac`, `Luminous Trove`, `Heroic Tragedy`, `Undying Hate`, `Flesh Crucible`, `From Nothing` are **PoE1-only**. Citing them as PoE2 jewels is hallucination.
 
-Common wrong answer: "you can fit 9 clusters with Voices". The correct framing: Voices gives 3 *additional* Small sockets beyond the regular tree's cluster slots. Pair with `Luminous Trove` to access the slots quickly.
+## Voices — socket count and notable count per socket
 
-Source: `https://www.poewiki.net/wiki/Voices`.
+**What gets misremembered**: how many sockets Voices grants and how many notables fit in each. The audit found a stale claim about per-socket notable count.
+
+**Always fetch**: `wiki_parse https://www.poewiki.net/wiki/Voices`.
 
 ## Eldritch implicits — eligible slots
 
-**Eldritch implicits roll only on body armour, helmet, gloves, and boots.** They do NOT roll on weapons, amulets, rings, or belts.
+**What gets misremembered**: which slots can roll Eldritch implicits. The set is small and stable, but stating it from memory is still risky.
 
-Common wrong answer: "Eldritch implicits are on every slot". The Eater of Worlds and Searing Exarch altars target only the four armour slots above; the other slots use influence mods or other crafting routes.
+**Always fetch**: `wiki_parse https://www.poewiki.net/wiki/Eldritch_implicit_modifier`. The Eater of Worlds and Searing Exarch altars target only specific armour slots — wiki lists them.
 
-Source: `https://www.poewiki.net/wiki/Eldritch_modifier`.
+## Soul of Solaris — damage scope
 
-## Pantheon — Soul of Solaris damage scope
+**What gets misremembered**: whether Solaris reduces physical damage from hits, ailments, both. The audit found stale and wrong recalls of the percent value.
 
-**Soul of Solaris reduces physical damage from hits, not from ailments.** The flat 6% additional physical damage reduction applies to incoming hits only. Bleed and physical damage over time bypass this layer entirely.
-
-Common wrong answer: "Solaris reduces all damage from ailments". Mixing up the two Solaris bonuses (the elemental ailment chance reduction is a separate clause and only applies to ignite/shock/freeze caused by enemies near you).
-
-Source: `https://www.poewiki.net/wiki/Soul_of_Solaris`.
+**Always fetch**: `wiki_parse https://www.poewiki.net/wiki/Soul_of_Solaris`. State whether the reduction applies to hits, DoT, or ailments — and the exact value — from the wiki, not memory.
 
 ## Trade pseudo stats — aggregation scope
 
-**Pseudo stats on the trade site aggregate within a single listed item, not across the build.** A `pseudo.pseudo_total_life` filter on a chest searches chests where the implicit + explicit + crafted life rolls on **that one chest** sum to your minimum.
+**What gets misremembered**: whether `pseudo.*` filters aggregate within a single item or across the whole build. The mechanic is stable but easy to misstate.
 
-Common wrong answer: "pseudo stats search across my whole gear". The trade site never aggregates across slots; each search applies to one item at a time.
-
-Source: `https://www.pathofexile.com/api/trade/data/stats`.
+**Always fetch**: `https://www.pathofexile.com/api/trade/data/stats` and the trade docs. Confirm per-item vs cross-build before answering.
 
 ## Resolute Technique — scope of "cannot crit"
 
-**Resolute Technique disables crit on every attack and spell from your character.** It is total — there is no partial Resolute Technique.
+**What gets misremembered**: whether RT only suppresses attack crits or also spell crits.
 
-Common wrong answer: "spells can still crit with Resolute Technique". This was never the case in PoE1; the keystone explicitly says "Your hits cannot be evaded. Your hits cannot be Critical Strikes." Spells are hits.
+**Always fetch**: `wiki_parse https://www.poewiki.net/wiki/Resolute_Technique`. Read the keystone text verbatim before answering.
 
-Source: `https://www.poewiki.net/wiki/Resolute_Technique`.
+## Damage conversion — sequential vs parallel math
 
-## Conversion — double chain math
+**What gets misremembered**: the order in which gear conversion vs skill conversion vs support conversion applies, and how the leftover physical pool is distributed. The audit found a 35/65 worked-example claim that the Deep Research agent flagged as not generally valid.
 
-**Conversion is sequential, not parallel.** If gear converts 35% physical → lightning, then a support adds 100% physical → fire, the lightning conversion fires first on its 35% slice, leaving 65% physical to be reconverted by the support. Final: 35% lightning, 65% fire.
+**Always fetch**: `wiki_parse https://www.poewiki.net/wiki/Damage_conversion`. Read the order-of-operations section before working through a conversion math problem. Better still: run the conversion through `pob_calc` on the actual build, which models the full sequence.
 
-Common wrong answer: "100% lightning" or "100% fire" — assumes the second conversion overrides the first. Common wrong answer: split 50/50. Conversion never exceeds 100% total of the original element.
+## PoE2 pinnacle boss life
 
-Source: `https://www.poewiki.net/wiki/Damage_conversion`.
+**What gets misremembered**: a specific HP number for a current PoE2 pinnacle. Pinnacle HP is rebalanced regularly and PoE1 numbers (Sirus / Eater) do **not** transfer.
 
-## PoE2 — pinnacle boss life
+**Always**: run `pob_calc(category="offence", calcs={enemyIsBoss=true})` and read the engine output, OR `wiki_parse https://www.poe2wiki.net/wiki/<Boss>` for the current pinnacle taxonomy. The pinnacle roster itself shifts at major patch boundaries (notably 0.5).
 
-**Pinnacle boss life in PoE2 0.5 is engine-derived; do not memorize.** The bundled `pob_calc` engine surfaces the live target HP via the `enemyIsBoss=true` setting. Numbers from PoE1 (Eater of Worlds, Sirus) do **not** transfer; PoE2 has its own pinnacle taxonomy (Arbiter of Ash, currently).
+## PoE2 charms vs flasks
 
-Common wrong answer: cite a specific HP number from memory. Always run `pob_calc(category="offence", calcs={enemyIsBoss=true})` and read the engine output.
+**What gets misremembered**: that PoE2 "renamed flasks to charms". They are parallel systems, not a rename.
 
-Source: bundled engine; cross-check with `https://www.poe2wiki.net/wiki/Boss` for the canonical list.
+**Always fetch**: `wiki_parse https://www.poe2wiki.net/wiki/Charm` and `wiki_parse https://www.poe2wiki.net/wiki/Flask`. State the distinction explicitly. **Never invent specific charm names** like `Ngamahu's Chosen`, `For Utopia`, `Apex Mode` — they're fabrications.
 
-## PoE2 — charms vs flasks
+## Marble Amulet — implicit range and explicit mod pool
 
-**Charms in PoE2 are NOT renamed flasks.** Flasks in PoE2 are exclusively for instant life / mana recovery (no utility flasks). Charms are slotted on the belt and provide passive effects with on-demand triggers (different cadence, different scaling). Treating them as drop-in flask replacements gives wrong answers about the build's utility uptime.
+**What gets misremembered**: the life-regen implicit range, the chaos-resistance tier weights, the ilvl gates on its mod pool. Multiple audit-flagged recalls.
 
-Common wrong answer: "charms are PoE2 flasks". They are a parallel system, not a rename.
-
-Source: `https://www.poe2wiki.net/wiki/Charm`.
-
-## Marble Amulet — mod pool
-
-**Marble Amulet (PoE1) is the canonical chaos-res + life-regen base.** The amulet rolls life regeneration as an implicit (`+(1.0–1.4)% to maximum Life per second`) and has full access to the standard amulet explicit pool: chaos resistance, elemental resistances, life, attributes, crit multi, etc.
-
-Common wrong answer: invent a specific T1 ilvl-86 spawn weight from memory. Use `repoe_lookup` to get the actual mod tier table; never quote a tier weight without the engine.
-
-Source: `https://www.poewiki.net/wiki/Marble_Amulet`.
+**Always fetch**: `wiki_parse https://www.poewiki.net/wiki/Marble_Amulet` for the implicit, `repoe_lookup category=base_items name="Marble Amulet"` for the affix mod pool with tier weights and ilvl gates. **Do NOT cite tier ranges, ilvl numbers, or weights from memory**.
 
 ## Tabula Rasa — drop level
 
-**Tabula Rasa drop level is 1.** It is the single notable exception to "drop level == base level" for many uniques and is intentional so brand-new characters can chase one.
+**What gets misremembered**: the drop level (it is an exception to "drop level == base level" for many uniques).
 
-Common wrong answer: drop level 3, drop level 8, "the wiki says one and the trade site says another" (the trade site's level filter shows level requirement, not drop level). Never quote a drop level from memory without `wiki_parse`.
+**Always fetch**: `wiki_parse https://www.poewiki.net/wiki/Tabula_Rasa`. Don't quote a drop-level number from memory.
 
-Source: `https://www.poewiki.net/wiki/Tabula_Rasa`.
+## Mob Mentality — cluster jewel notable scope
 
-## Mob Mentality — cluster jewel notable
+**What gets misremembered**: what stat the notable grants and what cluster-jewel enchantment family it rolls under. The 2026-05-12 audit caught a "minion damage" misclassification — the actual notable is in the warcry/exerted-attack family.
 
-**Mob Mentality is a Cluster Jewel notable that grants Minion Damage scaling.** It rolls on cluster jewels with the `Minion Damage` enchantment, not on amulets or rings.
+**Always fetch**: `wiki_parse https://www.poewiki.net/wiki/Mob_Mentality`. State its actual effect from the wiki page.
 
-Common wrong answer: place it on the wrong slot (amulet / ring). The notable can only be reached via cluster jewel allocation.
+## Synthesised implicit — distinction from base implicit
 
-Source: `https://www.poewiki.net/wiki/Mob_Mentality`.
+**What gets misremembered**: whether a Synthesised implicit and a regular implicit are the same row on the item, or distinct.
 
-## Synthesised implicit — distinction
-
-**A synthesised implicit is a special implicit added by the Synthesis crafting process.** It is mechanically distinct from the base implicit of the item and shows in a separate row on the in-game item display. Some Synthesis implicits are unique to that crafting flow (e.g. "Trigger a Socketed Spell when you Skill a Rare or Unique Enemy" only spawns on Synthesised items).
-
-Common confusion: treating a Synthesised item's implicit as identical to a regular implicit. Cortex (the Synthesis pinnacle map) drops items with both regular implicits and Synthesised implicit slots.
-
-Source: `https://www.poewiki.net/wiki/Synthesis_(mechanic)`.
+**Always fetch**: `wiki_parse https://www.poewiki.net/wiki/Synthesis_(mechanic)`. They are distinct — but the agent should still confirm rather than recite.
 
 ## Watcher's Eye — aura roll selection
 
-**Watcher's Eye rolls are entirely random.** You cannot pre-pick which auras roll. The jewel rolls 1–3 mods, each tied to a specific aura that must be active for the mod to apply. You **cannot** target which aura the mod is tied to during crafting.
+**What gets misremembered**: whether you can target which aura the rolls tie to during crafting. (You can't — rolls are random.)
 
-Common wrong answer: "I can pick Determination + Discipline rolls". The aura tie is part of the random roll; if your two-aura roll doesn't include your active auras, the jewel is dead weight in your build.
+**Always fetch**: `wiki_parse https://www.poewiki.net/wiki/Watcher%27s_Eye` for the current roll mechanics + the per-aura mod pool.
 
-Source: `https://www.poewiki.net/wiki/Watcher%27s_Eye`.
+## Crafting bench — cap on bench-crafted modifiers
 
-## Bench-crafted suffixes — limit
+**What gets misremembered**: how many bench-crafted mods can sit on one item (1 by default, more under multimod / Veiled / Beastcraft routes).
 
-**Maximum one bench-crafted suffix on a single item.** The crafting bench enforces this hard cap regardless of the prefix slot count.
+**Always fetch**: `wiki_parse https://www.poewiki.net/wiki/Crafting_bench`. State the current cap + the exceptions (multimod, etc.) from the wiki.
 
-Common wrong answer: "I can stack two bench suffixes". The bench refuses the second craft on the same affix axis; the only way to get two crafted suffixes is to abandon the limit via Veiled / Beastcraft / Aisling-imprint flows, none of which are simple bench crafts.
+## Fracturing Orb — required mod count and target selection
 
-Source: `https://www.poewiki.net/wiki/Crafting_bench`.
+**What gets misremembered**: how many mods the item must have, and whether the user picks the fractured mod.
 
-## Fracturing Orb — outcome
+**Always fetch**: `wiki_parse https://www.poewiki.net/wiki/Fracturing_Orb`.
 
-**A Fracturing Orb fractures one random mod on a rare item with at least four mods.** You do not choose which mod gets fractured; the result is uniform random across the item's existing mods.
+## PoE2 Pantheon — does not exist
 
-Common wrong answer: "I can pick which mod fractures". You cannot. The orb is high-variance; pre-removing unwanted mods (annul, Eldritch annul) before fracturing is the standard mitigation.
+**What gets hallucinated**: that PoE2 ships a Pantheon system. **It does not** (as of the file's last audit). Pantheon is PoE1-only.
 
-Source: `https://www.poewiki.net/wiki/Fracturing_Orb`.
+**Always**: confirm via `wiki_parse https://www.poe2wiki.net/wiki/<topic>` before naming a "PoE2 pantheon power". Specifically, **never invent** fake pantheon upgrades like `Sebbert, Crescent's Point`.
 
-## PoE2 cluster jewels — they don't exist
+## Heist — contract / blueprint / grand-heist tiers
 
-**Cluster jewels (Large / Medium / Small) are PoE1-only.** PoE2 has its own jewel system (Time-Lost Jewels and others) but **no cluster jewel hierarchy** and no cluster-jewel-style notables.
+**What gets hallucinated**: named "modes" like `Apex Mode` or `Nadir Mode`. These do NOT exist.
 
-Common wrong answer: attributing PoE1 unique cluster jewels to PoE2. The names `Voices`, `Megalomaniac`, `Luminous Trove`, `Heroic Tragedy`, `Undying Hate`, `Flesh Crucible`, `From Nothing` are **PoE1 cluster jewel uniques**. Citing them as PoE2 jewels is hallucination. Do NOT.
+**Always fetch**: `wiki_parse https://www.poewiki.net/wiki/Heist`. Heist progresses through contracts → blueprints → grand heists; there are no named difficulty tiers.
 
-Sources: `https://www.poewiki.net/wiki/Cluster_Jewel` (PoE1) — confirm PoE2 jewel system via `https://www.poe2wiki.net/wiki/Jewel`.
+## Maven's Forgotten invitation — reward shape
 
-## PoE2 pantheon — does not exist
+**What gets misremembered**: that Cortex drops from a Maven Forgotten invitation. It does NOT — Cortex is a Synthesis pinnacle map.
 
-**The Pantheon system is PoE1-only.** PoE2 does not currently ship Soul-of-Solaris-style passives. Naming any pantheon (`Solaris`, `Lunaris`, `Brine King`, `Arakaali`, `Tukohama`, `Yugul`, `Abberath`, `Shakari`, `Ralakesh`, `Garukhan`, `Ryslatha`, `Gruthkul`) as a PoE2 mechanic is hallucination.
+**Always fetch**: `wiki_parse https://www.poewiki.net/wiki/Maven` for invitation rewards; `wiki_parse https://www.poewiki.net/wiki/Cortex_Map` (or current name) for the Synthesis side.
 
-Common wrong answer: inventing a fake pantheon upgrade like `Sebbert, Crescent's Point` for PoE2. Pantheon upgrades only exist in PoE1, only have official GGG-named NPC sources, and are documented on the wiki — never invent.
+## Ritual deferral — fee / hold-count / formula
 
-Sources: `https://www.poewiki.net/wiki/Pantheon` (PoE1 system).
+**What gets misremembered**: the deferral fee percent, the maximum hold count, the increment formula. All version-pinned and easy to misremember.
 
-## PoE2 charms — separate system from PoE1 utility flasks
+**Always fetch**: `wiki_parse https://www.poewiki.net/wiki/Ritual_altar`. Do NOT assert a specific defer fee (10%, 5%, 15%) or hold count (50 items) without a wiki fetch confirming the current value.
 
-**Charms in PoE2 are NOT renamed flasks.** They are a distinct slot on the belt, recharge differently, and have their own pool of effects. Do not call them "renamed flasks" or treat the mechanics as identical.
+## Mind Over Matter — damage diversion percent
 
-Common wrong answer: inventing PoE2 charm names like `Ngamahu's Chosen`, `For Utopia`, `Apex Mode`. Specific charm names should always be confirmed via `https://www.poe2wiki.net/wiki/Charm` or the relevant patch notes — never recalled from training data.
+**What gets misremembered**: the percent of damage taken from mana before life. The audit caught a stale "30%" recall (the wiki value was bumped in a patch since the original reference was written).
 
-Source: `https://www.poe2wiki.net/wiki/Charm`.
+**Always fetch**: `wiki_parse https://www.poewiki.net/wiki/Mind_Over_Matter`.
 
-## Heist — contract grades exist, "modes" do not
+## Trinity Support — elemental penetration value
 
-**Heist contracts have job tags (Lockpicking, Perception, etc.) and area levels, but there are no named "modes" like `Apex Mode` or `Nadir Mode`.** Those names are fabrications.
+**What gets misremembered**: the penetration % per stack and the cap when all three resonances are at the activation threshold. The audit caught a "50%" recall that was off by a large factor vs the current wiki.
 
-Common wrong answer: "the higher tier is Apex Mode and the lower is Nadir Mode". Wrong. Heist progression is: contracts (single rooms) → blueprints (full multi-room mansions) → grand heists. The wiki documents the actual mechanics; never invent named modes.
+**Always fetch**: `wiki_parse https://www.poewiki.net/wiki/Trinity_Support`.
 
-Source: `https://www.poewiki.net/wiki/Heist`.
+## Flame Dash — charge count and cooldown
 
-## Maven's Forgotten — invitation reward shape
+**What gets misremembered**: how many charges Flame Dash stores and how long the per-charge cooldown is. The audit caught a "3 charges / 10s" recall that the wiki contradicts.
 
-**The Forgotten Maven invitation drops uber pinnacle invitation set fragments and limited unique items, NOT Cortex maps.** Cortex is a unique map associated with the Synthesis boss (Cortex itself, in the Synthesis areas), not a Maven Forgotten reward.
+**Always fetch**: `wiki_parse https://www.poewiki.net/wiki/Flame_Dash`.
 
-Common wrong answer: "Cortex maps drop from Maven Forgotten". The Forgotten Maven invitation rewards the next tier of the pinnacle progression and league-specific uniques; it does not drop Cortex. Confirm via `https://www.poewiki.net/wiki/Maven`.
+## Bone Helmet — minion-damage implicit magnitude
 
-Source: `https://www.poewiki.net/wiki/Maven`.
+**What gets misremembered**: the implicit's percent value. The audit caught a "+30%" recall that had been stale since a patch nerf years prior.
 
-## Ritual deferral — exact mechanics need a wiki fetch
+**Always fetch**: `wiki_parse https://www.poewiki.net/wiki/Bone_Helmet` or `repoe_lookup category=base_items name="Bone Helmet"`.
 
-**The deferral cost formula and limits change with patches and are easy to misremember.** Specifically: do NOT assert a specific defer fee (10%, 5%, 15%) or hold count (50 items) without a wiki fetch confirming the current value. The mechanic exists, but the precise numbers are version-pinned.
+## Spine Bow — base attack speed
 
-Common wrong answer: "deferring costs 10% + 5% fee" with no source. Even if you recall a number, fetch `https://www.poewiki.net/wiki/Ritual_altar` first and quote it.
+**What gets misremembered**: the base APS value. The audit caught a "1.50" recall that had been stale since a patch change.
 
-Source: `https://www.poewiki.net/wiki/Ritual_altar` (current PoE1) and `https://www.poewiki.net/wiki/Ritual_league` for historical mechanics.
+**Always fetch**: `wiki_parse https://www.poewiki.net/wiki/Spine_Bow` or `repoe_lookup`.
 
-## Marble Amulet — implicit + mod pool
+## PoE2 Talismans — item class
 
-**Marble Amulet has a flat life-regen implicit (PoE1).** The exact value (e.g. `(1.2-1.6)% of Life per second`) is patch-pinned and must be confirmed via `wiki_parse`. Do NOT cite tier ranges (`(64.1-96) Life per second`, `+(31-35)% to Chaos Resistance`, ilvl `74/68/81/65/56`) from memory — these are precisely the numbers Haiku-class models hallucinate. Always go to the wiki.
+**What gets misremembered**: that PoE2 Talismans are amulet-slot charge items (like PoE1 Talisman league items). They are NOT — in PoE2, Talismans are a two-handed melee weapon class used by shapeshift archetypes.
 
-Common wrong answer: stating tier ranges with confidence and no source. Even if the numbers feel right, they're not yours to invent — fetch them.
+**Always fetch**: `wiki_parse https://www.poe2wiki.net/wiki/Talisman`. State the actual class + slot + role from the wiki, never from memory.
 
-Source: `https://www.poewiki.net/wiki/Marble_Amulet` and the related affix wiki pages.
+## PoE2 Weapon Swap timing
+
+**What gets misremembered**: that PoE2 weapon-set swap takes ~250 ms. It was animated in early PoE2, then made instant in 0.3. The state may shift again.
+
+**Always fetch**: `wiki_parse https://www.poe2wiki.net/wiki/Weapon_set`. State whatever the current swap window is from the wiki.
+
+## Onyx Amulet — implicit type
+
+**What gets misremembered**: that Onyx Amulet grants "Strength + Intelligence". It actually grants all attributes. The audit flagged this as a textbook recall error.
+
+**Always fetch**: `wiki_parse https://www.poewiki.net/wiki/Onyx_Amulet`. Confirm the implicit before describing what the base does.
+
+## Imbued Wand — implicit type
+
+**What gets misremembered**: that Imbued Wand carries a "spell critical strike chance" implicit. The actual implicit is spell damage.
+
+**Always fetch**: `wiki_parse https://www.poewiki.net/wiki/Imbued_Wand`.
+
+## Stellar Amulet — game attribution
+
+**What gets misremembered**: that Stellar Amulet is a PoE1 base. It is PoE2-only. PoE1's all-attribute amulet is Onyx (see above).
+
+**Always fetch**: `wiki_parse https://www.poe2wiki.net/wiki/Stellar_Amulet` for the PoE2 base. Do not introduce it into a PoE1 context.
+
+---
+
+## How the agent should treat this file
+
+1. **If the user's question touches an entity listed above**, the very next tool call must be the cited `wiki_parse` / `repoe_lookup` / `pob_calc`. Quote no number, percent, charge count, or magnitude until that fetch completes.
+2. **If the user names an entity not in this list** but the answer needs a magnitude, fetch anyway. The file is illustrative, not exhaustive — every numeric claim on a PoE mechanic deserves a tool call.
+3. **If the wiki page contradicts a long-held assumption** in your prose, trust the wiki and update the answer. The whole point of this sprint is that the in-context values are by design unreliable.
+
+## Cross-references
+
+- `01_source_policy.md` — tiered source list and re-search algorithm.
+- `26_validation_and_self_correction.md` — extended validation toolkit (engine-trust, staleness, patch-version-awareness, disambiguation, self-consistency).
+- `14_validation_and_failure_modes.md` — failure-mode taxonomy with recovery procedures.
+- `13_retrieval_playbooks.md` — retrieval recipes per question type.

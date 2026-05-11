@@ -82,8 +82,8 @@ Whenever a user uses an ambiguous term that diverges between the two games (Chao
 
 | Term | Meaning |
 |---|---|
-| **Six-link (6L)** | Body armour or two-handed weapon with 6 sockets all linked. The leveling/endgame holy grail. |
-| **Tabula Rasa** | Unique chest with a 6-link and zero other stats — common leveling shortcut. |
+| **Six-link (6L)** | The historical "fully-linked chest or 2H" goal in PoE1 endgame. Exact socket / link counts evolve per patch — fetch `wiki_parse https://www.poewiki.net/wiki/Item_socket` for current rules. |
+| **Tabula Rasa** | Unique chest providing a fully-linked socket setup with no other stats — the canonical leveling shortcut. Drop level and exact socket layout: fetch `wiki_parse https://www.poewiki.net/wiki/Tabula_Rasa`. |
 | **Lord's Labyrinth** | Trial used to grant Ascendancy points. Multiple difficulties per playthrough. |
 | **Hideout** | Personal instance for crafting bench, master interactions, social hub. |
 | **Pantheon** | Set of god powers captured via map bosses, swappable in town. |
@@ -105,13 +105,13 @@ Whenever a user uses an ambiguous term that diverges between the two games (Chao
 
 ### Common keystone abbreviations
 
-| Abbreviation | Keystone |
+| Abbreviation | Keystone / mechanic |
 |---|---|
-| `CI` | Chaos Inoculation |
-| `LL` | Low Life |
-| `MoM` | Mind over Matter |
-| `EB` | Eldritch Battery |
-| `RF` | Righteous Fire |
+| `CI` | Chaos Inoculation (keystone) |
+| `MoM` | Mind over Matter (keystone) |
+| `EB` | Eldritch Battery (keystone) |
+| `LL` | "Low Life" — a CHARACTER STATE (not a keystone), typically reached via Pain Attunement keystone or Shavronne's Wrappings unique to weaponise it. |
+| `RF` | "Righteous Fire" — a SKILL GEM (not a keystone). Build archetype around the persistent burn aura. |
 
 ### Build/skill abbreviations
 
@@ -135,7 +135,7 @@ Whenever a user uses an ambiguous term that diverges between the two games (Chao
 | **Uncut Skill Gem** | Raw item used to engrave a skill gem at the desired level. |
 | **Uncut Spirit Gem** | Variant for persistent buff skills. |
 | **Uncut Support Gem** | Variant for support gems. |
-| **Lineage Support Gem** | Endgame tier of support, boss-only drop, max one per skill. |
+| **Lineage Support Gem** | Endgame tier of support, boss-only drop, with a per-skill cap. Current cap: fetch `wiki_parse https://www.poe2wiki.net/wiki/Lineage_Support_Gem`. |
 | **Meta Gem** | Trigger gems (Cast on Crit, Cast on Shock, Cast on Ignite, …). Often reserve Spirit. |
 | **Weapon Set 1 / 2** | Two interchangeable weapon loadouts; skills can be assigned to one set or both. |
 | **Weapon Set Points** | Passive points allocated specifically to one weapon set, enabling parallel sub-builds. |
