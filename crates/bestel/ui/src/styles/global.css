@@ -232,21 +232,40 @@
   40%           { opacity: 1;    transform: scale(1.1); }
 }
 
-/* Runic scrollbar — minimal, stays in mood */
-.runic-scrollbar::-webkit-scrollbar {
+/* Runic scrollbar — minimal, stays in mood
+ *
+ * Applied GLOBALLY to every scrollable element in the app (WebKit/Edge
+ * uses the `::-webkit-scrollbar` pseudo, Firefox uses `scrollbar-width` /
+ * `scrollbar-color` on the element). The `.runic-scrollbar` class is
+ * kept as a no-op alias so existing components that opt-in explicitly
+ * keep working — but new scrollable surfaces (modal overlays, generated
+ * content, third-party widgets) now get the same look without needing
+ * to remember the class. */
+::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
-.runic-scrollbar::-webkit-scrollbar-track {
+::-webkit-scrollbar-track {
   background: transparent;
 }
-.runic-scrollbar::-webkit-scrollbar-thumb {
+::-webkit-scrollbar-thumb {
   background: var(--ink-ghost);
   border-radius: 4px;
 }
-.runic-scrollbar::-webkit-scrollbar-thumb:hover {
+::-webkit-scrollbar-thumb:hover {
   background: var(--ink-faint);
 }
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--ink-ghost) transparent;
+}
+
+/* Legacy alias — the global rules above already cover every scrollable
+ * element. Kept so the 9 existing `.runic-scrollbar` usages don't
+ * become orphan class references mid-refactor. Safe to remove later. */
 .runic-scrollbar {
   scrollbar-width: thin;
   scrollbar-color: var(--ink-ghost) transparent;
