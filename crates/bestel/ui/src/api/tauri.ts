@@ -48,6 +48,22 @@ export const getBuildSheet = (id: string): Promise<BuildSheetDetailDto | null> =
 export const deleteBuildSheet = (id: string): Promise<boolean> =>
   invoke('delete_build_sheet', { id });
 
+/** DTO returned by `get_active_build_sheet_for_ui` — the BuildSheetDetailDto
+ * shape plus `pob_hash_match` so the caller can decide fresh-vs-stale
+ * presentation. */
+export interface ActiveBuildSheetDto extends BuildSheetDetailDto {
+  pob_hash_match: boolean;
+}
+
+/** Frontend-side lookup of the persisted Build Sheet (if any) for the
+ * currently active build. Resolves to null when no build is attached OR
+ * when no sheet exists for the build's fingerprint. Triggered by the
+ * build store on app boot, build attach, and chat switch — the sheet
+ * sidebar card no longer needs the agent to volunteer
+ * `get_active_build_sheet` to discover an existing sheet. */
+export const getActiveBuildSheetForUi = (): Promise<ActiveBuildSheetDto | null> =>
+  invoke('get_active_build_sheet_for_ui');
+
 export const chatStart = (
   prompt: string,
   attachments?: AttachmentDto[],

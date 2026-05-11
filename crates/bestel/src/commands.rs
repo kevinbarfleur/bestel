@@ -917,3 +917,65 @@ pub struct DeleteActiveSheetResult {
     pub fingerprint: String,
 }
 
+/// Frontend-side equivalent of the agent's `get_active_build_sheet` tool:
+/// look up the persisted Build Sheet (if any) for the currently active
+/// build's fingerprint, plus a `pob_hash_match` flag so the sidebar card
+/// can render fresh vs stale without firing an LLM turn. Used by the
+/// build store on app boot, build attach, and chat switch to rehydrate
+/// the sheet sidebar card from local DB instead of waiting for the
+/// agent to volunteer the tool call.
+#[tauri::command]
+pub async fn get_active_build_sheet_for_ui(
+    state: State<'_, AppState>,
+) -> Result<Option<ActiveBuildSheetDto>, String> {
+    let Some(build) = state.build_ctx.get() else {
+        return Ok(None);
+    };
+    let Some(fingerprint) = bestel_core::sheets::compute_fingerprint_from_pob(&build) else {
+        return Ok(None);
+    };
+    let db = bestel_core::persistence::global_db()
+        .ok_or_else(|| "database is not initialized".to_string())?;
+    let Some(row) = bestel_core::sheets::store::find_by_fingerprint(&db, &fingerprint)
+        .map_err(|e| format!("find_by_fingerprint: {e}"))?
+    else {
+        return Ok(None);
+    };
+    let canonical = serde_json::to_string(&build).unwrap_or_default();
+    let current_hash = bestel_core::sheets::compute_pob_hash(&canonical);
+    let pob_hash_match = current_hash == row.pob_hash;
+    let parsed = row
+        .parse_payload()
+        .map_err(|e| format!("parse sheet payload: {e}"))?;
+    let payload = serde_json::to_value(&parsed)
+        .map_err(|e| format!("serialize sheet payload: {e}"))?;
+    Ok(Some(ActiveBuildSheetDto {
+        id: row.id,
+        fingerprint: row.fingerprint,
+        pob_hash: row.pob_hash,
+        name: row.name,
+        schema_version: row.schema_version,
+        authored_at: row.authored_at,
+        updated_at: row.updated_at,
+        authored_in_chat: row.authored_in_chat,
+        validated: row.validated,
+        payload,
+        pob_hash_match,
+    }))
+}
+
+#[derive(serde::Serialize)]
+pub struct ActiveBuildSheetDto {
+    pub id: String,
+    pub fingerprint: String,
+    pub pob_hash: String,
+    pub name: String,
+    pub schema_version: i64,
+    pub authored_at: String,
+    pub updated_at: String,
+    pub authored_in_chat: Option<String>,
+    pub validated: bool,
+    pub payload: serde_json::Value,
+    pub pob_hash_match: bool,
+}
+
