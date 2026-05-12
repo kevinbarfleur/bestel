@@ -20,16 +20,38 @@ import BSSheetFullModal from '../components/build-sheet/BSSheetFullModal.vue';
 import ChatStream from '../components/chat/ChatStream.vue';
 import ChatComposer from '../components/chat/ChatComposer.vue';
 import PanelView from '../components/panel/PanelView.vue';
+import DriftDrawer from '../components/sheet/DriftDrawer.vue';
+import { useSheetStore } from '../stores/sheet';
 
 const chat = useChatStore();
 const chatHistory = useChatHistoryStore();
 const buildStore = useBuildStore();
 const settings = useSettingsStore();
+const sheetStore = useSheetStore();
 const ui = useUiStore();
 const router = useRouter();
 
 const { current } = storeToRefs(buildStore);
-const { panelArtifact } = storeToRefs(ui);
+const { panelArtifact, driftDrawerAxis } = storeToRefs(ui);
+
+const driftDrawerAuthoredAt = computed(() => {
+  const s = sheetStore.activeSheet;
+  if (!s) return '';
+  // Best-effort YYYY-MM-DD slice; falls back to the full ISO string.
+  return s.authoredAt.slice(0, 10);
+});
+
+const REAUTHOR_MESSAGE =
+  'Please refresh the build sheet — re-run the interview from scratch so I can update the signatures that drifted since the previous authoring.';
+
+async function onDrawerReauthor() {
+  ui.closeDriftDrawer();
+  await chat.send(REAUTHOR_MESSAGE);
+}
+
+function onDrawerKeep() {
+  ui.closeDriftDrawer();
+}
 
 const sidebarCollapsed = computed(() => current.value === null);
 const panelOpen = computed(() => panelArtifact.value !== null);
@@ -106,10 +128,41 @@ onMounted(async () => {
     </div>
 
     <BSSheetFullModal />
+
+    <!-- Sprint v3 — slide-from-right drift drawer. Mounts globally so a
+         chip click anywhere in the sidebar / sheet detail can open it. -->
+    <Transition name="drift-drawer">
+      <div v-if="driftDrawerAxis" class="chat-view__drift-drawer">
+        <DriftDrawer
+          :kind="driftDrawerAxis"
+          :authored-at="driftDrawerAuthoredAt"
+          @close="ui.closeDriftDrawer()"
+          @reauthor="onDrawerReauthor"
+          @keep="onDrawerKeep"
+        />
+      </div>
+    </Transition>
   </div>
 </template>
 
 <style scoped>
+.chat-view__drift-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 90;
+  display: flex;
+}
+.drift-drawer-enter-active,
+.drift-drawer-leave-active {
+  transition: transform 0.22s ease-out;
+}
+.drift-drawer-enter-from,
+.drift-drawer-leave-to {
+  transform: translateX(100%);
+}
+
 .chat-view {
   --sidebar-w: 360px;
   --panel-w: 0px;

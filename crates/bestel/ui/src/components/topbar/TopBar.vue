@@ -3,16 +3,19 @@ import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { storeToRefs } from 'pinia';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 
-import { windowClose, windowMinimize, windowToggleMaximize } from '../../api/tauri';
+import { registryGetPobPath, windowClose, windowMinimize, windowToggleMaximize } from '../../api/tauri';
 import { useBuildStore } from '../../stores/build';
 import { useChatHistoryStore } from '../../stores/chatHistory';
+import { useRegistryStore } from '../../stores/registry';
 import { useSettingsStore } from '../../stores/settings';
 import { useUiStore } from '../../stores/ui';
 import RunicIcon from '../runic/RunicIcon.vue';
+import ChatBuildPicker from '../registry/ChatBuildPicker.vue';
 import bestelAvatar from '../../assets/bestel-avatar.png';
 
 const buildStore = useBuildStore();
 const chatHistory = useChatHistoryStore();
+const registry = useRegistryStore();
 const settings = useSettingsStore();
 const ui = useUiStore();
 
@@ -23,6 +26,7 @@ const isMaximized = ref(false);
 let unlisten: (() => void) | null = null;
 
 onMounted(async () => {
+  void registry.start();
   const w = getCurrentWindow();
   isMaximized.value = await w.isMaximized();
   unlisten = await w.onResized(async () => {
@@ -53,6 +57,42 @@ const buildSub = computed(() => {
   return parts.length ? parts.join(' · ') : null;
 });
 
+const activeBuildDisplay = computed(() => {
+  if (!currentBuild.value) return null;
+  const skill = currentBuild.value.main_skill;
+  if (skill) return skill;
+  return buildName.value;
+});
+
+const activeRegistryId = computed<number | null>(() => {
+  const path = currentBuild.value?.source_file;
+  if (!path) return null;
+  const match = registry.entries.find((e) => e.pob_path === path);
+  return match?.id ?? null;
+});
+
+async function onPickRegistryEntry(id: number) {
+  try {
+    const path = await registryGetPobPath(id);
+    if (!path) return;
+    await buildStore.setActive(path);
+    void registry.touch(id);
+  } catch {
+    // The setActive failure is already surfaced via the build watcher;
+    // swallowing here avoids a noisy double-toast.
+  }
+}
+
+function onAddAdHoc() {
+  // Reuses the existing rich BuildPicker modal (watcher folders, file
+  // mtime, header) for one-off attachments that don't enter the registry.
+  ui.openBuild();
+}
+
+function onManageRegistry() {
+  ui.openSettings();
+}
+
 const chatLabel = computed(() => {
   if (!activeChatId.value) return 'New chat';
   const c = chatHistory.findActive();
@@ -78,22 +118,16 @@ const chatLabel = computed(() => {
 
     <span class="topbar__hairline" aria-hidden="true" />
 
-    <!-- BUILD pill — amber bordered, opens BuildPicker -->
-    <button
-      type="button"
-      class="topbar__pill topbar__pill--amber"
-      :class="{ 'topbar__pill--empty': !currentBuild }"
-      :title="currentBuild?.file_name ?? 'Load build'"
-      @click="ui.openBuild()"
-    >
-      <span class="topbar__pill-label">build</span>
-      <template v-if="buildName">
-        <span class="topbar__pill-value">{{ buildName }}</span>
-        <span v-if="buildSub" class="topbar__pill-sub">· {{ buildSub }}</span>
-      </template>
-      <span v-else class="topbar__pill-value topbar__pill-value--empty">Load build</span>
-      <span class="topbar__pill-caret">▾</span>
-    </button>
+    <!-- Sprint v3 — registry-aware build picker. Drops the legacy modal
+         trigger in favor of a dropdown that lists registered builds + an
+         escape hatch into the rich BuildPicker modal for ad-hoc PoBs. -->
+    <ChatBuildPicker
+      :active-registry-id="activeRegistryId"
+      :active-build-name="activeBuildDisplay"
+      @pick="onPickRegistryEntry"
+      @add-adhoc="onAddAdHoc"
+      @manage="onManageRegistry"
+    />
 
     <!-- Drag region — window move -->
     <div class="topbar__drag" data-tauri-drag-region />

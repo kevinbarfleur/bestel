@@ -20,6 +20,8 @@ import { useSheetStore } from '../../stores/sheet';
 import ToolCallBadge from './ToolCallBadge.vue';
 import VerifyClaimsCard from './VerifyClaimsCard.vue';
 import ModeChip from './ModeChip.vue';
+import SuggestionCard from './SuggestionCard.vue';
+import { suggestionDismiss, suggestionCheck } from '../../api/tauri';
 import ArtThinking from './artifacts/ArtThinking.vue';
 import ArtPoBImport from './artifacts/ArtPoBImport.vue';
 import ArtWikiPage from './artifacts/ArtWikiPage.vue';
@@ -130,6 +132,95 @@ const handleClick = (e: MouseEvent) => {
 
 const isAssistant = computed(() => props.message.role === 'assistant');
 const isStreaming = computed(() => props.message.status === 'streaming');
+
+// ─── Sprint v3 Path A — soft suggestion card ──────────────────────────
+// Renders after a brief-mechanic assistant turn that finished successfully,
+// when (a) a build is attached, (b) no sheet exists yet for it, (c) the
+// user hasn't dismissed the card in the last 7 days. Three actions:
+// create → send a chat message that triggers Path B; later → hide
+// locally for this session; dismiss → persist 7d cooldown server-side.
+const suggestionLaterClosed = ref(false);
+const suggestionDismissedRemote = ref<boolean | null>(null);
+
+watch(
+  () => [
+    isAssistant.value,
+    isStreaming.value,
+    props.message.status,
+    props.message.mode,
+    buildStore.current?.source_file ?? null,
+  ],
+  async () => {
+    suggestionDismissedRemote.value = null;
+    if (
+      !isAssistant.value ||
+      isStreaming.value ||
+      props.message.status !== 'complete' ||
+      props.message.mode !== 'brief-mechanic'
+    ) {
+      return;
+    }
+    const key = buildStore.current?.source_file;
+    if (!key) return;
+    try {
+      suggestionDismissedRemote.value = await suggestionCheck(key);
+    } catch {
+      suggestionDismissedRemote.value = false;
+    }
+  },
+  { immediate: true },
+);
+
+const showSuggestionCard = computed(() => {
+  if (!isAssistant.value) return false;
+  if (isStreaming.value) return false;
+  if (props.message.status !== 'complete') return false;
+  if (props.message.mode !== 'brief-mechanic') return false;
+  if (!buildStore.current) return false;
+  if (sheet.activeSheet) return false;
+  if (suggestionLaterClosed.value) return false;
+  if (suggestionDismissedRemote.value === true) return false;
+  return true;
+});
+
+const suggestionBuildName = computed(() => {
+  const b = buildStore.current;
+  if (!b) return 'this build';
+  return b.main_skill || b.ascendancy || b.class || 'this build';
+});
+
+async function onSuggestionCreate() {
+  suggestionLaterClosed.value = true;
+  await chat.send(
+    "I'd like a deeper audit — please open the build sheet interview so we can capture the build's intent and defining items.",
+  );
+}
+
+function onSuggestionLater() {
+  suggestionLaterClosed.value = true;
+}
+
+async function onSkipInterview() {
+  // Sends the canonical skip-the-sheet phrase. The Rust TurnClassifier's
+  // SKIP_CUES list contains "skip the sheet" verbatim, so the next turn
+  // is classified as LegacyDiagnostic and the interview branch is
+  // bypassed.
+  await chat.send('Skip the sheet — please answer with the legacy diagnostic instead.');
+}
+
+async function onSuggestionDismiss() {
+  suggestionLaterClosed.value = true;
+  const key = buildStore.current?.source_file;
+  if (!key) return;
+  try {
+    // The dismissal table treats the key as opaque text — source_file is
+    // stable per-build and avoids round-tripping to compute the hash.
+    await suggestionDismiss(key, 7);
+    suggestionDismissedRemote.value = true;
+  } catch {
+    // Best-effort — local hide already happened.
+  }
+}
 
 const userText = computed(() => {
   if (isAssistant.value) return '';
@@ -473,8 +564,19 @@ const turns = computed<Turn[]>(() => {
     <hr class="sk-hr turn-divider" />
     <!-- Sprint v3 — deterministic mode chip above non-default assistant
          turns. Rendered once per assistant message, anchored above the
-         first turn so it reads like a banner over the whole reply. -->
-    <ModeChip v-if="message.mode" :mode="message.mode" class="turn__mode-chip" />
+         first turn so it reads like a banner over the whole reply.
+         Path B (`deep-audit`) gets an action slot with a "skip interview"
+         escape hatch — clicking it sends a chat message that flips the
+         NEXT turn's classification to `legacy-diagnostic`. -->
+    <ModeChip v-if="message.mode" :mode="message.mode" class="turn__mode-chip">
+      <template v-if="message.mode === 'deep-audit'" #action>
+        <button
+          type="button"
+          class="turn__mode-skip"
+          @click="onSkipInterview"
+        >skip interview</button>
+      </template>
+    </ModeChip>
     <article
       v-for="(t, i) in turns"
       :key="t.key"
@@ -602,6 +704,17 @@ const turns = computed<Turn[]>(() => {
       {{ message.errorMessage }}
     </p>
 
+    <!-- Sprint v3 Path A soft suggestion — encourages the user to author a
+         sheet for future deep audits without forcing the interview now. -->
+    <SuggestionCard
+      v-if="showSuggestionCard"
+      :build-name="suggestionBuildName"
+      class="turn__suggestion"
+      @create="onSuggestionCreate"
+      @later="onSuggestionLater"
+      @dismiss="onSuggestionDismiss"
+    />
+
     <p v-if="usageLine" class="turn-usage">
       {{ usageLine }}
     </p>
@@ -609,6 +722,30 @@ const turns = computed<Turn[]>(() => {
 </template>
 
 <style scoped>
+/* Sprint v3 Path B — skip-interview escape hatch sitting next to the
+   ModeChip. Visual style mirrors the design's secondary outlined pill. */
+.turn__mode-skip {
+  background: transparent;
+  border: 1px solid var(--ink-faint);
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-family: var(--hand);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+.turn__mode-skip:hover {
+  background: var(--paper-shade);
+  color: var(--ink);
+}
+.turn__mode-chip {
+  margin: 0 0 8px 72px;
+}
+.turn__suggestion {
+  margin: 12px 0 0 72px;
+}
+
 /* Turn — gutter (72px label) + 14px gap + body flex 1.
  * Baseline alignment so the gutter label sits on the same baseline as the
  * first body line (avoids the TOOL/web misalignment seen in screenshots). */

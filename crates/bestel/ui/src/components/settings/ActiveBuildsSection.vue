@@ -2,6 +2,10 @@
 import { computed, ref, onMounted } from 'vue';
 import { useRegistryStore } from '../../stores/registry';
 import { useBuildStore } from '../../stores/build';
+import { useUiStore } from '../../stores/ui';
+import { useChatHistoryStore } from '../../stores/chatHistory';
+import { useToastsStore } from '../../stores/toasts';
+import { registryPreview } from '../../api/tauri';
 import RegistryRow from '../registry/RegistryRow.vue';
 import AddBuildModal from '../registry/AddBuildModal.vue';
 import RunicButton from '../runic/RunicButton.vue';
@@ -10,6 +14,9 @@ import type { RegistryEntryDto } from '../../api/types';
 
 const registry = useRegistryStore();
 const builds = useBuildStore();
+const ui = useUiStore();
+const chatHistory = useChatHistoryStore();
+const toasts = useToastsStore();
 const compact = ref(false);
 const addingOpen = ref(false);
 const addPreview = ref<RegistryEntryDto | null>(null);
@@ -24,10 +31,11 @@ onMounted(() => {
 const entries = computed(() => registry.entries);
 const hasEntries = computed(() => entries.value.length > 0);
 
-/** Add a build by path. For Sprint v3 v1 the path is sourced two ways:
- *  - if the user already has an active PoB attached, fall back to that path
- *  - else read from the freeform `pathInput` text field in the modal
- *  A native file dialog plugin is wired up in a follow-up sprint. */
+/** Resolve a PoB path from the freeform text field or from the active
+ *  build, then preview-parse it via `registry_preview` (no persistence).
+ *  Persistence happens in `commitAdd` only — clicking Cancel discards the
+ *  preview cleanly. A native file dialog plugin is wired up in a follow-up
+ *  sprint; for now the user pastes a path or attaches via the BuildPicker. */
 async function pickFile() {
   addError.value = null;
   const path = pathInput.value.trim() || builds.current?.source_file || '';
@@ -37,8 +45,7 @@ async function pickFile() {
   }
   try {
     addBusy.value = true;
-    const entry = await registry.add(path);
-    addPreview.value = entry;
+    addPreview.value = await registryPreview(path);
   } catch (e: unknown) {
     addError.value = e instanceof Error ? e.message : String(e);
   } finally {
@@ -58,12 +65,97 @@ function closeAdd() {
   addError.value = null;
 }
 
-function commitAdd(_openInChat: boolean) {
-  // The entry is already persisted via the registry.add() call inside
-  // pickFile — the modal only confirms the user wants to keep it.
-  // `_openInChat` is plumbed for a future Sprint 6 hook that attaches
-  // the build to the current chat right after save; deferred for now.
-  closeAdd();
+async function commitAdd(openInChat: boolean) {
+  const preview = addPreview.value;
+  if (!preview) {
+    closeAdd();
+    return;
+  }
+  try {
+    addBusy.value = true;
+    // Persist for real now — the preview only ran the parser, never wrote.
+    const saved = await registry.add(preview.pob_path);
+    closeAdd();
+    if (openInChat) {
+      chatHistory.startNew();
+      await builds.setActive(saved.pob_path);
+      void registry.touch(saved.id);
+      ui.close();
+    }
+  } catch (e) {
+    addError.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    addBusy.value = false;
+  }
+}
+
+async function onOpenEntry(entry: RegistryEntryDto) {
+  // RegistryRow's @open action: start a fresh chat and attach this
+  // build to it. The user lands back on the chat view ready to ask.
+  try {
+    chatHistory.startNew();
+    await builds.setActive(entry.pob_path);
+    void registry.touch(entry.id);
+    ui.close();
+  } catch (e) {
+    toasts.push({
+      variant: 'error',
+      title: 'Could not open chat with this build',
+      body: e instanceof Error ? e.message : String(e),
+    });
+  }
+}
+
+async function onMenuEntry(entry: RegistryEntryDto) {
+  // Minimal context menu — confirm + remove. A richer menu (refresh,
+  // rename) can land later via a popover; the destructive action is the
+  // one that needs explicit confirmation.
+  const ok = window.confirm(
+    `Remove "${entry.display_name}" from your Active Builds registry?\n\nThe PoB file at ${entry.pob_path} is untouched. Any linked Build Sheet stays in your library.`,
+  );
+  if (!ok) return;
+  try {
+    await registry.remove(entry.id);
+  } catch (e) {
+    toasts.push({
+      variant: 'error',
+      title: 'Could not remove build',
+      body: e instanceof Error ? e.message : String(e),
+    });
+  }
+}
+
+async function onAuthorSheet(entry: RegistryEntryDto) {
+  // RegistryRow's @author-sheet action (rendered when linked_sheet_id is
+  // null): open a new chat with the build attached, then send the
+  // canonical "create build sheet" prompt so the agent enters Path B.
+  try {
+    chatHistory.startNew();
+    await builds.setActive(entry.pob_path);
+    void registry.touch(entry.id);
+    ui.close();
+    // The send below races with the chat view mounting — chat.send is
+    // safe to call any time, the message queues correctly.
+    const { useChatStore } = await import('../../stores/chat');
+    const chat = useChatStore();
+    await chat.send(
+      "I'd like a full audit — please open the build sheet interview so we can capture this character's intent and defining items.",
+    );
+  } catch (e) {
+    toasts.push({
+      variant: 'error',
+      title: 'Could not start sheet authoring',
+      body: e instanceof Error ? e.message : String(e),
+    });
+  }
+}
+
+function onOpenSheet(_entry: RegistryEntryDto) {
+  // RegistryRow's @open-sheet action: open the linked sheet detail
+  // modal. The modal reads from the active sheet store, so we attach
+  // the build first then open the modal — the build store's
+  // rehydrate hook will populate the sheet store within a tick.
+  ui.openSheetModal();
 }
 </script>
 
@@ -111,10 +203,10 @@ function commitAdd(_openInChat: boolean) {
         :key="e.id"
         :entry="e"
         :compact="compact"
-        @menu="() => {}"
-        @open="() => {}"
-        @author-sheet="() => {}"
-        @open-sheet="() => {}"
+        @menu="onMenuEntry(e)"
+        @open="onOpenEntry(e)"
+        @author-sheet="onAuthorSheet(e)"
+        @open-sheet="onOpenSheet(e)"
       />
     </div>
 

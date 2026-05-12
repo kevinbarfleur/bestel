@@ -1138,6 +1138,39 @@ fn emit_registry_changed(app: &AppHandle) {
     let _ = app.emit("registry:changed", serde_json::json!({}));
 }
 
+/// Preview-only counterpart to `registry_add`: parse the PoB, compute the 5
+/// signatures + canonical hash + summary, but DO NOT insert into the
+/// registry. Used by the Add-a-build modal's "Browse…" action so the user
+/// can review the parsed identity before committing. The returned entry's
+/// `id` is `-1` to signal "unsaved" to the UI; persistence happens on
+/// `registry_add` only.
+#[tauri::command]
+pub async fn registry_preview(pob_path: String) -> Result<RegistryEntryDto, String> {
+    let (build, pob_hash, sigs, summary) = build_registry_artifacts(&pob_path)?;
+    let display_name = build
+        .main_skill
+        .clone()
+        .or_else(|| build.ascendancy.clone())
+        .unwrap_or_else(|| build.class.clone());
+    let now = now_ms();
+    Ok(RegistryEntryDto {
+        id: -1,
+        display_name,
+        game: build.game.label().to_string(),
+        pob_path,
+        pob_hash,
+        identity_sig: sigs.identity,
+        gear_sig: sigs.gear,
+        tree_sig: sigs.tree,
+        skill_sig: sigs.skill,
+        config_sig: sigs.config,
+        linked_sheet_id: None,
+        summary,
+        last_seen_at: now,
+        authored_at: now,
+    })
+}
+
 #[tauri::command]
 pub async fn registry_list() -> Result<Vec<RegistryEntryDto>, String> {
     let db = bestel_core::persistence::global_db()

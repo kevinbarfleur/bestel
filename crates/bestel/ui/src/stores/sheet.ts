@@ -56,6 +56,28 @@ export interface ActiveSheet {
   updatedAt: string;
   schemaVersion: number;
   payload: unknown;
+  /** Sprint v3 five-axis drift signatures captured at sheet authoring
+   *  time. Null fields mean the sheet predates v3 and hasn't been
+   *  backfilled yet (the backfill runs in `get_active_build_sheet_for_ui`
+   *  when the live PoB's hash matches the sheet's authoring hash). */
+  authoredSignatures?: {
+    identity: string | null;
+    gear: string | null;
+    tree: string | null;
+    skill: string | null;
+    config: string | null;
+  };
+  /** Sprint v3 five-axis drift signatures computed for the live PoB
+   *  attached to the chat. Always fully populated when this object is
+   *  built by the rehydrate path; undefined when populated by the agent's
+   *  SheetLoaded delta (which lacks live-PoB context). */
+  currentSignatures?: {
+    identity: string | null;
+    gear: string | null;
+    tree: string | null;
+    skill: string | null;
+    config: string | null;
+  };
 }
 
 /** Sprint UX-2 — the one-shot interview emitted by `sheet_open_interview`.

@@ -65,6 +65,11 @@ export const getActiveBuildSheetForUi = (): Promise<ActiveBuildSheetDto | null> 
 // ─── Sprint v3 — Build Registry IPC wrappers ────────────────────────────
 
 export const registryList = (): Promise<RegistryEntryDto[]> => invoke('registry_list');
+/** Parse the PoB at the given path and return a transient DTO (with id=-1)
+ *  WITHOUT persisting it. Used by the Add-a-build modal preview. The user
+ *  confirms via `registryAdd` which then writes to the registry. */
+export const registryPreview = (pobPath: string): Promise<RegistryEntryDto> =>
+  invoke('registry_preview', { pobPath });
 export const registryAdd = (pobPath: string): Promise<RegistryEntryDto> =>
   invoke('registry_add', { pobPath });
 export const registryRemove = (id: number): Promise<boolean> =>

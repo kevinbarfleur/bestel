@@ -4,7 +4,11 @@ import { storeToRefs } from 'pinia';
 
 import { useChatStore } from '../../stores/chat';
 import { useSheetStore } from '../../stores/sheet';
+import { useUiStore } from '../../stores/ui';
 import { INTERVIEW_SECTION_ORDER } from '../../stores/sheet';
+import DriftChipStrip, { type DriftSignatures } from '../sheet/DriftChipStrip.vue';
+import DriftHeader from '../sheet/DriftHeader.vue';
+import type { DriftAxis, DriftState } from '../sheet/DriftChip.vue';
 
 /**
  * Sidebar card surfaced once a Build Sheet is validated for the active
@@ -23,7 +27,38 @@ import { INTERVIEW_SECTION_ORDER } from '../../stores/sheet';
 
 const sheet = useSheetStore();
 const chat = useChatStore();
+const ui = useUiStore();
 const { activeSheet, phase } = storeToRefs(sheet);
+
+/** Compare authored vs current signatures axis-by-axis. Returns null
+ *  when the sheet predates v3 and hasn't been backfilled yet (the strip
+ *  is hidden in that case; the legacy stale badge remains the only
+ *  signal). */
+const driftSigs = computed<DriftSignatures | null>(() => {
+  const s = activeSheet.value;
+  if (!s) return null;
+  const auth = s.authoredSignatures;
+  const cur = s.currentSignatures;
+  if (!auth || !cur) return null;
+  const axes: DriftAxis[] = ['identity', 'tree', 'gear', 'skill', 'config'];
+  const out: Partial<Record<DriftAxis, DriftState>> = {};
+  for (const a of axes) {
+    const ax = auth[a];
+    const cx = cur[a];
+    if (!ax || !cx) {
+      out[a] = 'na';
+    } else if (ax === cx) {
+      out[a] = 'match';
+    } else {
+      out[a] = 'drift';
+    }
+  }
+  return out as DriftSignatures;
+});
+
+function onChipClick(axis: DriftAxis) {
+  ui.openDriftDrawer(axis);
+}
 
 const emit = defineEmits<{
   (e: 'view-full', sheetId: string): void;
@@ -173,6 +208,15 @@ async function onRefresh() {
         <span class="bs-link__name">{{ it.name }}</span>
       </div>
       <div v-if="moreItems > 0" class="bs-link__more">+{{ moreItems }} more</div>
+    </div>
+
+    <!-- Sprint v3 — drift chip strip + contextual sentence. Only renders
+         once the sheet has v3 signatures (backfilled at first read with
+         pob_hash_match). Pre-v3 sheets keep the legacy stale badge in
+         the header. -->
+    <div v-if="driftSigs" class="bs-link__drift">
+      <DriftChipStrip :sigs="driftSigs" dense @chip-click="onChipClick" />
+      <DriftHeader :sigs="driftSigs" />
     </div>
 
     <!-- Section status dots — small inline row -->
@@ -331,6 +375,15 @@ async function onRefresh() {
   letter-spacing: 0.10em;
   color: var(--ink-faint);
   text-transform: uppercase;
+}
+
+/* ─── Sprint v3 drift block ─────────────────────────────────────────── */
+.bs-link__drift {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px dotted var(--paper-line);
 }
 
 /* ─── Section dots row ───────────────────────────────────────────────── */

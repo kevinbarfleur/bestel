@@ -42,6 +42,8 @@ export const useBuildStore = defineStore('build', () => {
         updatedAt: dto.updated_at,
         schemaVersion: dto.schema_version,
         payload: dto.payload,
+        authoredSignatures: dto.authored_signatures,
+        currentSignatures: dto.current_signatures,
       });
       if (!dto.pob_hash_match) {
         sheet.markStale();
