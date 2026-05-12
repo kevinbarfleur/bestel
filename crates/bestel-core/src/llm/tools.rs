@@ -1500,6 +1500,24 @@ fn render_build_for_llm(b: &PobBuild) -> String {
         summary.insert("import_link".into(), json!(url));
     }
 
+    // Sprint v5 — surface the 5 orthogonal signatures + canonical pob_hash
+    // so the agent can describe drift in concrete terms ("your gear_sig
+    // flipped since the last sheet, but tree_sig and skill_sig are
+    // unchanged — purely a gear change") without a sheet round-trip.
+    let sigs = crate::pob::signatures::BuildSignatures::from_build(b);
+    let pob_hash = crate::sheets::compute_pob_hash_from_build(b);
+    summary.insert(
+        "signatures".into(),
+        json!({
+            "identity": sigs.identity,
+            "tree": sigs.tree,
+            "gear": sigs.gear,
+            "skill": sigs.skill,
+            "config": sigs.config,
+            "pob_hash": pob_hash,
+        }),
+    );
+
     // Sprint 3 — semantic build identity. Computed on every render
     // (cheap, ~1-5 ms). Surfaces archetype tags, defining uniques, and
     // the conversion chain so the agent quotes them instead of guessing
@@ -1809,6 +1827,13 @@ Praetor Crown</Item>
             obj.get("import_link").and_then(|v| v.as_str()),
             Some("https://pobb.in/pob/abc123")
         );
+
+        // Signatures + pob_hash flow through for drift reasoning.
+        let signatures = obj.get("signatures").and_then(|v| v.as_object()).unwrap();
+        for key in ["identity", "tree", "gear", "skill", "config", "pob_hash"] {
+            let hex = signatures.get(key).and_then(|v| v.as_str()).expect(key);
+            assert_eq!(hex.len(), 64, "{} is not a 64-char sha256 hex", key);
+        }
 
         // Gem variant_id + gem_id flow through to disambiguate transfigure
         // variants (Penance Brand of Dissipation vs base).
