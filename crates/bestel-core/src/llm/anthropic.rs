@@ -408,15 +408,40 @@ impl AnthropicClient {
             // always identical when a build is loaded, so the model sees
             // both in the same uncached chunk.
             if has_active_build {
-                state_block.push_str(
-                    "\n[Build data directive: when get_active_build returns, the JSON it carries \
-                     is the AUTHORITATIVE snapshot of the exile's build. Cite ONLY values present \
-                     in that payload — life, ES, resistances, ascendancy, main skill, defining \
-                     uniques, stat IDs, gem levels, tree allocations. Do NOT extrapolate, infer, \
-                     or recall from training data — if a field is absent or null, say so plainly. \
-                     Numbers reported MUST match the JSON byte-for-byte or be flagged as derived \
-                     via pob_calc.]",
-                );
+                // Sprint v3 anti-duplication: if `get_active_build` was already
+                // called earlier in this chat (its result is in the messages
+                // array above as a tool_result block), tell the model to read
+                // from that prior payload instead of calling the tool again.
+                // The build can change turn-to-turn (PoB swap, watcher hot-
+                // reload), but the runtime would flip `Build state:` and clear
+                // the cached fingerprint hash before getting here, so a stale
+                // tool_result is not a concern — every call returns the
+                // current snapshot.
+                let build_already_fetched =
+                    messages_contain_tool_use(&messages, super::tools::GET_ACTIVE_BUILD);
+                if build_already_fetched {
+                    state_block.push_str(
+                        "\n[Build data directive: get_active_build has ALREADY been called \
+                         earlier in this conversation — its full JSON payload is in the prior \
+                         tool_result blocks above. Do NOT call get_active_build again this turn; \
+                         read every value (life, ES, resistances, ascendancy, main skill, \
+                         defining uniques, stat IDs, gem levels, tree allocations) from that \
+                         existing payload. The build snapshot is your source of truth: cite ONLY \
+                         values present there, never extrapolate or recall from training. \
+                         Numbers reported MUST match the JSON byte-for-byte or be flagged as \
+                         derived via pob_calc.]",
+                    );
+                } else {
+                    state_block.push_str(
+                        "\n[Build data directive: when get_active_build returns, the JSON it carries \
+                         is the AUTHORITATIVE snapshot of the exile's build. Cite ONLY values present \
+                         in that payload — life, ES, resistances, ascendancy, main skill, defining \
+                         uniques, stat IDs, gem levels, tree allocations. Do NOT extrapolate, infer, \
+                         or recall from training data — if a field is absent or null, say so plainly. \
+                         Numbers reported MUST match the JSON byte-for-byte or be flagged as derived \
+                         via pob_calc.]",
+                    );
+                }
             }
             // Sprint value-purge — mechanics directive. The 2026-05-12 audit
             // found ~60% of hardcoded numeric values in references were stale
@@ -507,30 +532,76 @@ impl AnthropicClient {
                          ref 32 for the full procedure.]",
                     );
                 } else if matches!(sheet_status_kind, SheetStatusKind::Fresh) {
-                    tag.push_str(
-                        "\n[Sheet directive: a validated, fresh Build Sheet exists for this build. \
-                         For build-specific questions, call get_active_build_sheet once with the \
-                         fingerprint above (copy verbatim) to fetch the body, then read from the \
-                         sheet's sections (identity / archetype / damage / defense / items / intent) \
-                         as the source of truth. Skip pob_calc and threshold lookups unless the \
-                         sheet does not cover the question. End the answer with \
-                         `read_from_sheet · key1 · key2` in italic.]",
+                    // Sprint v3 anti-duplication: when the sheet was already
+                    // fetched earlier in this chat AND nothing has changed
+                    // since (Fresh status), re-fetching would surface an
+                    // identical payload. Detect prior tool_use and route the
+                    // directive accordingly.
+                    let sheet_already_fetched = messages_contain_tool_use(
+                        &messages,
+                        super::sheet_tools::GET_ACTIVE_BUILD_SHEET,
                     );
+                    let build_already_fetched = messages_contain_tool_use(
+                        &messages,
+                        super::tools::GET_ACTIVE_BUILD,
+                    );
+                    if sheet_already_fetched {
+                        tag.push_str(
+                            "\n[Sheet directive: a validated, fresh Build Sheet exists for this \
+                             build, and it has ALREADY been fetched earlier in this conversation \
+                             — its payload is in the prior tool_result blocks above. Do NOT call \
+                             get_active_build_sheet again this turn; read from the existing \
+                             payload in your context. Same for get_active_build (already called \
+                             above) — the JSON snapshot is your source of truth. Skip pob_calc \
+                             and threshold lookups unless the sheet does not cover the question. \
+                             End the answer with `read_from_sheet · key1 · key2` in italic.]",
+                        );
+                        let _ = build_already_fetched;
+                    } else {
+                        tag.push_str(
+                            "\n[Sheet directive: a validated, fresh Build Sheet exists for this \
+                             build. For build-specific questions, call get_active_build_sheet \
+                             once with the fingerprint above (copy verbatim) to fetch the body, \
+                             then read from the sheet's sections (identity / archetype / damage \
+                             / defense / items / intent) as the source of truth. Skip pob_calc \
+                             and threshold lookups unless the sheet does not cover the question. \
+                             End the answer with `read_from_sheet · key1 · key2` in italic.]",
+                        );
+                    }
                 } else if matches!(sheet_status_kind, SheetStatusKind::Stale) {
-                    tag.push_str(
-                        "\n[Sheet directive: a Build Sheet exists but the PoB hash differs since \
-                         authoring (gear / gem swaps). Call get_active_build_sheet anyway with the \
-                         fingerprint above. Intent / archetype / defining items / known gaps are \
-                         authored decisions that don't go stale when an item swaps — only the \
-                         numbers age. Open the answer with one short sentence acknowledging the \
-                         drift, then cite the sheet's intent / archetype / items sections for \
-                         context. For numerical claims (DPS, EHP, max-hit, resists, regen), DO \
-                         NOT use the sheet's stored numbers — re-derive from the live PoB via \
-                         pob_calc and present those. End with `read_from_sheet · keys` italic \
-                         caption listing the sections you cited (intent / archetype / items, \
-                         never numbers). Do NOT call sheet_open_interview to refresh — the user \
-                         has a refresh button in the UI and triggers it themselves.]",
+                    let sheet_already_fetched = messages_contain_tool_use(
+                        &messages,
+                        super::sheet_tools::GET_ACTIVE_BUILD_SHEET,
                     );
+                    if sheet_already_fetched {
+                        tag.push_str(
+                            "\n[Sheet directive: a Build Sheet exists but the PoB hash differs \
+                             since authoring (gear / gem swaps). The sheet has ALREADY been \
+                             fetched earlier in this conversation — its payload is in the prior \
+                             tool_result blocks above. Do NOT call get_active_build_sheet again. \
+                             Re-read intent / archetype / defining items / known gaps from that \
+                             prior payload. For numerical claims (DPS, EHP, max-hit, resists), DO \
+                             NOT use the sheet's stored numbers — call pob_calc fresh against \
+                             the live build (which is also already in messages above as the \
+                             get_active_build result). End with `read_from_sheet · keys` italic \
+                             caption listing the sections you cited.]",
+                        );
+                    } else {
+                        tag.push_str(
+                            "\n[Sheet directive: a Build Sheet exists but the PoB hash differs since \
+                             authoring (gear / gem swaps). Call get_active_build_sheet anyway with the \
+                             fingerprint above. Intent / archetype / defining items / known gaps are \
+                             authored decisions that don't go stale when an item swaps — only the \
+                             numbers age. Open the answer with one short sentence acknowledging the \
+                             drift, then cite the sheet's intent / archetype / items sections for \
+                             context. For numerical claims (DPS, EHP, max-hit, resists, regen), DO \
+                             NOT use the sheet's stored numbers — re-derive from the live PoB via \
+                             pob_calc and present those. End with `read_from_sheet · keys` italic \
+                             caption listing the sections you cited (intent / archetype / items, \
+                             never numbers). Do NOT call sheet_open_interview to refresh — the user \
+                             has a refresh button in the UI and triggers it themselves.]",
+                        );
+                    }
                 }
                 system_blocks.push(json!({
                     "type": "text",
@@ -541,11 +612,21 @@ impl AnthropicClient {
             // Sprint D — force `get_active_build` on iteration 1 whenever a
             // build is loaded. Eliminates the "model decides not to call the
             // build context" failure class that the 2026-05-08 audit found in
-            // 23/24 build runs. After this single forced call, the result is
-            // in the messages array for every subsequent iteration, and we
-            // fall back to `tool_choice: auto` so the model picks freely.
-            let force_build_context =
-                iterations == 1 && !force_finalize && has_active_build;
+            // 23/24 build runs.
+            //
+            // Sprint v3 anti-duplication: only force when the messages array
+            // does NOT already contain a prior `get_active_build` tool_use.
+            // The chat history carries every prior turn's tool calls + results,
+            // so once the build context has been fetched ONCE in this chat,
+            // every later turn already has the JSON payload in scope. Forcing
+            // a fresh call on each turn (which the original logic did) just
+            // burns tokens and surfaces an identical payload — the 2026-05-12
+            // Juggernaut chat showed `get_active_build` re-called on every
+            // user message, and the agent re-analysing what it already knew.
+            let force_build_context = iterations == 1
+                && !force_finalize
+                && has_active_build
+                && !messages_contain_tool_use(&messages, super::tools::GET_ACTIVE_BUILD);
             // Sprint UX-2 — deferred force on `sheet_open_interview`. The
             // legacy iter-2 force on `sheet_propose_section` was dropped
             // because the new flow requires the model to do deep analysis
