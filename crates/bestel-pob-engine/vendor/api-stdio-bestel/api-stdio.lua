@@ -234,8 +234,23 @@ local CONFIG_KEYS = {
     useFlask5 = "flask:5",
 }
 
+-- Sprint v5: track which set_config keys silently no-op so the Rust side
+-- can surface them as warnings (flask references a missing slot, etc).
+local last_config_warnings = {}
+
 local function set_one_config(key, value)
     local handler = CONFIG_KEYS[key]
+    -- Accept any unknown key matching the `condition*` prefix as a boolean.
+    -- PoB uses these for conditional mods (conditionFullLife, conditionLowLife,
+    -- conditionAtMaxFrenzyCharges, conditionEnemyChilled, …). Forwarding
+    -- them lets the agent test runtime states without re-saving the PoB.
+    if not handler and key:sub(1, 9) == "condition" then
+        if type(value) ~= "boolean" then
+            return false, key .. " expects boolean"
+        end
+        build.configTab.input[key] = value
+        return true, nil
+    end
     if not handler then
         return false, "unsupported config key: " .. key
     end
@@ -271,6 +286,12 @@ local function set_one_config(key, value)
            build.itemsTab.activeItemSet["Flask " .. idx] then
             local slot = build.itemsTab.activeItemSet["Flask " .. idx]
             slot.active = value
+        else
+            -- Silent no-op before Sprint v5 — now surface the gap so the
+            -- agent knows the requested flask state did not apply.
+            table.insert(last_config_warnings,
+                "flask_slot_missing: build has no item in Flask " .. idx ..
+                "; useFlask" .. idx .. "=" .. tostring(value) .. " ignored")
         end
     end
     return true, nil
@@ -384,6 +405,7 @@ actions.set_config = function(req)
     if not build or not build.configTab then
         return err_reply("no build loaded")
     end
+    last_config_warnings = {}
     local rejected = {}
     for k, v in pairs(req) do
         if k ~= "action" then
@@ -396,7 +418,11 @@ actions.set_config = function(req)
     end
     local _, rerr = safe(recompute_build)
     if rerr then return err_reply("recompute failed after set_config: " .. rerr) end
-    ok_reply({})
+    local reply = {}
+    if #last_config_warnings > 0 then
+        reply.warnings = last_config_warnings
+    end
+    ok_reply(reply)
 end
 
 actions.get_config = function(_)

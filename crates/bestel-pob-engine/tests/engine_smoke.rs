@@ -99,6 +99,7 @@ async fn cold_calc_offence_against_fixture_build() {
             build_xml: xml,
             category: Category::Offence,
             skill_index: None,
+            skill_part: None,
             calcs: EngineCalcs {
                 enemy_is_boss: Some(true),
                 ..Default::default()

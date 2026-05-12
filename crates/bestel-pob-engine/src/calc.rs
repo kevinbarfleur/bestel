@@ -72,6 +72,20 @@ pub struct EngineCalcs {
     pub use_flask3: Option<bool>,
     pub use_flask4: Option<bool>,
     pub use_flask5: Option<bool>,
+    /// PoE1 bandit reward choice ("Alira", "Kraityn", "Oak", "None"). Lets
+    /// the agent answer "what if I swap to Alira" without re-saving the PoB.
+    pub bandit: Option<String>,
+    /// PoE1 pantheon picks (e.g. "TheBrineKing", "Solaris", "Ralakesh").
+    pub pantheon_major_god: Option<String>,
+    pub pantheon_minor_god: Option<String>,
+    /// Default 84 in PoB. Bumping to 85-87 simulates uber pinnacle math.
+    pub enemy_level: Option<u32>,
+    /// Free-form condition toggles forwarded as `conditionXxx` keys to the
+    /// Lua harness (`conditionFullLife`, `conditionAtMaxFrenzyCharges`,
+    /// `conditionEnemyChilled`, …). Allows the agent to test the same
+    /// build under different runtime states without re-saving the PoB.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub conditions: BTreeMap<String, bool>,
 }
 
 impl EngineCalcs {
@@ -109,6 +123,23 @@ impl EngineCalcs {
                 m.insert(format!("useFlask{}", i + 1), Value::Bool(*v));
             }
         }
+        if let Some(v) = &self.bandit {
+            m.insert("bandit".into(), Value::String(v.clone()));
+        }
+        if let Some(v) = &self.pantheon_major_god {
+            m.insert("pantheonMajorGod".into(), Value::String(v.clone()));
+        }
+        if let Some(v) = &self.pantheon_minor_god {
+            m.insert("pantheonMinorGod".into(), Value::String(v.clone()));
+        }
+        if let Some(v) = self.enemy_level {
+            m.insert("enemyLevel".into(), Value::Number(v.into()));
+        }
+        for (k, v) in &self.conditions {
+            // Forward as `conditionXxx` keys — the Lua harness accepts any
+            // condition key starting with `condition` as a boolean.
+            m.insert(k.clone(), Value::Bool(*v));
+        }
         m
     }
 }
@@ -119,6 +150,11 @@ pub struct CalcRequest {
     pub build_xml: String,
     pub category: Category,
     pub skill_index: Option<u32>,
+    /// Maps to `<mainSkillPart>` in PoB. Skills with multiple parts
+    /// (Lightning Strike melee vs projectile, Pulverise main vs aoe,
+    /// Power Siphon vs Charged Attack, …) read different sub-output
+    /// tables depending on this. Default `None` keeps PoB's current pick.
+    pub skill_part: Option<u32>,
     pub calcs: EngineCalcs,
 }
 
@@ -162,6 +198,7 @@ impl PobEngineHandle {
         }
 
         let cfg = req.calcs.into_payload();
+        let mut config_warnings: Vec<String> = Vec::new();
         if !cfg.is_empty() {
             let reply = self
                 .send_on(proc, &Cmd::SetConfig { config: cfg })
@@ -172,16 +209,19 @@ impl PobEngineHandle {
                     .unwrap_or_else(|| "set_config rejected".into());
                 return Err(PobEngineError::ConfigRejected(msg));
             }
+            if let Some(w) = reply.warnings {
+                config_warnings.extend(w);
+            }
         }
 
-        if let Some(idx) = req.skill_index {
+        if req.skill_index.is_some() || req.skill_part.is_some() {
             let _ = self
                 .send_on(
                     proc,
                     &Cmd::SetMainSelection {
-                        main_socket_group: Some(idx),
+                        main_socket_group: req.skill_index,
                         main_active_skill: None,
-                        skill_part: None,
+                        skill_part: req.skill_part,
                     },
                 )
                 .await?;
@@ -203,7 +243,7 @@ impl PobEngineHandle {
         let cfg_reply = self.send_on(proc, &Cmd::GetConfig).await?;
         let calcs_echo = cfg_reply.config.unwrap_or(Value::Null);
 
-        let mut warnings = Vec::new();
+        let mut warnings = config_warnings;
         if active_skill.is_null() {
             warnings.push(
                 "engine did not return active_skill metadata — numbers may be unreliable"

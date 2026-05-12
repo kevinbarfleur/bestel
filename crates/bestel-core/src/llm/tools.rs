@@ -529,7 +529,7 @@ pub fn tool_schemas() -> Vec<Value> {
         }),
         json!({
             "name": POB_CALC,
-            "description": "Run the bundled headless PoB engine against the active build and return canonical output stats. Categories: offence (DPS, hit chance, crit, ailment DPS), defence (EHP, max-hit by element, block, suppression), charges (max counts), reservation (life/mana/spirit %), ailments (shock/freeze/ignite chance), all (entire output table). Optional `skill_index` selects a non-default skill group. Optional `calcs` overrides the PoB Calcs config (enemyIsBoss, usePowerCharges, useFrenzyCharges, useEnduranceCharges, forceBuffOnslaught, multiplierImpaleStacks, useFlask1..5). The response ALWAYS echoes (1) the effective Calcs config and (2) `active_skill` metadata identifying which skill group the engine actually used. **CRITICAL VERIFICATION STEP**: before quoting any number, compare `active_skill.active_skill_label` (or `active_skill_gem`) with the build's `main_skill` from `get_active_build`. If they don't match, the engine fell back to the wrong skill — DO NOT quote the number; instead report the cached `<PlayerStat>` value with an explicit staleness note, OR retry pob_calc with an explicit `skill_index`. Surface the Calcs assumptions in your answer (`enemyIsBoss=Pinnacle`, `useFlask3=true`, etc.) — two PoBs with identical gear can show 10× DPS swings purely from Calcs config; never quote a number without naming the assumptions. The response also includes a `warnings` array; if non-empty, surface those warnings to the user.",
+            "description": "Run the bundled headless PoB engine against the active build and return canonical output stats. Categories: offence (DPS, hit chance, crit, ailment DPS), defence (EHP, max-hit by element, block, suppression, resists, leech, regen, recovery, movement, ailment avoid), charges (max counts), reservation (life/mana/spirit %), ailments (shock/freeze/ignite chance + avoidance), all (entire output table). Optional `skill_index` selects a non-default skill group (1-indexed, matching PoB's mainSocketGroup). Optional `skill_part` picks a sub-mode of a multi-part skill (Lightning Strike melee vs projectile, Pulverise main vs aoe, etc.). Optional `calcs` overrides the PoB Calcs config: combat toggles (enemyIsBoss, usePowerCharges/useFrenzyCharges/useEnduranceCharges, forceBuffOnslaught, multiplierImpaleStacks), flask uptimes (useFlask1..5), PoE1 character choices (bandit one of 'Alira'/'Kraityn'/'Oak'/'None', pantheonMajorGod, pantheonMinorGod), boss math overrides (enemyLevel — default 84, push to 85-87 to simulate uber pinnacle), and arbitrary condition toggles for runtime states (any key starting with `condition*` accepts a boolean: `conditionFullLife`, `conditionLowLife`, `conditionAtMaxFrenzyCharges`, `conditionEnemyChilled`, `conditionUsingFlask`, etc.). Bestel's wrong-skill gate AUTO-RETRIES once when active_skill_label disagrees with build.main_skill — if it still mismatches you receive an `error: \"wrong_skill\"` envelope with `available_skill_indices`; pick one and retry pob_calc with that skill_index. The response ALWAYS echoes (1) the effective Calcs config and (2) `active_skill` metadata. Surface the Calcs assumptions in your answer (`bandit=Alira`, `enemyIsBoss=Pinnacle`, `useFlask3=true`, etc.) — two PoBs with identical gear can show 10× DPS swings purely from Calcs config; never quote a number without naming the assumptions. The response also includes a `warnings` array (e.g. `flask_slot_missing` when a requested flask slot is empty); if non-empty, surface those warnings to the user.",
             "input_schema": {
                 "type": "object",
                 "properties": {
@@ -537,7 +537,16 @@ pub fn tool_schemas() -> Vec<Value> {
                         "type": "string",
                         "enum": ["offence", "defence", "charges", "reservation", "ailments", "all"]
                     },
-                    "skill_index": {"type": "integer", "minimum": 0},
+                    "skill_index": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "1-indexed mainSocketGroup. Pick from available_skill_indices when wrong_skill fires."
+                    },
+                    "skill_part": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Sub-mode of a multi-part skill (Lightning Strike: 1=melee, 2=projectile; Pulverise: 1=main, 2=aoe; etc.)."
+                    },
                     "calcs": {
                         "type": "object",
                         "properties": {
@@ -553,7 +562,29 @@ pub fn tool_schemas() -> Vec<Value> {
                             "useFlask2": {"type": "boolean"},
                             "useFlask3": {"type": "boolean"},
                             "useFlask4": {"type": "boolean"},
-                            "useFlask5": {"type": "boolean"}
+                            "useFlask5": {"type": "boolean"},
+                            "bandit": {
+                                "type": "string",
+                                "description": "PoE1 reward choice. One of 'Alira' / 'Kraityn' / 'Oak' / 'None'."
+                            },
+                            "pantheonMajorGod": {
+                                "type": "string",
+                                "description": "PoE1 major pantheon (e.g. 'TheBrineKing', 'Solaris', 'Lunaris', 'Arakaali')."
+                            },
+                            "pantheonMinorGod": {
+                                "type": "string",
+                                "description": "PoE1 minor pantheon (e.g. 'Ralakesh', 'Yugul', 'Garukhan')."
+                            },
+                            "enemyLevel": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "description": "Boss math level; default 84 (pinnacle), 85-87 simulates uber."
+                            },
+                            "conditions": {
+                                "type": "object",
+                                "description": "Free-form `conditionXxx` boolean map (conditionFullLife, conditionAtMaxFrenzyCharges, conditionEnemyChilled, …).",
+                                "additionalProperties": {"type": "boolean"}
+                            }
                         },
                         "additionalProperties": false
                     }
@@ -1208,6 +1239,10 @@ async fn dispatch_pob_calc(input: &Value, ctx: &ToolCtx) -> Result<String> {
         .get("skill_index")
         .and_then(|v| v.as_u64())
         .map(|n| n as u32);
+    let skill_part = input
+        .get("skill_part")
+        .and_then(|v| v.as_u64())
+        .map(|n| n as u32);
 
     let mut calcs = EngineCalcs::default();
     if let Some(c) = input.get("calcs").and_then(|v| v.as_object()) {
@@ -1253,6 +1288,29 @@ async fn dispatch_pob_calc(input: &Value, ctx: &ToolCtx) -> Result<String> {
                 }
             }
         }
+        if let Some(s) = c.get("bandit").and_then(|v| v.as_str()) {
+            calcs.bandit = Some(s.to_string());
+        }
+        if let Some(s) = c.get("pantheonMajorGod").and_then(|v| v.as_str()) {
+            calcs.pantheon_major_god = Some(s.to_string());
+        }
+        if let Some(s) = c.get("pantheonMinorGod").and_then(|v| v.as_str()) {
+            calcs.pantheon_minor_god = Some(s.to_string());
+        }
+        if let Some(n) = c.get("enemyLevel").and_then(|v| v.as_u64()) {
+            calcs.enemy_level = Some(n as u32);
+        }
+        if let Some(conds) = c.get("conditions").and_then(|v| v.as_object()) {
+            for (k, v) in conds {
+                if let Some(b) = v.as_bool() {
+                    // Forward any condition* key as-is. Lua side rejects
+                    // unknown non-condition keys with a clear error.
+                    if k.starts_with("condition") {
+                        calcs.conditions.insert(k.clone(), b);
+                    }
+                }
+            }
+        }
     }
 
     let xml = tokio::fs::read_to_string(&build.source_file)
@@ -1273,6 +1331,7 @@ async fn dispatch_pob_calc(input: &Value, ctx: &ToolCtx) -> Result<String> {
             build_xml: xml.clone(),
             category,
             skill_index,
+            skill_part,
             calcs: calcs.clone(),
         })
         .await
@@ -1288,6 +1347,7 @@ async fn dispatch_pob_calc(input: &Value, ctx: &ToolCtx) -> Result<String> {
         engine,
         &build,
         skill_index,
+        skill_part,
         &response,
         game,
         &xml,
@@ -1313,6 +1373,7 @@ async fn wrong_skill_recover(
     engine: &std::sync::Arc<bestel_pob_engine::PobEngineHandle>,
     build: &PobBuild,
     attempted_skill_index: Option<u32>,
+    skill_part: Option<u32>,
     response: &bestel_pob_engine::CalcResponse,
     game: bestel_pob_engine::lifecycle::Game,
     xml: &str,
@@ -1354,6 +1415,7 @@ async fn wrong_skill_recover(
                     build_xml: xml.to_string(),
                     category,
                     skill_index: Some(idx),
+                    skill_part,
                     calcs: calcs.clone(),
                 })
                 .await

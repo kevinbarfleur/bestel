@@ -53,6 +53,11 @@ pub struct Reply {
     /// real bug observed in the 2026-05-08 battery.
     #[serde(default)]
     pub active_skill: Option<Value>,
+    /// Non-fatal advisories from the harness — e.g. set_config asked to
+    /// flip a flask slot the build does not have. Sprint v5+ — older
+    /// harnesses do not emit this; default to empty.
+    #[serde(default)]
+    pub warnings: Option<Vec<String>>,
 }
 
 pub fn encode(cmd: &Cmd) -> Result<String, serde_json::Error> {
