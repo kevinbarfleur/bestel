@@ -17,7 +17,7 @@ use bestel_core::llm::detect::detect_provider;
 use bestel_core::pob::watcher::PobWatcher;
 
 use crate::dto::{summary_dto_from_build, BuildEvent, DetectionDto, PobBuildDto, ProviderStatusEvent};
-use crate::events::{POB_BUILD, PROVIDER_STATUS};
+use crate::events::{POB_BUILD, POB_CLEARED, PROVIDER_STATUS};
 use crate::state::AppState;
 
 fn main() {
@@ -1706,6 +1706,31 @@ async fn boot_watcher(app: &tauri::AppHandle) -> Result<()> {
                         s.build_ctx.set(build.clone());
                     }
                     emit_build(&app_for_loop, &build);
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+            }
+        }
+    });
+
+    // Sprint v5 — clear-on-delete. When PoB removes the active build XML on
+    // disk, drop the in-memory build and notify the UI. We compare the
+    // removed path against the currently-loaded build's source path so
+    // unrelated deletes in the same builds folder are ignored.
+    let mut cleared_rx = watcher.subscribe_cleared();
+    let app_for_cleared = app.clone();
+    tauri::async_runtime::spawn(async move {
+        loop {
+            match cleared_rx.recv().await {
+                Ok(removed) => {
+                    let Some(s) = app_for_cleared.try_state::<AppState>() else {
+                        continue;
+                    };
+                    let active_path = s.build_ctx.get().map(|b| b.source_file);
+                    if active_path.as_deref() == Some(removed.as_path()) {
+                        s.build_ctx.clear();
+                        let _ = app_for_cleared.emit(POB_CLEARED, ());
+                    }
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => break,

@@ -9,34 +9,56 @@ use super::locator::{find_pob_dirs, most_recent_build, PobInstall};
 use super::parser::{parse_file, parse_summary};
 use super::{PobBuild, PobBuildSummary};
 
+/// Raw filesystem signal funnelled through the notify callback into the
+/// processing task. `Saved` paths flow through the 300 ms debounce + 150 ms
+/// settle and end up in the `events` broadcast as parsed builds. `Removed`
+/// paths skip the debounce and surface immediately on the `cleared`
+/// broadcast so the UI can detach a build that PoB deleted on disk.
+enum RawEvent {
+    Saved(PathBuf),
+    Removed(PathBuf),
+}
+
 pub struct PobWatcher {
     pub installs: Vec<PobInstall>,
     pub events: broadcast::Sender<PobBuild>,
+    pub cleared: broadcast::Sender<PathBuf>,
     _keepalive: Vec<RecommendedWatcher>,
 }
 
 impl PobWatcher {
     pub fn start() -> Result<Self> {
-        let installs = find_pob_dirs();
+        Self::start_with_installs(find_pob_dirs())
+    }
+
+    /// Same as `start` but watches a caller-supplied list of installs.
+    /// Tests use this to point the watcher at a `tempfile::TempDir`.
+    pub fn start_with_installs(installs: Vec<PobInstall>) -> Result<Self> {
         let (tx, _rx) = broadcast::channel::<PobBuild>(32);
+        let (cleared_tx, _cleared_rx) = broadcast::channel::<PathBuf>(32);
 
         let mut keepalive = Vec::new();
 
-        let (raw_tx, mut raw_rx) = mpsc::unbounded_channel::<PathBuf>();
+        let (raw_tx, mut raw_rx) = mpsc::unbounded_channel::<RawEvent>();
 
         for install in &installs {
             let raw_tx = raw_tx.clone();
             let dir = install.builds_dir.clone();
             let mut w = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
                 if let Ok(ev) = res {
-                    if matches!(
-                        ev.kind,
-                        EventKind::Create(_) | EventKind::Modify(_)
-                    ) {
-                        for p in ev.paths {
-                            if p.extension().and_then(|s| s.to_str()) == Some("xml") {
-                                let _ = raw_tx.send(p);
-                            }
+                    let saved = matches!(ev.kind, EventKind::Create(_) | EventKind::Modify(_));
+                    let removed = matches!(ev.kind, EventKind::Remove(_));
+                    if !saved && !removed {
+                        return;
+                    }
+                    for p in ev.paths {
+                        if p.extension().and_then(|s| s.to_str()) != Some("xml") {
+                            continue;
+                        }
+                        if saved {
+                            let _ = raw_tx.send(RawEvent::Saved(p));
+                        } else {
+                            let _ = raw_tx.send(RawEvent::Removed(p));
                         }
                     }
                 }
@@ -46,14 +68,26 @@ impl PobWatcher {
         }
 
         let bc = tx.clone();
+        let cleared_bc = cleared_tx.clone();
         tokio::spawn(async move {
             let mut last_path: Option<PathBuf> = None;
             let mut debounce = tokio::time::interval(Duration::from_millis(300));
             debounce.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             loop {
                 tokio::select! {
-                    Some(path) = raw_rx.recv() => {
-                        last_path = Some(path);
+                    Some(ev) = raw_rx.recv() => {
+                        match ev {
+                            RawEvent::Saved(path) => {
+                                last_path = Some(path);
+                            }
+                            RawEvent::Removed(path) => {
+                                // Skip the debounce: a delete is a discrete
+                                // event and consumers want to react now.
+                                // Filtering against the currently-active
+                                // build is the consumer's job.
+                                let _ = cleared_bc.send(path);
+                            }
+                        }
                     }
                     _ = debounce.tick() => {
                         if let Some(p) = last_path.take() {
@@ -75,6 +109,7 @@ impl PobWatcher {
         Ok(PobWatcher {
             installs,
             events: tx,
+            cleared: cleared_tx,
             _keepalive: keepalive,
         })
     }
@@ -102,6 +137,14 @@ impl PobWatcher {
         self.events.subscribe()
     }
 
+    /// Subscribe to `Remove` filesystem events on any watched build XML.
+    /// The consumer is responsible for checking the path against the
+    /// currently-loaded build before clearing UI state — the watcher does
+    /// not know which build is active.
+    pub fn subscribe_cleared(&self) -> broadcast::Receiver<PathBuf> {
+        self.cleared.subscribe()
+    }
+
     /// Walk every detected install dir, parse a lightweight summary for each
     /// XML file. Sorted by modification time descending so the build picker
     /// shows the most recently saved first.
@@ -117,6 +160,45 @@ impl PobWatcher {
             _ => std::cmp::Ordering::Equal,
         });
         out
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::pob::PoeVersion;
+    use tokio::time::{timeout, Duration};
+
+    fn write_min_xml(path: &std::path::Path) {
+        let xml = br#"<?xml version="1.0"?><PathOfBuilding><Build level="1" className="Witch"/></PathOfBuilding>"#;
+        std::fs::write(path, xml).unwrap();
+    }
+
+    #[tokio::test]
+    async fn emits_cleared_on_active_build_delete() {
+        let dir = tempfile::tempdir().unwrap();
+        let installs = vec![PobInstall {
+            game: PoeVersion::Poe1,
+            builds_dir: dir.path().to_path_buf(),
+        }];
+        let watcher = PobWatcher::start_with_installs(installs).expect("watcher start");
+
+        let build_xml = dir.path().join("Build.xml");
+        write_min_xml(&build_xml);
+
+        // Wait for the initial Create + parse round-trip to fire.
+        let mut rx = watcher.subscribe();
+        let _ = timeout(Duration::from_millis(2000), rx.recv()).await;
+
+        // Subscribe to cleared events BEFORE the delete so we don't race.
+        let mut cleared_rx = watcher.subscribe_cleared();
+        std::fs::remove_file(&build_xml).unwrap();
+
+        let received = timeout(Duration::from_millis(3000), cleared_rx.recv())
+            .await
+            .expect("cleared event timeout")
+            .expect("cleared receive ok");
+        assert_eq!(received, build_xml);
     }
 }
 
