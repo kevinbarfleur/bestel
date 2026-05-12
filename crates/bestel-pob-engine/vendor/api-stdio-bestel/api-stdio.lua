@@ -308,28 +308,69 @@ local function recompute_build()
     end
 end
 
--- Subset stat keys per category. The schema mirrors doc 25.
+-- Subset stat keys per category. Sprint v5 expanded each category to
+-- cover the questions the agent commonly needs to answer (resist caps,
+-- regen sustain, leech rates, ailment avoidance, etc.). `copy_keys`
+-- silently skips entries that mainOutput doesn't contain, so PoE2-only
+-- or PoE1-only keys degrade gracefully.
 local CATEGORY_KEYS = {
     offence = {
-        "TotalDPS","CombinedDPS","FullDPS","AverageHit","Speed","HitChance",
-        "CritChance","CritMultiplier","IgniteDPS","BleedDPS","PoisonDPS","TotalDot",
+        "TotalDPS","CombinedDPS","FullDPS","SkillDPS",
+        "AverageHit","AverageDamage",
+        "Speed","HitChance","AccuracyHitChance",
+        "CritChance","CritMultiplier","PreEffectiveCritChance",
+        "IgniteDPS","BleedDPS","PoisonDPS","TotalDot","TotalDotDPS","ImpaleDPS",
+        "WithBleedDPS","WithPoisonDPS","WithIgniteDPS","WithImpaleDPS","WithDotDPS",
+        "MirageDPS",
     },
     defence = {
         "EHP","LifeUnreserved","LifeRecoverable","EnergyShield","Mana",
-        "Armour","Evasion","MeleeEvadeChance","PhysicalDamageReduction",
+        "Armour","Evasion","MeleeEvadeChance","ProjectileEvadeChance",
+        "PhysicalDamageReduction",
         "MaxHitFire","MaxHitCold","MaxHitLightning","MaxHitPhysical","MaxHitChaos",
+        -- Resistances live + over-cap + max-cap.
+        "FireResist","ColdResist","LightningResist","ChaosResist",
+        "FireResistOverCap","ColdResistOverCap","LightningResistOverCap","ChaosResistOverCap",
+        "FireResistMax","ColdResistMax","LightningResistMax","ChaosResistMax",
+        -- Block / suppression / dodge.
         "BlockChance","SpellBlockChance","SpellSuppressionChance",
+        "EffectiveSpellSuppressionChance","EffectiveBlockChance",
+        "AttackDodgeChance","SpellDodgeChance",
+        -- Regen + recovery (net of degen).
+        "LifeRegen","ManaRegen","EnergyShieldRegen",
+        "NetLifeRegen","NetManaRegen","NetEnergyShieldRegen",
+        "ComprehensiveNetLifeRegen","ComprehensiveNetManaRegen","ComprehensiveNetEnergyShieldRegen",
+        "ComprehensiveTotalNetRegen","TotalNetRegen",
+        "LifeRegenRecovery","ManaRegenRecovery","EnergyShieldRegenRecovery",
+        "LifeRecoveryRateMod","ManaRecoveryRateMod","EnergyShieldRecoveryRateMod",
+        -- Leech (gain-per-second rates and per-hit values).
+        "LifeLeechGainRate","ManaLeechGainRate","EnergyShieldLeechGainRate",
+        "LifeLeechRate","ManaLeechRate","EnergyShieldLeechRate",
+        "LifeLeechInstant","EnergyShieldLeechInstant",
+        "LifeOnHit","EnergyShieldOnHit","ManaOnHit",
+        -- Speed and stun thresholds.
+        "EffectiveMovementSpeedMod","MovementSpeedMod","ActionSpeedMod",
+        "StunThreshold","StunAvoidChance",
     },
     charges = {
-        "PowerChargesMax","FrenzyChargesMax","EnduranceChargesMax",
+        "PowerCharges","PowerChargesMax",
+        "FrenzyCharges","FrenzyChargesMax",
+        "EnduranceCharges","EnduranceChargesMax",
     },
     reservation = {
-        "LifeReserved","ManaReserved","LifeReservedPercent",
-        "ManaReservedPercent","SpiritReserved",
+        "LifeReserved","ManaReserved","EnergyShieldReserved","SpiritReserved",
+        "LifeReservedPercent","ManaReservedPercent","EnergyShieldReservedPercent",
+        "LifeUnreserved","ManaUnreserved","EnergyShieldUnreserved","SpiritUnreserved",
+        "LifeUnreservedPercent","ManaUnreservedPercent",
     },
     ailments = {
         "EnemyShockChance","ShockEffect","EnemyChillEffect",
-        "EnemyFreezeChance","IgniteChance",
+        "EnemyFreezeChance","IgniteChance","ChillEffectMod","ShockChance",
+        -- Self-avoidance (PoB only ships discrete keys for Ignite, Poison,
+        -- Stun, Blind, Curse, and Impale; chill/freeze/shock avoidance is
+        -- computed through other paths and not surfaced as a flat key).
+        "IgniteAvoidChance","PoisonAvoidChance","StunAvoidChance",
+        "BlindAvoidChance","CurseAvoidChance","ImpaleAvoidChance",
     },
 }
 
