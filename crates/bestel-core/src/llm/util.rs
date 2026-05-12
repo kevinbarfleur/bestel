@@ -82,6 +82,40 @@ pub fn summarize_tool_args(name: &str, args: &Value) -> Option<String> {
         }
         "repoe_resolve" => s_owned("tag"),
         "trade_resolve_stats" => s_owned("phrase").map(|p| quote_truncate(&p, MAX_QUERY_LEN)),
+        "trade_search_url" => {
+            // The `query_body` is a deeply-nested JSON blob; a 60-char
+            // truncation hides exactly what we need at a glance ("how many
+            // stat filters? which category?"). Extract the structural shape
+            // instead, so the debug-chat log surfaces an actionable summary.
+            let league = s_owned("league").unwrap_or_else(|| "?".to_string());
+            let game = s_owned("game").unwrap_or_else(|| "poe1".to_string());
+            let body = obj.get("query_body");
+            let query = body.and_then(|b| b.get("query"));
+            let stats_count = query
+                .and_then(|q| q.get("stats"))
+                .and_then(|s| s.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|g| g.get("filters").and_then(|f| f.as_array()))
+                        .map(|f| f.len())
+                        .sum::<usize>()
+                })
+                .unwrap_or(0);
+            let category = query
+                .and_then(|q| q.get("filters"))
+                .and_then(|f| f.get("type_filters"))
+                .and_then(|t| t.get("filters"))
+                .and_then(|f| f.get("category"))
+                .and_then(|c| c.get("option"))
+                .and_then(|s| s.as_str())
+                .map(|s| s.to_string());
+            let cat_part = category
+                .map(|c| format!(", category={c}"))
+                .unwrap_or_default();
+            Some(format!(
+                "{game}/{league} · {stats_count} stat filter(s){cat_part}"
+            ))
+        }
         "web_fetch" => s_owned("url").map(|u| hostname_or_url(&u)),
         "get_active_build" => None,
         "sheet_propose_section" => s_owned("section_id"),
@@ -215,6 +249,48 @@ mod tests {
     #[test]
     fn empty_args_returns_none() {
         assert_eq!(summarize_tool_args("anything", &json!({})), None);
+    }
+
+    #[test]
+    fn trade_search_url_summarizes_structure() {
+        let s = summarize_tool_args(
+            "trade_search_url",
+            &json!({
+                "game": "poe1",
+                "league": "Mirage",
+                "query_body": {
+                    "query": {
+                        "status": {"option": "online"},
+                        "stats": [
+                            {"type": "and", "filters": [
+                                {"id": "explicit.stat_2974417149", "value": {"min": 140}},
+                                {"id": "pseudo.pseudo_total_attack_speed", "value": {"min": 20}}
+                            ]}
+                        ],
+                        "filters": {
+                            "type_filters": {"filters": {"category": {"option": "weapon.onesword"}}}
+                        }
+                    }
+                }
+            }),
+        );
+        assert_eq!(
+            s.as_deref(),
+            Some("poe1/Mirage · 2 stat filter(s), category=weapon.onesword"),
+        );
+    }
+
+    #[test]
+    fn trade_search_url_no_category() {
+        let s = summarize_tool_args(
+            "trade_search_url",
+            &json!({
+                "game": "poe2",
+                "league": "Standard",
+                "query_body": {"query": {"stats": [{"type": "and", "filters": [{"id": "x"}]}]}}
+            }),
+        );
+        assert_eq!(s.as_deref(), Some("poe2/Standard · 1 stat filter(s)"));
     }
 
     #[test]

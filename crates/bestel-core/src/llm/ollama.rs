@@ -313,7 +313,11 @@ impl OllamaClient {
                 let (result, status) = match dispatch(&name, &arguments, &tool_ctx).await {
                     Ok(s) => (s, ToolStatus::Done),
                     Err(e) => (
-                        json!({"error": e.to_string()}).to_string(),
+                        // `{:#}` walks the anyhow context chain so the LLM
+                        // sees the full diagnostic, not just the outermost
+                        // `.context(...)` label. See anthropic.rs for the
+                        // mirror fix + rationale.
+                        json!({"error": format!("{:#}", e)}).to_string(),
                         ToolStatus::Failed,
                     ),
                 };

@@ -1100,7 +1100,14 @@ impl AnthropicClient {
                     let (result, status) = match dispatch(&tu.name, &parsed_input, &tool_ctx).await {
                         Ok(s) => (s, ToolStatus::Done),
                         Err(e) => (
-                            json!({"error": e.to_string()}).to_string(),
+                            // `{:#}` walks the anyhow context chain (outermost
+                            // → innermost, separated by `: `) so the LLM sees
+                            // the *real* underlying message — e.g. the GGG
+                            // trade API's `Unknown stat provided: …`. Without
+                            // this, `to_string()` returns only the outermost
+                            // `.context(...)` label and silently drops every
+                            // useful diagnostic the agent could act on.
+                            json!({"error": format!("{:#}", e)}).to_string(),
                             ToolStatus::Failed,
                         ),
                     };
