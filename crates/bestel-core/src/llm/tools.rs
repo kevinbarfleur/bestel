@@ -354,7 +354,7 @@ pub fn tool_schemas() -> Vec<Value> {
     let mut schemas = vec![
         json!({
             "name": GET_ACTIVE_BUILD,
-            "description": "Returns the exile's currently loaded Path of Building build: game (PoE1/PoE2), class, ascendancy, level, main skill, full skill groups with linked gems, every item with its full text, key defensive stats (life, mana, ES, EHP, armour, evasion, suppression, block, dodge), per-element resistances and max-hit values, charges (power/frenzy/endurance current+max), active buffs (combat/buff/curse lists), config (boss profile, enemy resists, flask uptimes, custom mods), and passive tree summary (class/ascend IDs, version, node and mastery counts, weapon-set node split). The response also includes SEMANTIC FACTS computed from the parsed build: `archetype` (defense/hit_model/mechanic tags — e.g. {defense:[\"life\",\"MoM\"], hit_model:[\"non-crit-EO\"], mechanic:[\"self-cast\"]}), `defining_uniques` (uniques present, each tagged engine|defining|amplifier with an identity hint), and `conversion_chain` (verbatim damage-conversion steps when applicable). Surface archetype tags FIRST when commenting on the build — do NOT guess the archetype from class+ascendancy alone. Never recommend selling an item flagged `category: \"engine\"` without explicit user instruction; engine items collapse the build if removed. Always call this BEFORE making any claim about the exile's character. No arguments.",
+            "description": "Returns the exile's currently loaded Path of Building build: game (PoE1/PoE2), class, ascendancy, level, main skill, full skill groups with linked gems, every item with its full text, and a `stats` map with ~60 high-value cached PoB stats (pools + ES + EHP + unreserved; headline DPS + ailment DoT DPS + with-* aggregates; resistances + over-caps + max-resists; armour/evasion/PDR; block/spell-block/suppression/dodge/evade; life/mana/ES regen + leech-gain; movement speed, attack/cast speed, crit chance + multi + pre-effective; hit chance; stun + ailment avoid; max charges; Str/Dex/Int). Plus per-element max-hit values, charges (power/frenzy/endurance current+max), active buffs (combat/buff/curse lists), config (boss profile, enemy resists, flask uptimes, custom mods), passive tree summary, the FULL `allocated_nodes` list, all chosen `mastery_picks`, `jewel_placements` on tree sockets, raised `spectres`, PoE1 `tattoos`, the `pantheon` choice (major + minor + bandit), the active item-set `slot_map`, and the pobb.in `import_link` if present. The response also includes SEMANTIC FACTS computed from the parsed build: `archetype` (defense/hit_model/mechanic tags — e.g. {defense:[\"life\",\"MoM\"], hit_model:[\"non-crit-EO\"], mechanic:[\"self-cast\"]}), `defining_uniques` (uniques present, each tagged engine|defining|amplifier with an identity hint), and `conversion_chain` (verbatim damage-conversion steps when applicable). Surface archetype tags FIRST when commenting on the build — do NOT guess the archetype from class+ascendancy alone. Never recommend selling an item flagged `category: \"engine\"` without explicit user instruction; engine items collapse the build if removed. Always call this BEFORE making any claim about the exile's character. No arguments.",
             "input_schema": {
                 "type": "object",
                 "properties": {},
@@ -1342,27 +1342,86 @@ fn render_build_for_llm(b: &PobBuild) -> String {
         summary.insert("headline".into(), serde_json::Value::Object(headline));
     }
 
-    // Selected high-value stats verbatim. Anything not here is in `stats`.
+    // Selected high-value stats verbatim. Names match PoB's `<PlayerStat>`
+    // keys as written by Path of Building (verified against vendored test
+    // builds + CalcDefence/CalcOffence outputs). Unknown keys silently
+    // skip — PoB doesn't always cache every entry, and the LLM can fall
+    // back to `pob_calc category=all`. Grouped thematically.
     let key_stats = [
+        // Pools and EHP.
         "Life",
         "Mana",
         "EnergyShield",
         "Spirit",
         "TotalEHP",
+        "LifeUnreserved",
+        "ManaUnreserved",
+        // Headline DPS.
         "CombinedDPS",
         "TotalDPS",
         "FullDPS",
+        "SkillDPS",
+        "AverageHit",
+        "AverageDamage",
+        // Ailment / DoT DPS.
+        "IgniteDPS",
+        "BleedDPS",
+        "PoisonDPS",
+        "TotalDot",
+        "TotalDotDPS",
+        "ImpaleDPS",
+        "WithBleedDPS",
+        "WithPoisonDPS",
+        "WithIgniteDPS",
+        // Resistances (cached + over-cap).
         "FireResist",
         "ColdResist",
         "LightningResist",
         "ChaosResist",
+        "FireResistOverCap",
+        "ColdResistOverCap",
+        "LightningResistOverCap",
+        "ChaosResistOverCap",
+        // Max resists (often live-engine only, kept for graceful fallback).
+        "FireResistMax",
+        "ColdResistMax",
+        "LightningResistMax",
+        "ChaosResistMax",
+        // Mitigation.
         "Armour",
         "Evasion",
         "PhysicalDamageReduction",
+        "BlockChance",
+        "SpellBlockChance",
         "EffectiveSpellSuppressionChance",
         "EffectiveBlockChance",
         "AttackDodgeChance",
         "SpellDodgeChance",
+        "MeleeEvadeChance",
+        "ProjectileEvadeChance",
+        // Sustain (regen + leech-gain).
+        "LifeRegen",
+        "ManaRegen",
+        "EnergyShieldRegen",
+        "LifeLeechGainRate",
+        "ManaLeechGainRate",
+        "EnergyShieldLeechGainRate",
+        // Speed and accuracy and crit.
+        "EffectiveMovementSpeedMod",
+        "Speed",
+        "HitChance",
+        "CritChance",
+        "PreEffectiveCritChance",
+        "CritMultiplier",
+        // Ailment avoidance and stun.
+        "StunAvoidChance",
+        "IgniteAvoidChance",
+        "PoisonAvoidChance",
+        // Charges.
+        "PowerChargesMax",
+        "FrenzyChargesMax",
+        "EnduranceChargesMax",
+        // Attributes.
         "Str",
         "Dex",
         "Int",
