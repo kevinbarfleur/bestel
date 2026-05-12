@@ -16,6 +16,7 @@
 //! differences that don't actually change the build.
 
 use sha2::{Digest, Sha256};
+use serde_json::Value;
 
 /// Canonicalize the inputs that constitute a build's identity and return a
 /// fingerprint string of the form `<ascendancy>:<main_skill>:<defining_uniques>`
@@ -70,6 +71,10 @@ pub fn compute_fingerprint_from_pob(pob: &crate::pob::PobBuild) -> Option<String
 /// than re-serializing in here so the caller controls canonicalization (key
 /// order, whitespace) — typically `serde_json::to_string` of the parsed
 /// `PobBuild`. Returns lowercase hex.
+///
+/// Prefer `compute_pob_hash_from_build` for `PobBuild` inputs — it handles
+/// the items-vec reorder sensitivity that bit us before. This raw entry
+/// stays for callers that hash other kinds of canonical strings.
 pub fn compute_pob_hash(canonical_json: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(canonical_json.as_bytes());
@@ -78,6 +83,55 @@ pub fn compute_pob_hash(canonical_json: &str) -> String {
     for b in digest.iter() {
         use std::fmt::Write;
         let _ = write!(&mut out, "{b:02x}");
+    }
+    out
+}
+
+/// Produce the canonical JSON used for hashing. Items are sorted by
+/// `(rarity, name, base, whitespace-normalised raw)` so a PoB resave that
+/// happens to write items in a different order does NOT flip the hash. All
+/// other fields are serde-serialised verbatim — they already use
+/// `BTreeMap` for stat / config maps, so they're stable.
+pub fn canonicalise_for_hash(pob: &crate::pob::PobBuild) -> Value {
+    let mut clone = pob.clone();
+    clone.items.sort_by(|a, b| {
+        let key = |it: &crate::pob::PobItem| {
+            (
+                it.rarity.clone().unwrap_or_default().to_ascii_lowercase(),
+                it.name.clone().unwrap_or_default().to_ascii_lowercase(),
+                it.base.clone().unwrap_or_default().to_ascii_lowercase(),
+                normalize_whitespace(&it.raw),
+            )
+        };
+        key(a).cmp(&key(b))
+    });
+    serde_json::to_value(&clone).unwrap_or(Value::Null)
+}
+
+/// Hash a `PobBuild` after canonicalising it. Cheap (one clone + sort + JSON
+/// serialise + sha256) and the only correct path for sheet drift detection
+/// — `serde_json::to_string(&build)` directly is order-fragile.
+pub fn compute_pob_hash_from_build(pob: &crate::pob::PobBuild) -> String {
+    let canonical = serde_json::to_string(&canonicalise_for_hash(pob)).unwrap_or_default();
+    compute_pob_hash(&canonical)
+}
+
+fn normalize_whitespace(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut prev_was_space = false;
+    for ch in s.chars() {
+        if ch.is_whitespace() {
+            if !prev_was_space && !out.is_empty() {
+                out.push(' ');
+                prev_was_space = true;
+            }
+        } else {
+            out.push(ch);
+            prev_was_space = false;
+        }
+    }
+    if out.ends_with(' ') {
+        out.pop();
     }
     out
 }
@@ -141,5 +195,89 @@ mod tests {
         let b = compute_pob_hash(r#"{"life":4821}"#);
         assert_ne!(a, b);
         assert_eq!(a.len(), 64);
+    }
+
+    #[test]
+    fn normalize_whitespace_collapses_runs() {
+        assert_eq!(normalize_whitespace("a  b\nc\t\td"), "a b c d");
+        assert_eq!(normalize_whitespace("  leading   middle trailing  "), "leading middle trailing");
+        assert_eq!(normalize_whitespace(""), "");
+    }
+
+    #[test]
+    fn compute_pob_hash_from_build_is_item_order_insensitive() {
+        // Two PoB builds that differ only in item-array order should
+        // produce identical hashes. Before canonicalisation, a PoB resave
+        // that reorders items flipped the hash and broke sheet drift
+        // detection.
+        let xml_a = br#"<?xml version="1.0"?>
+<PathOfBuilding>
+  <Build level="92" className="Witch" mainSocketGroup="1"/>
+  <Items activeItemSet="1">
+    <Item id="1">Rarity: UNIQUE
+Mageblood
+Heavy Belt</Item>
+    <Item id="2">Rarity: UNIQUE
+Watcher's Eye
+Prismatic Jewel</Item>
+    <ItemSet id="1"><Slot name="Belt" itemId="1"/></ItemSet>
+  </Items>
+</PathOfBuilding>"#;
+        let xml_b = br#"<?xml version="1.0"?>
+<PathOfBuilding>
+  <Build level="92" className="Witch" mainSocketGroup="1"/>
+  <Items activeItemSet="1">
+    <Item id="2">Rarity: UNIQUE
+Watcher's Eye
+Prismatic Jewel</Item>
+    <Item id="1">Rarity: UNIQUE
+Mageblood
+Heavy Belt</Item>
+    <ItemSet id="1"><Slot name="Belt" itemId="1"/></ItemSet>
+  </Items>
+</PathOfBuilding>"#;
+        let a = crate::pob::parser::parse_bytes(xml_a, std::path::PathBuf::from("same.xml")).unwrap();
+        let b = crate::pob::parser::parse_bytes(xml_b, std::path::PathBuf::from("same.xml")).unwrap();
+        // Direct serialization differs because Vec<PobItem> order differs.
+        assert_ne!(
+            serde_json::to_string(&a).unwrap(),
+            serde_json::to_string(&b).unwrap()
+        );
+        // Canonicalised hash is identical.
+        assert_eq!(
+            compute_pob_hash_from_build(&a),
+            compute_pob_hash_from_build(&b)
+        );
+    }
+
+    #[test]
+    fn compute_pob_hash_from_build_detects_real_changes() {
+        // Sanity: actually changing an item's mod text should flip the hash.
+        let xml_a = br#"<?xml version="1.0"?>
+<PathOfBuilding>
+  <Build level="92" className="Witch" mainSocketGroup="1"/>
+  <Items activeItemSet="1">
+    <Item id="1">Rarity: RARE
+Mind Star
+Praetor Crown
++100 to maximum Life</Item>
+  </Items>
+</PathOfBuilding>"#;
+        let xml_b = br#"<?xml version="1.0"?>
+<PathOfBuilding>
+  <Build level="92" className="Witch" mainSocketGroup="1"/>
+  <Items activeItemSet="1">
+    <Item id="1">Rarity: RARE
+Mind Star
+Praetor Crown
++120 to maximum Life</Item>
+  </Items>
+</PathOfBuilding>"#;
+        let a = crate::pob::parser::parse_bytes(xml_a, std::path::PathBuf::from("same.xml")).unwrap();
+        let b = crate::pob::parser::parse_bytes(xml_b, std::path::PathBuf::from("same.xml")).unwrap();
+        assert_ne!(
+            compute_pob_hash_from_build(&a),
+            compute_pob_hash_from_build(&b)
+        );
     }
 }

@@ -233,8 +233,7 @@ impl AnthropicClient {
         ) = match ctx.get() {
             Some(b) => match crate::sheets::compute_fingerprint_from_pob(&b) {
                 Some(fp) => {
-                    let canonical = serde_json::to_string(&b).unwrap_or_default();
-                    let current_hash = crate::sheets::compute_pob_hash(&canonical);
+                    let current_hash = crate::sheets::compute_pob_hash_from_build(&b);
                     match crate::persistence::global_db() {
                         Some(db) => match crate::sheets::store::find_by_fingerprint(&db, &fp) {
                             Ok(Some(row)) => {

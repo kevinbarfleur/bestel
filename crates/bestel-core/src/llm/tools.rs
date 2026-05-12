@@ -1057,8 +1057,7 @@ async fn dispatch_get_active_build(ctx: &ToolCtx) -> Result<String> {
 fn compute_sheet_priority_directive(build: Option<&PobBuild>) -> Option<String> {
     let build = build?;
     let fingerprint = crate::sheets::compute_fingerprint_from_pob(build)?;
-    let canonical = serde_json::to_string(build).unwrap_or_default();
-    let current_hash = crate::sheets::compute_pob_hash(&canonical);
+    let current_hash = crate::sheets::compute_pob_hash_from_build(build);
     let row = crate::persistence::global_db().and_then(|db| {
         crate::sheets::store::find_by_fingerprint(&db, &fingerprint)
             .ok()

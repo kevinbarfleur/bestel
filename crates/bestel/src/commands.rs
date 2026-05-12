@@ -941,8 +941,7 @@ pub async fn get_active_build_sheet_for_ui(
     else {
         return Ok(None);
     };
-    let canonical = serde_json::to_string(&build).unwrap_or_default();
-    let current_hash = bestel_core::sheets::compute_pob_hash(&canonical);
+    let current_hash = bestel_core::sheets::compute_pob_hash_from_build(&build);
     let pob_hash_match = current_hash == row.pob_hash;
     // Compute the live build's 5 signatures so the frontend drift chip
     // strip can render per-axis state without a second round-trip.
@@ -1223,8 +1222,7 @@ fn build_registry_artifacts(
 > {
     let path = PathBuf::from(pob_path);
     let build = parse_file(&path).map_err(|e| format!("parse pob: {e}"))?;
-    let canonical = serde_json::to_string(&build).map_err(|e| format!("canonical: {e}"))?;
-    let pob_hash = bestel_core::sheets::compute_pob_hash(&canonical);
+    let pob_hash = bestel_core::sheets::compute_pob_hash_from_build(&build);
     let sigs = bestel_core::pob::signatures::BuildSignatures::from_build(&build);
     let defining = build
         .items

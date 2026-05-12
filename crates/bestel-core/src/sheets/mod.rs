@@ -21,7 +21,10 @@ pub mod fingerprint;
 pub mod store;
 pub mod types;
 
-pub use fingerprint::{compute_fingerprint, compute_fingerprint_from_pob, compute_pob_hash};
+pub use fingerprint::{
+    canonicalise_for_hash, compute_fingerprint, compute_fingerprint_from_pob, compute_pob_hash,
+    compute_pob_hash_from_build,
+};
 pub use store::SheetRow;
 pub use types::{
     BuildSheet, BuildSheetSection, DefiningItemEntry, IntentEntry, KnownGap, SchemaVersion,
