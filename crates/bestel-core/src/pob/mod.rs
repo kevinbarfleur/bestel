@@ -65,6 +65,38 @@ pub struct PobSkillGroup {
     pub slot: Option<String>,
 }
 
+/// One named skill set from `<Skills activeSkillSet="N"><SkillSet id="..">`.
+/// PoB lets the player keep multiple skill setups in one build (Mapping vs
+/// Boss vs Movement vs Aura) and tags one as active. Before Sprint v5 the
+/// parser flattened every set's skills into one `skill_groups` vec, losing
+/// the active selector. Now `is_active` marks the live set; legacy
+/// `PobBuild::skill_groups` mirrors the active set's groups for back-compat.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PobSkillSet {
+    pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    pub is_active: bool,
+    pub groups: Vec<PobSkillGroup>,
+}
+
+/// One named tree spec from `<Tree activeSpec="N"><Spec ..>`. Builds with
+/// branched trees (level path vs final, leveling vs uber, magic-find vs
+/// boss) tag one spec active. Before Sprint v5 the parser absorbed every
+/// spec's nodes into a single bucket. Now each spec lives on its own.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PobTreeSpec {
+    pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    pub is_active: bool,
+    pub tree: PobTree,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub allocated_nodes: Vec<u32>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub mastery_picks: Vec<MasteryPick>,
+}
+
 /// Pantheon + bandit choice (PoE1 only). Empty on PoE2.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PoePantheon {
@@ -288,6 +320,17 @@ pub struct PobBuild {
     /// pobb.in publish URL if present. **Never holds account/character hashes.**
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub import_link: Option<String>,
+    /// Every parsed skill set, each carrying its own `<Skill>` blocks. The
+    /// active set's groups also mirror into the legacy `skill_groups` vec
+    /// for back-compat. Empty when the build has no `<SkillSet>` wrappers
+    /// (older PoB format).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skill_sets: Vec<PobSkillSet>,
+    /// Every parsed tree spec. Active spec's tree/nodes/masteries also
+    /// mirror into the legacy `tree`/`allocated_nodes`/`mastery_picks`
+    /// fields for back-compat. Empty when the build has only one Spec.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tree_specs: Vec<PobTreeSpec>,
 }
 
 impl PobBuild {

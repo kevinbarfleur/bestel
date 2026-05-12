@@ -7,8 +7,8 @@ use quick_xml::Reader;
 
 use super::{
     JewelPlacement, MasteryPick, NotesSection, PobBuffs, PobBuild, PobBuildSummary, PobCharges,
-    PobConfig, PobDefenses, PobItem, PobSkillGem, PobSkillGroup, PobTattoo, PobTree, PoePantheon,
-    PoeVersion,
+    PobConfig, PobDefenses, PobItem, PobSkillGem, PobSkillGroup, PobSkillSet, PobTattoo, PobTree,
+    PobTreeSpec, PoePantheon, PoeVersion,
 };
 
 pub fn parse_file(path: &Path) -> Result<PobBuild> {
@@ -52,6 +52,23 @@ pub fn parse_bytes(bytes: &[u8], source: PathBuf) -> Result<PobBuild> {
     let mut current_item_set: Option<(String, BTreeMap<String, String>)> = None;
     let mut current_override: Option<(u32, String, String)> = None; // (node_id, dn, body)
 
+    // Sprint v5 — multi-set / multi-spec awareness. The parser no longer
+    // flattens every `<Skill>` under every `<SkillSet>` into one bucket.
+    // It tracks which set/spec the player tagged active and emits skills /
+    // sockets / tattoos / nodes belonging to the active branch into the
+    // legacy fields. Inactive branches are recorded as metadata-only
+    // entries in `skill_sets[]` / `tree_specs[]` so the LLM can describe
+    // "you have a boss setup too" without their full content polluting
+    // signatures or render.
+    let mut active_skill_set_id: Option<String> = None;
+    let mut current_skill_set_id: Option<String> = None;
+    let mut current_skill_set_title: Option<String> = None;
+    let mut skill_set_metas: Vec<(String, Option<String>)> = Vec::new(); // (id, title)
+    let mut active_spec_index: Option<u32> = None;
+    let mut spec_index_counter: u32 = 0;
+    let mut current_spec_title: Option<String> = None;
+    let mut spec_metas: Vec<(u32, Option<String>)> = Vec::new();
+
     let mut buf = Vec::new();
 
     loop {
@@ -89,6 +106,48 @@ pub fn parse_bytes(bytes: &[u8], source: PathBuf) -> Result<PobBuild> {
                     }
                     "Skills" => {
                         in_skills = true;
+                        for a in e.attributes().flatten() {
+                            if a.key.as_ref() == b"activeSkillSet" {
+                                active_skill_set_id =
+                                    Some(a.unescape_value().unwrap_or_default().to_string());
+                            }
+                        }
+                    }
+                    "Tree" => {
+                        for a in e.attributes().flatten() {
+                            if a.key.as_ref() == b"activeSpec" {
+                                let v = a.unescape_value().unwrap_or_default().to_string();
+                                if let Ok(n) = v.parse::<u32>() {
+                                    active_spec_index = Some(n);
+                                }
+                            }
+                        }
+                    }
+                    "SkillSet" if in_skills => {
+                        let mut id = String::new();
+                        let mut title: Option<String> = None;
+                        for a in e.attributes().flatten() {
+                            let v = a.unescape_value().unwrap_or_default().to_string();
+                            match a.key.as_ref() {
+                                b"id" => id = v,
+                                b"title" => {
+                                    if !v.is_empty() {
+                                        title = Some(v);
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                        if !id.is_empty() {
+                            current_skill_set_id = Some(id.clone());
+                            current_skill_set_title = title.clone();
+                            // Record the metadata in document order so the
+                            // post-pass can emit a non-active placeholder
+                            // entry for each named set.
+                            if !skill_set_metas.iter().any(|(existing, _)| existing == &id) {
+                                skill_set_metas.push((id, title));
+                            }
+                        }
                     }
                     "Item" if in_items => {
                         let id = e
@@ -154,12 +213,39 @@ pub fn parse_bytes(bytes: &[u8], source: PathBuf) -> Result<PobBuild> {
                         }
                     }
                     "Spec" => {
-                        absorb_spec_attrs(
-                            &e,
-                            &mut tree,
-                            &mut allocated_nodes,
-                            &mut mastery_picks,
-                        );
+                        spec_index_counter += 1;
+                        // Capture title attribute (PoB calls it `title` on
+                        // some specs). Used by the metadata-only entries
+                        // we emit for inactive specs.
+                        let mut title: Option<String> = None;
+                        for a in e.attributes().flatten() {
+                            if a.key.as_ref() == b"title" {
+                                let v = a.unescape_value().unwrap_or_default().to_string();
+                                if !v.is_empty() {
+                                    title = Some(v);
+                                }
+                            }
+                        }
+                        current_spec_title = title.clone();
+                        if !spec_metas.iter().any(|(idx, _)| *idx == spec_index_counter) {
+                            spec_metas.push((spec_index_counter, title));
+                        }
+                        // Only absorb the active spec's attrs into the
+                        // legacy fields. Old PoB builds with a single Spec
+                        // and no `activeSpec` attribute still keep the
+                        // existing behaviour (absorb the only spec).
+                        let belongs_to_active = match active_spec_index {
+                            Some(active) => active == spec_index_counter,
+                            None => true,
+                        };
+                        if belongs_to_active {
+                            absorb_spec_attrs(
+                                &e,
+                                &mut tree,
+                                &mut allocated_nodes,
+                                &mut mastery_picks,
+                            );
+                        }
                     }
                     // PoE1 tattoo override: `<Override dn="..." nodeId="..." ...>{stat text}</Override>`
                     "Override" => {
@@ -302,12 +388,31 @@ pub fn parse_bytes(bytes: &[u8], source: PathBuf) -> Result<PobBuild> {
                         }
                     }
                     "Spec" => {
-                        absorb_spec_attrs(
-                            &e,
-                            &mut tree,
-                            &mut allocated_nodes,
-                            &mut mastery_picks,
-                        );
+                        spec_index_counter += 1;
+                        let mut title: Option<String> = None;
+                        for a in e.attributes().flatten() {
+                            if a.key.as_ref() == b"title" {
+                                let v = a.unescape_value().unwrap_or_default().to_string();
+                                if !v.is_empty() {
+                                    title = Some(v);
+                                }
+                            }
+                        }
+                        if !spec_metas.iter().any(|(idx, _)| *idx == spec_index_counter) {
+                            spec_metas.push((spec_index_counter, title));
+                        }
+                        let belongs_to_active = match active_spec_index {
+                            Some(active) => active == spec_index_counter,
+                            None => true,
+                        };
+                        if belongs_to_active {
+                            absorb_spec_attrs(
+                                &e,
+                                &mut tree,
+                                &mut allocated_nodes,
+                                &mut mastery_picks,
+                            );
+                        }
                     }
                     "WeaponSet1" => {
                         for a in e.attributes().flatten() {
@@ -417,9 +522,29 @@ pub fn parse_bytes(bytes: &[u8], source: PathBuf) -> Result<PobBuild> {
                     "Skill" => {
                         if let Some(group) = current_skill.take() {
                             if !group.gems.is_empty() {
-                                skill_groups.push(group);
+                                // Skip skills from non-active SkillSet
+                                // wrappers. Old PoB builds without any
+                                // <SkillSet> element still flatten one
+                                // implicit set (both ids are None).
+                                let belongs_to_active = match (
+                                    &current_skill_set_id,
+                                    &active_skill_set_id,
+                                ) {
+                                    (Some(cur), Some(active)) => cur == active,
+                                    _ => true,
+                                };
+                                if belongs_to_active {
+                                    skill_groups.push(group);
+                                }
                             }
                         }
+                    }
+                    "SkillSet" => {
+                        current_skill_set_id = None;
+                        current_skill_set_title = None;
+                    }
+                    "Spec" => {
+                        current_spec_title = None;
                     }
                     "Override" => {
                         if let Some((node_id, dn, body)) = current_override.take() {
@@ -488,6 +613,63 @@ pub fn parse_bytes(bytes: &[u8], source: PathBuf) -> Result<PobBuild> {
     // Pick the active ItemSet (or the first one) and surface its slot map.
     let slot_map = pick_active_slot_map(&item_sets, active_item_set.as_deref());
 
+    // Build the metadata-only skill_sets / tree_specs surface. The active
+    // entry carries the parsed groups / tree (so the LLM can describe
+    // "you have a Mapping setup and a Boss setup; this answer is about
+    // the Mapping one"); inactive entries carry only id + title. We avoid
+    // re-collecting inactive content here to keep the JSON tight and
+    // signatures stable.
+    let skill_sets: Vec<PobSkillSet> = skill_set_metas
+        .iter()
+        .map(|(id, title)| {
+            let is_active = active_skill_set_id
+                .as_deref()
+                .map(|active| active == id)
+                .unwrap_or(false);
+            PobSkillSet {
+                id: id.clone(),
+                title: title.clone(),
+                is_active,
+                groups: if is_active {
+                    skill_groups.clone()
+                } else {
+                    Vec::new()
+                },
+            }
+        })
+        .collect();
+    let tree_specs: Vec<PobTreeSpec> = spec_metas
+        .iter()
+        .map(|(idx, title)| {
+            let is_active = match active_spec_index {
+                Some(active) => active == *idx,
+                None => spec_metas.len() == 1,
+            };
+            PobTreeSpec {
+                id: idx.to_string(),
+                title: title.clone(),
+                is_active,
+                tree: if is_active {
+                    tree.clone()
+                } else {
+                    PobTree::default()
+                },
+                allocated_nodes: if is_active {
+                    allocated_nodes.clone()
+                } else {
+                    Vec::new()
+                },
+                mastery_picks: if is_active {
+                    mastery_picks.clone()
+                } else {
+                    Vec::new()
+                },
+            }
+        })
+        .collect();
+    let _ = current_spec_title;
+    let _ = current_skill_set_title;
+
     Ok(PobBuild {
         source_file: source,
         game,
@@ -515,6 +697,8 @@ pub fn parse_bytes(bytes: &[u8], source: PathBuf) -> Result<PobBuild> {
         jewel_placements,
         spectres,
         import_link,
+        skill_sets,
+        tree_specs,
     })
 }
 
@@ -1006,6 +1190,63 @@ mod tests {
         assert!(sections[1].body.contains("thing 1"));
         assert_eq!(sections[2].heading, "Pob Notes");
         assert_eq!(sections[2].body, "body");
+    }
+
+    #[test]
+    fn parser_respects_active_skill_set_and_active_spec() {
+        // Two SkillSets + two Specs. The parser must:
+        //   - Surface ONLY active set's groups into legacy skill_groups.
+        //   - Surface ONLY active spec's nodes into legacy allocated_nodes.
+        //   - Emit metadata-only entries for non-active sets / specs in
+        //     skill_sets[] / tree_specs[] with is_active=false.
+        let xml = br#"<?xml version="1.0"?>
+<PathOfBuilding>
+  <Build level="92" className="Witch" mainSocketGroup="1"/>
+  <Tree activeSpec="2">
+    <Spec title="Leveling" nodes="1,2,3" treeVersion="3_25" classId="1"/>
+    <Spec title="Final" nodes="100,200,300,400" treeVersion="3_25" classId="1"/>
+  </Tree>
+  <Skills activeSkillSet="2">
+    <SkillSet id="1" title="Mapping">
+      <Skill mainActiveSkill="1" label="Map">
+        <Gem nameSpec="Hatred" enabled="true"/>
+      </Skill>
+    </SkillSet>
+    <SkillSet id="2" title="Boss">
+      <Skill mainActiveSkill="1" label="Boss">
+        <Gem nameSpec="Penance Brand of Dissipation" enabled="true"/>
+      </Skill>
+    </SkillSet>
+  </Skills>
+</PathOfBuilding>"#;
+        let b = parse_bytes(xml, PathBuf::from("t.xml")).unwrap();
+        // Active set's gem only.
+        assert_eq!(b.skill_groups.len(), 1);
+        assert_eq!(
+            b.skill_groups[0].gems[0].name,
+            "Penance Brand of Dissipation"
+        );
+        // Both sets are exposed; only the second is active.
+        assert_eq!(b.skill_sets.len(), 2);
+        let active = b.skill_sets.iter().find(|s| s.is_active).unwrap();
+        assert_eq!(active.id, "2");
+        assert_eq!(active.title.as_deref(), Some("Boss"));
+        let inactive = b.skill_sets.iter().find(|s| !s.is_active).unwrap();
+        assert_eq!(inactive.id, "1");
+        assert_eq!(inactive.title.as_deref(), Some("Mapping"));
+        // Inactive entries do NOT carry the gems — metadata only.
+        assert!(inactive.groups.is_empty());
+
+        // Active spec's nodes only.
+        assert_eq!(b.allocated_nodes, vec![100, 200, 300, 400]);
+        assert_eq!(b.tree_specs.len(), 2);
+        let active_spec = b.tree_specs.iter().find(|s| s.is_active).unwrap();
+        assert_eq!(active_spec.id, "2");
+        assert_eq!(active_spec.title.as_deref(), Some("Final"));
+        assert_eq!(active_spec.allocated_nodes, vec![100, 200, 300, 400]);
+        let inactive_spec = b.tree_specs.iter().find(|s| !s.is_active).unwrap();
+        assert_eq!(inactive_spec.id, "1");
+        assert!(inactive_spec.allocated_nodes.is_empty());
     }
 
     #[test]

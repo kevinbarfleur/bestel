@@ -1721,6 +1721,12 @@ fn render_build_for_llm(b: &PobBuild) -> String {
     if let Some(url) = &b.import_link {
         summary.insert("import_link".into(), json!(url));
     }
+    if !b.skill_sets.is_empty() {
+        summary.insert("skill_sets".into(), json!(b.skill_sets));
+    }
+    if !b.tree_specs.is_empty() {
+        summary.insert("tree_specs".into(), json!(b.tree_specs));
+    }
 
     // Sprint v5 — surface the 5 orthogonal signatures + canonical pob_hash
     // so the agent can describe drift in concrete terms ("your gear_sig
