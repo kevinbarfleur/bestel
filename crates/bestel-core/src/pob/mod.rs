@@ -25,13 +25,98 @@ impl PoeVersion {
     }
 }
 
+/// Influence marker on an item ("Shaper Item", "Elder Item", …). PoB
+/// writes these as plain keyword lines in the item dump. PoE2 has its own
+/// influence-like markers (Searing Exarch / Eater of Worlds carry-overs);
+/// unknown markers map to `Other(String)` so we never drop them.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum Influence {
+    Shaper,
+    Elder,
+    Crusader,
+    Hunter,
+    Redeemer,
+    Warlord,
+    SearingExarch,
+    EaterOfWorlds,
+    Synthesised,
+    Other(String),
+}
+
+/// One ring/amulet/jewel catalyst stamp + quality.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Catalyst {
+    pub kind: String,
+    pub quality: u32,
+}
+
+/// One link group on an item — a run of dash-separated socket colours
+/// (`R-G-B-G-G-G` is a 6L). PoB writes them grouped by space in the raw
+/// `Sockets:` line.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SocketGroup {
+    pub links: Vec<String>,
+}
+
+/// One parsed item mod line. PoB tags each line with optional prefixes
+/// like `{crafted}`, `{fractured}`, `{tier:3}`, `{tags:phys}` — the parser
+/// strips them and reflects them in the structured fields.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ItemMod {
+    pub line: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tier: Option<u32>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub is_crafted: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub is_fractured: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub is_synthesised: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub is_veiled: bool,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PobItem {
     pub id: String,
     pub rarity: Option<String>,
     pub name: Option<String>,
     pub base: Option<String>,
     pub raw: String,
+    /// Sprint v5 — structured item parse. Fields below are populated by
+    /// `parse_item_text` when the corresponding line is present in the
+    /// PoB dump; absent fields stay default. The full `raw` blob is kept
+    /// so the agent can quote tooltip text verbatim if it wants to.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub item_level: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub variant: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unique_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub anointment: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub catalyst: Option<Catalyst>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sockets: Vec<SocketGroup>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub influences: Vec<Influence>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub corrupted: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub mirrored: bool,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub split: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub enchant_mods: Vec<ItemMod>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub implicit_mods: Vec<ItemMod>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub explicit_mods: Vec<ItemMod>,
+    /// PoE2 weapon runic mods. Empty on PoE1.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub runic_mods: Vec<ItemMod>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

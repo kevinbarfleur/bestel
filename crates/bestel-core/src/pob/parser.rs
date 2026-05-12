@@ -6,9 +6,9 @@ use quick_xml::events::Event;
 use quick_xml::Reader;
 
 use super::{
-    JewelPlacement, MasteryPick, NotesSection, PobBuffs, PobBuild, PobBuildSummary, PobCharges,
-    PobConfig, PobDefenses, PobItem, PobSkillGem, PobSkillGroup, PobSkillSet, PobTattoo, PobTree,
-    PobTreeSpec, PoePantheon, PoeVersion,
+    Catalyst, Influence, ItemMod, JewelPlacement, MasteryPick, NotesSection, PobBuffs, PobBuild,
+    PobBuildSummary, PobCharges, PobConfig, PobDefenses, PobItem, PobSkillGem, PobSkillGroup,
+    PobSkillSet, PobTattoo, PobTree, PobTreeSpec, PoePantheon, PoeVersion, SocketGroup,
 };
 
 pub fn parse_file(path: &Path) -> Result<PobBuild> {
@@ -1040,41 +1040,247 @@ fn split_notes_sections(notes: &str) -> Vec<NotesSection> {
 }
 
 fn parse_item_text(id: String, raw: String) -> PobItem {
-    let mut rarity: Option<String> = None;
-    let mut name: Option<String> = None;
-    let mut base: Option<String> = None;
-
-    let mut lines = raw.lines().map(|l| l.trim()).filter(|l| !l.is_empty());
-
-    if let Some(first) = lines.next() {
-        if let Some(rest) = first.strip_prefix("Rarity:") {
-            rarity = Some(rest.trim().to_string());
-        }
-    }
-
-    let next1 = lines.next().map(|s| s.to_string());
-    let next2 = lines.next().map(|s| s.to_string());
-
-    match (rarity.as_deref(), next1, next2) {
-        (Some(r), Some(n1), Some(n2))
-            if r.eq_ignore_ascii_case("RARE") || r.eq_ignore_ascii_case("UNIQUE") =>
-        {
-            name = Some(n1);
-            base = Some(n2);
-        }
-        (_, Some(n1), _) => {
-            base = Some(n1);
-        }
-        _ => {}
-    }
-
-    PobItem {
+    let mut item = PobItem {
         id,
-        rarity,
-        name,
-        base,
         raw: raw.trim().to_string(),
+        ..Default::default()
+    };
+
+    // First pass — split into clean lines preserving order.
+    let lines: Vec<&str> = raw.lines().map(|l| l.trim()).collect();
+    let mut idx = 0;
+
+    // Header lines: Rarity, then for RARE/UNIQUE the name + base; for
+    // MAGIC/NORMAL just the base. PoB-encoded color codes are not used
+    // inside item dumps.
+    while idx < lines.len() && lines[idx].is_empty() {
+        idx += 1;
     }
+    if let Some(first) = lines.get(idx) {
+        if let Some(rest) = first.strip_prefix("Rarity:") {
+            item.rarity = Some(rest.trim().to_string());
+            idx += 1;
+        }
+    }
+    let is_named = item
+        .rarity
+        .as_deref()
+        .map(|r| r.eq_ignore_ascii_case("RARE") || r.eq_ignore_ascii_case("UNIQUE"))
+        .unwrap_or(false);
+    while idx < lines.len() && lines[idx].is_empty() {
+        idx += 1;
+    }
+    if is_named {
+        if let Some(n) = lines.get(idx) {
+            item.name = Some(n.to_string());
+            idx += 1;
+        }
+        while idx < lines.len() && lines[idx].is_empty() {
+            idx += 1;
+        }
+        if let Some(b) = lines.get(idx) {
+            item.base = Some(b.to_string());
+            idx += 1;
+        }
+    } else if let Some(b) = lines.get(idx) {
+        item.base = Some(b.to_string());
+        idx += 1;
+    }
+
+    // Walk the remaining lines. Each line is either a header field
+    // ("Sockets: ...", "Item Level: ...", "Variant: ...", "Unique ID: ..."),
+    // a keyword flag ("Corrupted", "Mirrored", "Shaper Item"), an
+    // "Implicits: N" cursor, an "Anointed: ..." line, a catalyst line,
+    // or a mod line (potentially prefixed with {markers}).
+    let mut pending_implicits: u32 = 0;
+    let mut in_implicit_block = false;
+    let mut catalyst_kind: Option<String> = None;
+    let mut catalyst_quality: Option<u32> = None;
+
+    while idx < lines.len() {
+        let line = lines[idx];
+        idx += 1;
+        if line.is_empty() {
+            continue;
+        }
+
+        if let Some(rest) = line.strip_prefix("Unique ID:") {
+            item.unique_id = Some(rest.trim().to_string());
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("Item Level:") {
+            item.item_level = rest.trim().parse().ok();
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("LevelReq:") {
+            // Drop — we don't currently surface it. Skip the line.
+            let _ = rest;
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("Variant:") {
+            item.variant = Some(rest.trim().to_string());
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("Anointed:") {
+            item.anointment = Some(rest.trim().to_string());
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("Catalyst:") {
+            catalyst_kind = Some(rest.trim().to_string());
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("CatalystQuality:") {
+            catalyst_quality = rest.trim().parse().ok();
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("Sockets:") {
+            let groups = rest
+                .trim()
+                .split_whitespace()
+                .map(|grp| SocketGroup {
+                    links: grp.split('-').map(|c| c.to_string()).collect(),
+                })
+                .collect::<Vec<_>>();
+            item.sockets = groups;
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("Implicits:") {
+            pending_implicits = rest.trim().parse::<u32>().unwrap_or(0);
+            in_implicit_block = pending_implicits > 0;
+            continue;
+        }
+
+        // Influence + flag keywords.
+        match line {
+            "Shaper Item" => {
+                item.influences.push(Influence::Shaper);
+                continue;
+            }
+            "Elder Item" => {
+                item.influences.push(Influence::Elder);
+                continue;
+            }
+            "Crusader Item" => {
+                item.influences.push(Influence::Crusader);
+                continue;
+            }
+            "Hunter Item" => {
+                item.influences.push(Influence::Hunter);
+                continue;
+            }
+            "Redeemer Item" => {
+                item.influences.push(Influence::Redeemer);
+                continue;
+            }
+            "Warlord Item" => {
+                item.influences.push(Influence::Warlord);
+                continue;
+            }
+            "Searing Exarch Item" => {
+                item.influences.push(Influence::SearingExarch);
+                continue;
+            }
+            "Eater of Worlds Item" => {
+                item.influences.push(Influence::EaterOfWorlds);
+                continue;
+            }
+            "Synthesised Item" => {
+                item.influences.push(Influence::Synthesised);
+                continue;
+            }
+            "Corrupted" => {
+                item.corrupted = true;
+                continue;
+            }
+            "Mirrored" => {
+                item.mirrored = true;
+                continue;
+            }
+            "Split" => {
+                item.split = true;
+                continue;
+            }
+            _ => {}
+        }
+
+        // Anything else: treat as a mod line. Strip leading {markers}.
+        let (markers, stripped) = strip_mod_markers(line);
+        if stripped.is_empty() {
+            continue;
+        }
+        let mod_entry = ItemMod {
+            line: stripped.to_string(),
+            tier: markers.tier,
+            is_crafted: markers.crafted,
+            is_fractured: markers.fractured,
+            is_synthesised: markers.synthesised,
+            is_veiled: markers.veiled,
+        };
+        if in_implicit_block && pending_implicits > 0 {
+            item.implicit_mods.push(mod_entry);
+            pending_implicits -= 1;
+            if pending_implicits == 0 {
+                in_implicit_block = false;
+            }
+        } else if markers.enchant {
+            item.enchant_mods.push(mod_entry);
+        } else if markers.rune {
+            item.runic_mods.push(mod_entry);
+        } else {
+            item.explicit_mods.push(mod_entry);
+        }
+    }
+
+    if catalyst_kind.is_some() || catalyst_quality.is_some() {
+        item.catalyst = Some(Catalyst {
+            kind: catalyst_kind.unwrap_or_default(),
+            quality: catalyst_quality.unwrap_or(0),
+        });
+    }
+
+    item
+}
+
+/// Parsed `{...}` mod-line markers. PoB writes a chain of brace-prefixed
+/// tokens like `{crafted}{tier:3}{tags:life}Stat text...`.
+#[derive(Debug, Default)]
+struct ModMarkers {
+    crafted: bool,
+    fractured: bool,
+    synthesised: bool,
+    veiled: bool,
+    enchant: bool,
+    rune: bool,
+    tier: Option<u32>,
+}
+
+fn strip_mod_markers(line: &str) -> (ModMarkers, &str) {
+    let mut markers = ModMarkers::default();
+    let mut rest = line;
+    while let Some(after_open) = rest.strip_prefix('{') {
+        let close = match after_open.find('}') {
+            Some(p) => p,
+            None => break,
+        };
+        let token = &after_open[..close];
+        rest = after_open[close + 1..].trim_start();
+        if let Some(tier) = token.strip_prefix("tier:") {
+            markers.tier = tier.trim().parse().ok();
+        } else if token.starts_with("tags:") || token.starts_with("variant:") {
+            // ignore — we don't surface these yet
+        } else {
+            match token {
+                "crafted" => markers.crafted = true,
+                "fractured" => markers.fractured = true,
+                "synthesised" => markers.synthesised = true,
+                "veiled" => markers.veiled = true,
+                "enchant" => markers.enchant = true,
+                "rune" => markers.rune = true,
+                _ => {}
+            }
+        }
+    }
+    (markers, rest)
 }
 
 #[cfg(test)]
@@ -1190,6 +1396,56 @@ mod tests {
         assert!(sections[1].body.contains("thing 1"));
         assert_eq!(sections[2].heading, "Pob Notes");
         assert_eq!(sections[2].body, "body");
+    }
+
+    #[test]
+    fn item_parser_splits_implicit_and_explicit_mods() {
+        let raw = "Rarity: RARE\nMind Star\nPraetor Crown\nUnique ID: abc123\nItem Level: 84\nSockets: R-G-B G G\nImplicits: 1\n+30 Intelligence\n{fractured}+95 to maximum Life\n{crafted}+25% to Fire Resistance\n+18 to Strength";
+        let item = parse_item_text("1".into(), raw.into());
+        assert_eq!(item.rarity.as_deref(), Some("RARE"));
+        assert_eq!(item.name.as_deref(), Some("Mind Star"));
+        assert_eq!(item.base.as_deref(), Some("Praetor Crown"));
+        assert_eq!(item.unique_id.as_deref(), Some("abc123"));
+        assert_eq!(item.item_level, Some(84));
+        assert_eq!(item.sockets.len(), 3);
+        assert_eq!(item.sockets[0].links, vec!["R", "G", "B"]);
+        assert_eq!(item.implicit_mods.len(), 1);
+        assert_eq!(item.implicit_mods[0].line, "+30 Intelligence");
+        assert_eq!(item.explicit_mods.len(), 3);
+        let fractured = item.explicit_mods.iter().find(|m| m.is_fractured).unwrap();
+        assert_eq!(fractured.line, "+95 to maximum Life");
+        let crafted = item.explicit_mods.iter().find(|m| m.is_crafted).unwrap();
+        assert_eq!(crafted.line, "+25% to Fire Resistance");
+    }
+
+    #[test]
+    fn item_parser_handles_influences_and_anointment() {
+        let raw = "Rarity: UNIQUE\nThe Pandemonius\nJade Amulet\nShaper Item\nAnointed: Heart of Ice\n+25% to Cold Damage\nCorrupted";
+        let item = parse_item_text("2".into(), raw.into());
+        assert!(item.influences.contains(&Influence::Shaper));
+        assert_eq!(item.anointment.as_deref(), Some("Heart of Ice"));
+        assert!(item.corrupted);
+    }
+
+    #[test]
+    fn item_parser_captures_catalyst_and_variant() {
+        let raw = "Rarity: UNIQUE\nWatcher's Eye\nPrismatic Jewel\nVariant: Hatred\nCatalyst: Turbulent\nCatalystQuality: 20\n+%50 to Critical Strike Damage while affected by Hatred";
+        let item = parse_item_text("3".into(), raw.into());
+        assert_eq!(item.variant.as_deref(), Some("Hatred"));
+        let cat = item.catalyst.as_ref().unwrap();
+        assert_eq!(cat.kind, "Turbulent");
+        assert_eq!(cat.quality, 20);
+    }
+
+    #[test]
+    fn item_parser_keeps_tier_marker_on_explicit_mod() {
+        let raw = "Rarity: RARE\nWraith Cloak\nVaal Regalia\nImplicits: 0\n{tier:3}{crafted}+25% to Lightning Resistance\n{tier:1}+102 to maximum Energy Shield";
+        let item = parse_item_text("4".into(), raw.into());
+        assert_eq!(item.explicit_mods.len(), 2);
+        assert_eq!(item.explicit_mods[0].tier, Some(3));
+        assert!(item.explicit_mods[0].is_crafted);
+        assert_eq!(item.explicit_mods[1].tier, Some(1));
+        assert!(!item.explicit_mods[1].is_crafted);
     }
 
     #[test]

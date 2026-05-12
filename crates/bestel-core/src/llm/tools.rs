@@ -1682,13 +1682,58 @@ fn render_build_for_llm(b: &PobBuild) -> String {
         .items
         .iter()
         .map(|it| {
-            json!({
-                "id": it.id,
-                "rarity": it.rarity,
-                "name": it.name,
-                "base": it.base,
-                "raw": truncate(&it.raw, 1500),
-            })
+            let mut entry = serde_json::Map::new();
+            entry.insert("id".into(), json!(it.id));
+            entry.insert("rarity".into(), json!(it.rarity));
+            entry.insert("name".into(), json!(it.name));
+            entry.insert("base".into(), json!(it.base));
+            entry.insert("raw".into(), json!(truncate(&it.raw, 1500)));
+            // Sprint v5 — structured item fields. Skip entries whose
+            // structured field is empty so the JSON stays tight on
+            // common (e.g. low-mod) items.
+            if let Some(v) = it.item_level {
+                entry.insert("item_level".into(), json!(v));
+            }
+            if let Some(v) = &it.variant {
+                entry.insert("variant".into(), json!(v));
+            }
+            if let Some(v) = &it.unique_id {
+                entry.insert("unique_id".into(), json!(v));
+            }
+            if let Some(v) = &it.anointment {
+                entry.insert("anointment".into(), json!(v));
+            }
+            if let Some(v) = &it.catalyst {
+                entry.insert("catalyst".into(), json!(v));
+            }
+            if !it.sockets.is_empty() {
+                entry.insert("sockets".into(), json!(it.sockets));
+            }
+            if !it.influences.is_empty() {
+                entry.insert("influences".into(), json!(it.influences));
+            }
+            if it.corrupted {
+                entry.insert("corrupted".into(), json!(true));
+            }
+            if it.mirrored {
+                entry.insert("mirrored".into(), json!(true));
+            }
+            if it.split {
+                entry.insert("split".into(), json!(true));
+            }
+            if !it.enchant_mods.is_empty() {
+                entry.insert("enchant_mods".into(), json!(it.enchant_mods));
+            }
+            if !it.implicit_mods.is_empty() {
+                entry.insert("implicit_mods".into(), json!(it.implicit_mods));
+            }
+            if !it.explicit_mods.is_empty() {
+                entry.insert("explicit_mods".into(), json!(it.explicit_mods));
+            }
+            if !it.runic_mods.is_empty() {
+                entry.insert("runic_mods".into(), json!(it.runic_mods));
+            }
+            serde_json::Value::Object(entry)
         })
         .collect();
     summary.insert("items".into(), json!(items));
