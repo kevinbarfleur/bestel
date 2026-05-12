@@ -1619,6 +1619,7 @@ fn run_tauri() {
                 commands::registry_refresh,
                 commands::registry_touch,
                 commands::registry_get_pob_path,
+                commands::registry_check_paths,
                 commands::suggestion_dismiss,
                 commands::suggestion_check,
                 titlebar::window_minimize,

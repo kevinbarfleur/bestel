@@ -11,7 +11,6 @@
 
 import { invoke } from '@tauri-apps/api/core';
 
-import { useBuildStore } from '../stores/build';
 import { useChatStore } from '../stores/chat';
 import { useSettingsStore } from '../stores/settings';
 import { useSheetStore } from '../stores/sheet';
@@ -113,7 +112,6 @@ export async function installDebugBridge(): Promise<void> {
   if (window.__bestel) return;
 
   const chat = useChatStore();
-  const build = useBuildStore();
   const settings = useSettingsStore();
   const sheet = useSheetStore();
 
@@ -123,9 +121,9 @@ export async function installDebugBridge(): Promise<void> {
       chat.reset();
       if (buildPath) {
         try {
-          await build.setActive(buildPath);
+          await chat.attachBuild(buildPath);
         } catch (e) {
-          console.error('[bestel debug] newChat: setActive failed', e);
+          console.error('[bestel debug] newChat: attachBuild failed', e);
         }
       }
     },
@@ -144,7 +142,7 @@ export async function installDebugBridge(): Promise<void> {
       await chat.cancel();
     },
     getActiveBuild() {
-      return build.current ? JSON.parse(JSON.stringify(build.current)) : null;
+      return chat.activeBuild ? JSON.parse(JSON.stringify(chat.activeBuild)) : null;
     },
     getActiveModel() {
       return settings.activeModel

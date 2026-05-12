@@ -2,12 +2,28 @@ import { onBeforeUnmount, onMounted } from 'vue';
 import type { UnlistenFn } from '@tauri-apps/api/event';
 
 import { onPobBuild, onPobCleared, onProviderStatus } from '../api/tauri';
-import { useBuildStore } from '../stores/build';
+import { useChatStore } from '../stores/chat';
 import { useSettingsStore } from '../stores/settings';
 import { useToastsStore } from '../stores/toasts';
 
+/**
+ * Routes backend events that touch the active build / provider surface
+ * to the chat store (build) and settings store (provider). The Rust
+ * `POB_BUILD` event fires from two paths:
+ *
+ *   1. The user explicitly attached a build via the modal — the chat
+ *      store already optimistically wrote `activeBuild`; the event
+ *      echoes a freshly-parsed snapshot.
+ *   2. The watcher detected the live PoB file change on disk for the
+ *      currently-attached build — useful so vitals / resists update
+ *      without the user re-attaching.
+ *
+ * `chat.applyExternalBuild(...)` is idempotent and filters by
+ * `source_file` match, so unrelated PoB file changes on disk don't
+ * silently swap the chat's build out from under the user.
+ */
 export function useBuildWatcher() {
-  const buildStore = useBuildStore();
+  const chat = useChatStore();
   const settings = useSettingsStore();
   const toasts = useToastsStore();
   const unlistens: UnlistenFn[] = [];
@@ -16,7 +32,7 @@ export function useBuildWatcher() {
   onMounted(async () => {
     unlistens.push(
       await onPobBuild((ev) => {
-        buildStore.applyBuildEvent(ev.build);
+        chat.applyExternalBuild(ev.build);
         if (firstBuild) {
           firstBuild = false;
           return;
@@ -31,7 +47,7 @@ export function useBuildWatcher() {
 
     unlistens.push(
       await onPobCleared(() => {
-        buildStore.applyClearedEvent();
+        chat.applyExternalClear();
       }),
     );
 

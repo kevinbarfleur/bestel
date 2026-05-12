@@ -8,7 +8,6 @@ import { useBuildWatcher } from '../composables/useBuildWatcher';
 import { useShortcuts } from '../composables/useShortcuts';
 import { useChatStore } from '../stores/chat';
 import { useChatHistoryStore } from '../stores/chatHistory';
-import { useBuildStore } from '../stores/build';
 import { useSettingsStore } from '../stores/settings';
 import { useUiStore } from '../stores/ui';
 
@@ -19,6 +18,7 @@ import BSLinkedSheetCard from '../components/build-sheet/BSLinkedSheetCard.vue';
 import BSSheetFullModal from '../components/build-sheet/BSSheetFullModal.vue';
 import ChatStream from '../components/chat/ChatStream.vue';
 import ChatComposer from '../components/chat/ChatComposer.vue';
+import ChatEmptyHero from '../components/chat/ChatEmptyHero.vue';
 import PanelView from '../components/panel/PanelView.vue';
 import DriftDrawer from '../components/sheet/DriftDrawer.vue';
 import BuildRegistryModal from '../components/registry/BuildRegistryModal.vue';
@@ -26,13 +26,12 @@ import { useSheetStore } from '../stores/sheet';
 
 const chat = useChatStore();
 const chatHistory = useChatHistoryStore();
-const buildStore = useBuildStore();
 const settings = useSettingsStore();
 const sheetStore = useSheetStore();
 const ui = useUiStore();
 const router = useRouter();
 
-const { current } = storeToRefs(buildStore);
+const { activeBuild: current } = storeToRefs(chat);
 const { panelArtifact, driftDrawerAxis } = storeToRefs(ui);
 
 const driftDrawerAuthoredAt = computed(() => {
@@ -56,6 +55,12 @@ function onDrawerKeep() {
 
 const sidebarCollapsed = computed(() => current.value === null);
 const panelOpen = computed(() => panelArtifact.value !== null);
+/** Hero on a blank canvas: only when the chat has no build AND no
+ *  messages. The composer would otherwise float over an empty page
+ *  with no signposting on first launch. */
+const showEmptyHero = computed(
+  () => current.value === null && chat.messages.length === 0,
+);
 
 useStreaming();
 useBuildWatcher();
@@ -81,20 +86,17 @@ useShortcuts({
 
 onMounted(async () => {
   await Promise.all([
-    buildStore.refreshActive(),
     settings.refreshModels(),
     settings.refreshDetection(),
     settings.refreshKeys(),
     settings.refreshRuntimeSettings(),
   ]);
-  // Restore the last active chat if any. The associated build is loaded
-  // best-effort; if the file is gone we silently keep the current one.
+  // Restore the last active chat if any. `loadFromSaved` re-attaches
+  // the saved build to the chat (best-effort; missing file is silent),
+  // so no manual reconciliation is needed here anymore.
   const saved = chatHistory.findActive();
   if (saved && saved.messages.length > 0) {
     await chat.loadFromSaved(saved);
-    if (saved.attached_build_path && buildStore.current?.source_file !== saved.attached_build_path) {
-      await buildStore.setActive(saved.attached_build_path);
-    }
   }
 });
 </script>
@@ -120,7 +122,8 @@ onMounted(async () => {
     </div>
 
     <div class="chat-view__main">
-      <ChatStream class="chat-view__stream" />
+      <ChatEmptyHero v-if="showEmptyHero" />
+      <ChatStream v-else class="chat-view__stream" />
       <ChatComposer />
     </div>
 

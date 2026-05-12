@@ -3,7 +3,6 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 
 import { useChatStore } from '../../stores/chat';
-import { useBuildStore } from '../../stores/build';
 import { useSettingsStore } from '../../stores/settings';
 import { useToastsStore } from '../../stores/toasts';
 import { useUiStore } from '../../stores/ui';
@@ -12,13 +11,11 @@ import AttachmentChip from './artifacts/AttachmentChip.vue';
 import RunicButton from '../runic/RunicButton.vue';
 
 const chat = useChatStore();
-const buildStore = useBuildStore();
 const settings = useSettingsStore();
 const toasts = useToastsStore();
 const ui = useUiStore();
 
-const { isStreaming } = storeToRefs(chat);
-const { current } = storeToRefs(buildStore);
+const { isStreaming, activeBuild: current } = storeToRefs(chat);
 const { activeModel } = storeToRefs(settings);
 
 const draft = ref('');
@@ -94,7 +91,7 @@ const handleKeydown = (e: KeyboardEvent) => {
 };
 
 const onClearBuild = async () => {
-  const ok = await buildStore.clearActive();
+  const ok = await chat.detachBuild();
   if (ok) {
     toasts.push({ variant: 'info', title: 'Build detached', body: 'Bestel will answer in generalist mode.' });
   }

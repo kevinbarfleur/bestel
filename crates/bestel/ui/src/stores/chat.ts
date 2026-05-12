@@ -1,9 +1,16 @@
 import { defineStore } from 'pinia';
 import { computed, nextTick, ref, watch } from 'vue';
 
-import { chatCancel, chatReset, chatStart } from '../api/tauri';
+import {
+  chatCancel,
+  chatReset,
+  chatStart,
+  clearActiveBuild as clearActiveBuildIpc,
+  getActiveBuild,
+  setActiveBuild as setActiveBuildIpc,
+} from '../api/tauri';
 import { extractPanelSidecar, tryExtractPanelSidecarPartial } from '../api/markdown';
-import type { AttachmentDto, UsageStats } from '../api/types';
+import type { AttachmentDto, PobBuildDto, UsageStats } from '../api/types';
 import { useChatHistoryStore, type SavedChat } from './chatHistory';
 import { useBuildStore } from './build';
 import { useSheetStore } from './sheet';
@@ -201,6 +208,18 @@ const DRAIN_FACTOR = 0.06;
 export const useChatStore = defineStore('chat', () => {
   const messages = ref<ChatMessageVm[]>([]);
   const activeSessionId = ref<number | null>(null);
+
+  /**
+   * The build this chat is talking about. Source of truth for every UI
+   * surface that asks "what build is in scope here?" — composer chip,
+   * sidebar invite/sheet card, panel item-card, drift drawer, registry
+   * modal "in use" indicator.
+   *
+   * The Rust backend holds a single `BuildContext` snapshot that the
+   * LLM reads per-turn; this store mirrors that snapshot and is the
+   * value persisted on the saved chat record as `attached_build_path`.
+   * Switching chats re-attaches the build via `loadFromSaved`. */
+  const activeBuild = ref<PobBuildDto | null>(null);
 
   // ─── Streaming buffer (RAF drain) ──────────────────────────────────
   // Raw token deltas from the LLM accumulate here, then a
@@ -770,6 +789,57 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  // ─── Active build (per-chat) ────────────────────────────────────────
+  //
+  // `attachBuild` is the one path through which the chat acquires a
+  // build. It updates the Rust `BuildContext` (the snapshot the LLM
+  // reads per turn) AND mirrors the parsed DTO locally, then triggers
+  // sheet rehydration so the sidebar lights up immediately. Triggered
+  // by user actions in `BuildRegistryModal` and by `loadFromSaved`
+  // when restoring a saved chat. Returns the parsed DTO or `null` on
+  // parse error.
+
+  async function attachBuild(path: string): Promise<PobBuildDto | null> {
+    try {
+      const dto = await setActiveBuildIpc(path);
+      activeBuild.value = dto;
+      void useBuildStore().rehydrateSheetForActive(dto);
+      return dto;
+    } catch {
+      return null;
+    }
+  }
+
+  async function detachBuild(): Promise<boolean> {
+    try {
+      await clearActiveBuildIpc();
+      activeBuild.value = null;
+      useSheetStore().clearActiveSheet();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Apply a build update that came from outside (Tauri `POB_BUILD` event
+   *  fired by the watcher / by another IPC). Treat the event as
+   *  authoritative for the build object's freshly-parsed fields, but
+   *  *only* if it matches the build this chat is currently using —
+   *  events for unrelated PoB file changes must not silently swap the
+   *  chat's build out from under the user. */
+  function applyExternalBuild(build: PobBuildDto): void {
+    const current = activeBuild.value;
+    if (current === null || current.source_file === build.source_file) {
+      activeBuild.value = build;
+      void useBuildStore().rehydrateSheetForActive(build);
+    }
+  }
+
+  function applyExternalClear(): void {
+    activeBuild.value = null;
+    useSheetStore().clearActiveSheet();
+  }
+
   async function cancel() {
     if (!isStreaming.value) return;
     try {
@@ -842,6 +912,24 @@ export const useChatStore = defineStore('chat', () => {
       if (liveInterview && liveInterview.payload && !(liveInterview.state?.submitted)) {
         sheetStore.rehydrateInterview(liveInterview.payload, liveInterview.state ?? null);
       }
+      // Restore the chat's attached build. Done inside the guarded
+      // region so the autosave watch can't observe a transient
+      // mismatch between messages and activeBuild. The IPC re-parses
+      // the PoB file from disk, refreshing BuildContext on the Rust
+      // side; if the file is gone, the chat keeps its prior build
+      // record but `activeBuild` stays null.
+      if (saved.attached_build_path) {
+        const dto = await attachBuild(saved.attached_build_path);
+        if (dto === null) {
+          // File missing or unparseable. Mirror in Rust too.
+          activeBuild.value = null;
+          useSheetStore().clearActiveSheet();
+        }
+      } else {
+        // Saved chat had no attached build — clear any leftover from a
+        // prior chat so the Rust BuildContext doesn't bleed across.
+        await detachBuild();
+      }
     } finally {
       // Release the autosave guard on the next tick so the deep watch's
       // post-flush observation also sees the lock in place.
@@ -875,7 +963,7 @@ export const useChatStore = defineStore('chat', () => {
 
   function doSnapshot(): void {
     if (messages.value.length === 0) return;
-    const buildPath = useBuildStore().current?.source_file ?? null;
+    const buildPath = activeBuild.value?.source_file ?? null;
     useChatHistoryStore().snapshot(messages.value, buildPath);
   }
 
@@ -910,6 +998,11 @@ export const useChatStore = defineStore('chat', () => {
     messages,
     activeSessionId,
     isStreaming,
+    activeBuild,
+    attachBuild,
+    detachBuild,
+    applyExternalBuild,
+    applyExternalClear,
     currentAssistant,
     appendText,
     reasoningBegin,

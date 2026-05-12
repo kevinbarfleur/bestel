@@ -1,29 +1,53 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
 
-import {
-  clearActiveBuild as clearActiveBuildIpc,
-  getActiveBuild,
-  getActiveBuildSheetForUi,
-  listBuilds,
-  setActiveBuild as setActiveBuildIpc,
-} from '../api/tauri';
+import { getActiveBuildSheetForUi, listBuilds } from '../api/tauri';
 import type { PobBuildDto, PobBuildSummaryDto } from '../api/types';
 import { useSheetStore } from './sheet';
 
+/**
+ * Build store — narrowed in Sprint v3.1.
+ *
+ * Used to also hold the global "currently attached build" singleton. That
+ * responsibility moved to the chat store (`chat.activeBuild`) because the
+ * active build is conceptually a property of one chat, not of the whole
+ * app. This store now only exposes:
+ *
+ *   - `list`: PoB files the watcher discovered on disk (across all
+ *     watcher folders), regardless of which one — if any — the current
+ *     chat is using.
+ *   - `rehydrateSheet(build)`: helper that fetches the linked Build Sheet
+ *     from the backend whenever the chat's active build changes, so the
+ *     sidebar sheet card lights up immediately on attach without waiting
+ *     for the agent to volunteer `get_active_build_sheet`.
+ *
+ * Mutation of "which build is in use" is owned by the chat store.
+ */
 export const useBuildStore = defineStore('build', () => {
-  const current = ref<PobBuildDto | null>(null);
   const list = ref<PobBuildSummaryDto[]>([]);
   const loadingList = ref(false);
 
-  /** Look up the persisted Build Sheet for the currently active build's
-   * fingerprint and load it into the sheet store. Triggered after any
-   * change to `current` (boot, attach, switch chat) so the sidebar
-   * sheet card rehydrates without waiting for the agent to volunteer
-   * `get_active_build_sheet`. Null `current` → sheet store cleared. */
-  async function rehydrateSheet() {
+  async function refreshList() {
+    loadingList.value = true;
+    try {
+      list.value = await listBuilds();
+    } catch {
+      list.value = [];
+    } finally {
+      loadingList.value = false;
+    }
+  }
+
+  /** Load (or clear) the Build Sheet linked to a given build. Called by
+   *  the chat store on attach / detach / chat-restore. Null `build` →
+   *  sheet store cleared. Errors are swallowed: most builds don't have
+   *  a sheet yet, which is the normal case.
+   *
+   *  The IPC reads the sheet for whatever BuildContext currently holds
+   *  on the backend, so callers must call `set_active_build` first. */
+  async function rehydrateSheetForActive(build: PobBuildDto | null) {
     const sheet = useSheetStore();
-    if (current.value === null) {
+    if (build === null) {
       sheet.clearActiveSheet();
       return;
     }
@@ -49,73 +73,14 @@ export const useBuildStore = defineStore('build', () => {
         sheet.markStale();
       }
     } catch {
-      // Best-effort; absence of a sheet is the common case and is fine.
+      // Best-effort; absence of a sheet is the common case.
     }
-  }
-
-  async function refreshActive() {
-    try {
-      current.value = await getActiveBuild();
-    } catch {
-      current.value = null;
-    }
-    await rehydrateSheet();
-  }
-
-  async function refreshList() {
-    loadingList.value = true;
-    try {
-      list.value = await listBuilds();
-    } catch {
-      list.value = [];
-    } finally {
-      loadingList.value = false;
-    }
-  }
-
-  async function setActive(path: string): Promise<PobBuildDto | null> {
-    try {
-      const dto = await setActiveBuildIpc(path);
-      current.value = dto;
-      await rehydrateSheet();
-      return dto;
-    } catch {
-      return null;
-    }
-  }
-
-  async function clearActive(): Promise<boolean> {
-    try {
-      await clearActiveBuildIpc();
-      current.value = null;
-      useSheetStore().clearActiveSheet();
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  function applyBuildEvent(build: PobBuildDto) {
-    current.value = build;
-    // Fire-and-forget; the watcher event arrives off-main-thread.
-    void rehydrateSheet();
-  }
-
-  function applyClearedEvent() {
-    current.value = null;
-    useSheetStore().clearActiveSheet();
   }
 
   return {
-    current,
     list,
     loadingList,
-    refreshActive,
     refreshList,
-    rehydrateSheet,
-    setActive,
-    clearActive,
-    applyBuildEvent,
-    applyClearedEvent,
+    rehydrateSheetForActive,
   };
 });

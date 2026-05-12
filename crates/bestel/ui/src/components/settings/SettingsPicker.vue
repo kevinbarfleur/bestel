@@ -5,6 +5,7 @@ import { storeToRefs } from 'pinia';
 import { useSettingsStore } from '../../stores/settings';
 import { useChatHistoryStore } from '../../stores/chatHistory';
 import { useToastsStore } from '../../stores/toasts';
+import { useUiStore } from '../../stores/ui';
 import RunicModal from '../runic/RunicModal.vue';
 import RunicButton from '../runic/RunicButton.vue';
 import RunicIcon from '../runic/RunicIcon.vue';
@@ -22,6 +23,13 @@ import SettingsDeveloperPane from './SettingsDeveloperPane.vue';
 defineProps<{ modelValue: boolean }>();
 const emit = defineEmits<{ 'update:modelValue': [value: boolean] }>();
 
+const ui = useUiStore();
+
+function openLibrary() {
+  emit('update:modelValue', false);
+  ui.openRegistryModal();
+}
+
 type Section =
   | 'appearance'
   | 'links'
@@ -36,7 +44,7 @@ const SECTIONS: Array<{ id: Section; label: string; hint: string }> = [
   { id: 'appearance', label: 'Appearance', hint: 'Theme & paper tone' },
   { id: 'links', label: 'Links', hint: 'Wiki & external behavior' },
   { id: 'model', label: 'Default model', hint: 'Boot selection' },
-  { id: 'folders', label: 'Watcher folders', hint: 'PoB build sources' },
+  { id: 'folders', label: 'Watcher folders', hint: 'Where Bestel finds PoB files' },
   { id: 'prompts', label: 'Prompts & docs', hint: 'Edit system prompt + per-model overrides' },
   { id: 'developer', label: 'Developer', hint: 'Test panel + battery runner' },
   { id: 'shortcuts', label: 'Shortcuts', hint: 'Keyboard reference' },
@@ -345,10 +353,23 @@ const chatCount = computed(() => history.chats.length);
           <header class="pane__header">
             <h1 class="pane__title">Watcher folders</h1>
             <p class="pane__sub">
-              Folders Bestel scans for Path of Building XML exports. New files
-              appear in the build picker automatically.
+              Folders Bestel scans for Path of Building XML exports.
+              Detected files show up in your library so you can save the ones
+              you want to talk to Bestel about.
             </p>
           </header>
+
+          <div class="settings__library-cta">
+            <RunicButton
+              variant="primary"
+              icon="arrow-right"
+              @click="openLibrary"
+            >Manage builds in your library</RunicButton>
+            <p class="settings__library-caption">
+              Watcher folders feed your library — picking which detected builds
+              you actually use happens there.
+            </p>
+          </div>
 
           <SettingsField
             label="Watched paths"
@@ -590,6 +611,23 @@ const chatCount = computed(() => history.chats.length);
 .settings__clear-default {
   margin-top: 14px;
   align-self: flex-start;
+}
+
+.settings__library-cta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 18px;
+  padding: 14px 16px;
+  background: var(--paper-shade);
+  border: 1px dashed var(--paper-line);
+  border-radius: 5px;
+}
+.settings__library-caption {
+  margin: 0;
+  font-family: var(--hand);
+  font-size: 13px;
+  color: var(--ink-soft);
 }
 
 .settings__folder-list {

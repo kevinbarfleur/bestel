@@ -2,7 +2,6 @@
 import { computed } from 'vue';
 import { storeToRefs } from 'pinia';
 
-import { useBuildStore } from '../../stores/build';
 import { useChatStore } from '../../stores/chat';
 import { useSheetStore } from '../../stores/sheet';
 
@@ -17,16 +16,15 @@ import { useSheetStore } from '../../stores/sheet';
  * and runs the deep-analysis + `sheet_open_interview` flow as usual.
  */
 
-const buildStore = useBuildStore();
 const sheet = useSheetStore();
 const chat = useChatStore();
 
-const { current } = storeToRefs(buildStore);
+const { activeBuild } = storeToRefs(chat);
 const { activeSheet, activeInterview } = storeToRefs(sheet);
 
 const visible = computed(
   () =>
-    current.value !== null &&
+    activeBuild.value !== null &&
     activeSheet.value === null &&
     activeInterview.value === null,
 );
@@ -44,12 +42,12 @@ async function onStart() {
     <div class="bs-invite__head">
       <span class="bs-invite__badge">
         <span class="bs-invite__glyph" aria-hidden="true">·</span>
-        No sheet yet
+        No Build Sheet yet
       </span>
     </div>
     <p class="bs-invite__lede">
-      Bestel doesn't know this build yet. A short interview now will save churn in every future
-      chat about it.
+      Bestel hasn't read this build in depth yet. A short interview now gives Bestel a Build Sheet —
+      its notes on this character — that every future chat will reuse.
     </p>
     <button type="button" class="bs-invite__cta" @click="onStart">
       <span class="bs-invite__cta-glyph" aria-hidden="true">+</span>

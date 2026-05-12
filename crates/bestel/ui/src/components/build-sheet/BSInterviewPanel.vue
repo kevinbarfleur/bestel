@@ -4,7 +4,6 @@ import { storeToRefs } from 'pinia';
 
 import { renderMarkdown } from '../../api/markdown';
 import { interceptAnchorClick } from '../../api/tauri';
-import { useBuildStore } from '../../stores/build';
 import { useChatStore } from '../../stores/chat';
 import type { SheetInterviewSegment } from '../../stores/chat';
 import { useSheetStore } from '../../stores/sheet';
@@ -50,11 +49,10 @@ const props = defineProps<{
 
 const chat = useChatStore();
 const sheet = useSheetStore();
-const buildStore = useBuildStore();
 const { activeInterview, interviewReady } = storeToRefs(sheet);
 
 /** PoE game (poe1 / poe2) for the markdown renderer's wiki-link router. */
-const renderGame = computed(() => buildStore.current?.game ?? 'poe1');
+const renderGame = computed(() => chat.activeBuild?.game ?? 'poe1');
 
 /** Snapshot the segment's payload+state into an `ActiveInterview`-shaped
  * object. Used in history mode when the live store has been cleared

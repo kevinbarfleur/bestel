@@ -3,7 +3,6 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue';
 
 import { openLink } from '../../api/tauri';
 import { renderMarkdown } from '../../api/markdown';
-import { useBuildStore } from '../../stores/build';
 import { useChatStore } from '../../stores/chat';
 import type {
   ChatMessageVm,
@@ -46,11 +45,10 @@ const THINKING_TICK_MS = 250;
 
 const props = defineProps<{ message: ChatMessageVm }>();
 
-const buildStore = useBuildStore();
 const ui = useUiStore();
 const chat = useChatStore();
 const sheet = useSheetStore();
-const game = computed(() => buildStore.current?.game ?? 'poe1');
+const game = computed(() => chat.activeBuild?.game ?? 'poe1');
 
 /** Confirm a drafted section. Updates the local sheet store optimistically
  *  so the card switches to its `confirmed` style immediately, then sends a
@@ -148,7 +146,7 @@ watch(
     isStreaming.value,
     props.message.status,
     props.message.mode,
-    buildStore.current?.source_file ?? null,
+    chat.activeBuild?.source_file ?? null,
   ],
   async () => {
     suggestionDismissedRemote.value = null;
@@ -160,7 +158,7 @@ watch(
     ) {
       return;
     }
-    const key = buildStore.current?.source_file;
+    const key = chat.activeBuild?.source_file;
     if (!key) return;
     try {
       suggestionDismissedRemote.value = await suggestionCheck(key);
@@ -176,7 +174,7 @@ const showSuggestionCard = computed(() => {
   if (isStreaming.value) return false;
   if (props.message.status !== 'complete') return false;
   if (props.message.mode !== 'brief-mechanic') return false;
-  if (!buildStore.current) return false;
+  if (!chat.activeBuild) return false;
   if (sheet.activeSheet) return false;
   if (suggestionLaterClosed.value) return false;
   if (suggestionDismissedRemote.value === true) return false;
@@ -184,7 +182,7 @@ const showSuggestionCard = computed(() => {
 });
 
 const suggestionBuildName = computed(() => {
-  const b = buildStore.current;
+  const b = chat.activeBuild;
   if (!b) return 'this build';
   return b.main_skill || b.ascendancy || b.class || 'this build';
 });
@@ -210,7 +208,7 @@ async function onSkipInterview() {
 
 async function onSuggestionDismiss() {
   suggestionLaterClosed.value = true;
-  const key = buildStore.current?.source_file;
+  const key = chat.activeBuild?.source_file;
   if (!key) return;
   try {
     // The dismissal table treats the key as opaque text — source_file is

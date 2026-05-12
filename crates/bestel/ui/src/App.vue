@@ -10,7 +10,6 @@ import RunicTooltip from './components/runic/RunicTooltip.vue';
 import ItemTooltip from './components/runic/ItemTooltip.vue';
 import NodeTooltip from './components/runic/NodeTooltip.vue';
 import GemTooltip from './components/runic/GemTooltip.vue';
-import BuildPicker from './components/build/BuildPicker.vue';
 import ModelPicker from './components/build/ModelPicker.vue';
 import ChatPicker from './components/chat/ChatPicker.vue';
 import SettingsPicker from './components/settings/SettingsPicker.vue';
@@ -49,14 +48,6 @@ const { toasts } = storeToRefs(toastsStore);
 const ui = useUiStore();
 const { picker } = storeToRefs(ui);
 
-const buildOpen = computed({
-  get: () => picker.value === 'build',
-  set: (v: boolean) => {
-    if (!v) ui.close();
-    else ui.openBuild();
-  },
-});
-
 const modelOpen = computed({
   get: () => picker.value === 'model',
   set: (v: boolean) => {
@@ -89,7 +80,6 @@ const settingsOpen = computed({
       <RouterView />
     </main>
 
-    <BuildPicker v-model="buildOpen" />
     <ModelPicker v-model="modelOpen" />
     <ChatPicker v-model="chatOpen" />
     <SettingsPicker v-model="settingsOpen" />

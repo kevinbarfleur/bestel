@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue';
 
 import { useToastsStore } from '../../stores/toasts';
-import { useBuildStore } from '../../stores/build';
+import { useChatStore } from '../../stores/chat';
 import { buildItemTradeUrl, openExternal } from '../../api/tauri';
 import { PickerSectionHead } from '../pickers';
 
@@ -32,7 +32,7 @@ export interface ItemCardPayload {
 const props = defineProps<{ payload: unknown }>();
 
 const toasts = useToastsStore();
-const buildStore = useBuildStore();
+const chat = useChatStore();
 const tradeBusy = ref(false);
 
 /** Map an item's slot label to the trade-site category filter. The trade
@@ -113,7 +113,7 @@ async function onFindOnTrade() {
     });
     return;
   }
-  const game = (buildStore.current?.game ?? 'poe1') as string;
+  const game = (chat.activeBuild?.game ?? 'poe1') as string;
   const rarity = typeof data.value.rarity === 'string' ? data.value.rarity.toLowerCase() : undefined;
   const category = inferTradeCategory(data.value.slot ?? undefined);
   tradeBusy.value = true;

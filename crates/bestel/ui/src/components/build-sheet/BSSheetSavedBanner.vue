@@ -10,7 +10,7 @@ defineProps<{
 <template>
   <div class="bs-saved" :title="`Sheet name: ${name}`">
     <span class="bs-saved__check" aria-hidden="true">✓</span>
-    Build Sheet saved · Bestel will read this in every future chat
+    Build Sheet saved · Bestel will reuse it in every chat about this build
   </div>
 </template>
 

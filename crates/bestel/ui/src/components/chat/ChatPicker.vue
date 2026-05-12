@@ -2,7 +2,6 @@
 import { computed, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 
-import { useBuildStore } from '../../stores/build';
 import { useChatHistoryStore, type SavedChat } from '../../stores/chatHistory';
 import { useChatStore } from '../../stores/chat';
 import { useToastsStore } from '../../stores/toasts';
@@ -21,7 +20,6 @@ const emit = defineEmits<{ 'update:modelValue': [value: boolean] }>();
 
 const history = useChatHistoryStore();
 const chat = useChatStore();
-const buildStore = useBuildStore();
 const toasts = useToastsStore();
 
 const { sortedChats, activeId } = storeToRefs(history);
@@ -96,21 +94,16 @@ const choose = async (c: SavedChat) => {
     close();
     return;
   }
+  // `loadFromSaved` re-attaches the saved build (best-effort) and
+  // clears Rust BuildContext when the chat had none. Surface a
+  // warning if the file is gone so the user knows to fix it.
   await chat.loadFromSaved(saved);
-  if (
-    saved.attached_build_path &&
-    buildStore.current?.source_file !== saved.attached_build_path
-  ) {
-    const ok = await buildStore.setActive(saved.attached_build_path);
-    if (!ok) {
-      toasts.push({
-        variant: 'warning',
-        title: 'Build no longer available',
-        body: 'Open the build picker to load a fresh one.',
-      });
-    }
-  } else if (!saved.attached_build_path && buildStore.current) {
-    await buildStore.clearActive();
+  if (saved.attached_build_path && chat.activeBuild === null) {
+    toasts.push({
+      variant: 'warning',
+      title: 'Build no longer available',
+      body: 'The PoB file moved or was deleted. Open your library to pick another.',
+    });
   }
   toasts.push({ variant: 'info', title: 'Chat restored', body: saved.title });
   close();

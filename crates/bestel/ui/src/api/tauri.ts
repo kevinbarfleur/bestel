@@ -109,6 +109,11 @@ export const registryTouch = (id: number): Promise<void> =>
   invoke('registry_touch', { id });
 export const registryGetPobPath = (id: number): Promise<string | null> =>
   invoke('registry_get_pob_path', { id });
+/** For each registered entry, returns `[id, exists]` where `exists` is
+ *  the result of an `fs::metadata` probe on the entry's `pob_path`. The
+ *  UI uses this to badge stale rows and disable `Use in this chat`. */
+export const registryCheckPaths = (): Promise<Array<[number, boolean]>> =>
+  invoke('registry_check_paths');
 export const suggestionDismiss = (pobHash: string, days: number): Promise<void> =>
   invoke('suggestion_dismiss', { pobHash, days });
 export const suggestionCheck = (pobHash: string): Promise<boolean> =>

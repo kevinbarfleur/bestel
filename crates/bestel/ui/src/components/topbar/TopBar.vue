@@ -4,21 +4,19 @@ import { storeToRefs } from 'pinia';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 
 import { windowClose, windowMinimize, windowToggleMaximize } from '../../api/tauri';
-import { useBuildStore } from '../../stores/build';
+import { useChatStore } from '../../stores/chat';
 import { useChatHistoryStore } from '../../stores/chatHistory';
 import { useRegistryStore } from '../../stores/registry';
-import { useSettingsStore } from '../../stores/settings';
 import { useUiStore } from '../../stores/ui';
 import RunicIcon from '../runic/RunicIcon.vue';
 import bestelAvatar from '../../assets/bestel-avatar.png';
 
-const buildStore = useBuildStore();
+const chat = useChatStore();
 const chatHistory = useChatHistoryStore();
 const registry = useRegistryStore();
-const settings = useSettingsStore();
 const ui = useUiStore();
 
-const { current: currentBuild } = storeToRefs(buildStore);
+const { activeBuild: currentBuild } = storeToRefs(chat);
 const { activeId: activeChatId } = storeToRefs(chatHistory);
 
 const isMaximized = ref(false);
@@ -105,7 +103,7 @@ const chatLabel = computed(() => {
       type="button"
       class="topbar__pill topbar__pill--amber"
       :class="{ 'topbar__pill--empty': !currentBuild }"
-      :title="currentBuild?.file_name ?? 'Pick a build'"
+      :title="currentBuild?.file_name ?? 'Open your build library'"
       @click="ui.openRegistryModal()"
     >
       <span class="topbar__pill-label">build</span>
@@ -113,7 +111,7 @@ const chatLabel = computed(() => {
         <span class="topbar__pill-value">{{ activeBuildDisplay }}</span>
         <span v-if="activeRegistrySummary" class="topbar__pill-sub">· {{ activeRegistrySummary }}</span>
       </template>
-      <span v-else class="topbar__pill-value topbar__pill-value--empty">Pick a build</span>
+      <span v-else class="topbar__pill-value topbar__pill-value--empty">Pick a build…</span>
       <span class="topbar__pill-caret">▾</span>
     </button>
 

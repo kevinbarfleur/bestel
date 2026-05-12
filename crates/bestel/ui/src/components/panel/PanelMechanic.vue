@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { useBuildStore } from '../../stores/build';
+import { useChatStore } from '../../stores/chat';
 import { renderMarkdown } from '../../api/markdown';
 import { interceptAnchorClick } from '../../api/tauri';
 
@@ -15,7 +15,7 @@ export interface MechanicPayload {
 
 const props = defineProps<{ payload: unknown }>();
 
-const buildStore = useBuildStore();
+const chat = useChatStore();
 
 const data = computed<MechanicPayload>(() => {
   const p = (props.payload ?? {}) as Partial<MechanicPayload>;
@@ -25,7 +25,7 @@ const data = computed<MechanicPayload>(() => {
   };
 });
 
-const game = computed(() => buildStore.current?.game ?? 'poe1');
+const game = computed(() => chat.activeBuild?.game ?? 'poe1');
 
 function renderBody(md: string): string {
   return renderMarkdown(md, game.value);

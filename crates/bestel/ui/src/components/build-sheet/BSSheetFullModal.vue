@@ -2,7 +2,7 @@
 import { computed } from 'vue';
 import { storeToRefs } from 'pinia';
 
-import { useBuildStore } from '../../stores/build';
+import { useChatStore } from '../../stores/chat';
 import { useSheetStore } from '../../stores/sheet';
 import { useUiStore } from '../../stores/ui';
 import RunicModal from '../runic/RunicModal.vue';
@@ -18,12 +18,12 @@ import BSSheetFullView from './BSSheetFullView.vue';
 
 const ui = useUiStore();
 const sheet = useSheetStore();
-const buildStore = useBuildStore();
+const chat = useChatStore();
 
 const { sheetModalOpen } = storeToRefs(ui);
 const { activeSheet } = storeToRefs(sheet);
 
-const game = computed(() => buildStore.current?.game ?? 'poe1');
+const game = computed(() => chat.activeBuild?.game ?? 'poe1');
 
 const versionLabel = computed(() => {
   const v = activeSheet.value?.schemaVersion;

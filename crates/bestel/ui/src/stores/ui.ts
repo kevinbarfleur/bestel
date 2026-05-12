@@ -47,12 +47,6 @@ export const useUiStore = defineStore('ui', () => {
    *  to show the back button in the panel header. */
   const panelHasHistory = computed(() => panelStack.value.length > 1);
 
-  /** Sprint v3 — legacy alias. The standalone `BuildPicker` modal was
-   *  retired in favor of `BuildRegistryModal`; every old `openBuild()`
-   *  call now lands the user in the new dedicated library modal. */
-  const openBuild = () => {
-    registryModalOpen.value = true;
-  };
   const openModel = () => {
     picker.value = 'model';
   };
@@ -135,7 +129,6 @@ export const useUiStore = defineStore('ui', () => {
     panelStack,
     driftDrawerAxis,
     registryModalOpen,
-    openBuild,
     openModel,
     openChat,
     openSettings,

@@ -2,7 +2,7 @@
 import { computed } from 'vue';
 import { storeToRefs } from 'pinia';
 
-import { useBuildStore } from '../../stores/build';
+import { useChatStore } from '../../stores/chat';
 import type {
   ResistanceDto,
   SkillGemDto,
@@ -14,8 +14,8 @@ import { openLink } from '../../api/tauri';
 
 const emit = defineEmits<{ openPicker: [] }>();
 
-const buildStore = useBuildStore();
-const { current } = storeToRefs(buildStore);
+const chat = useChatStore();
+const { activeBuild: current } = storeToRefs(chat);
 
 const fmtInt = (v: number | null | undefined): string => {
   if (v == null) return '—';
@@ -637,9 +637,9 @@ const tipMainDps = (): string => {
     <!-- Empty state — almanach -->
     <div v-else class="bp-empty">
       <span class="bp-empty__rune">◆</span>
-      <p class="bp-empty__title">No build loaded</p>
-      <p class="bp-empty__hint">Save a build in Path of Building, or load one from the top bar.</p>
-      <a class="link bp-empty__cta" @click="onPickBuild">Drop your PoB code here</a>
+      <p class="bp-empty__title">No build in this chat</p>
+      <p class="bp-empty__hint">Pick one from the top bar, or save a new build to your library.</p>
+      <a class="link bp-empty__cta" @click="onPickBuild">Open your build library</a>
     </div>
 
     <!-- Watcher footer -->

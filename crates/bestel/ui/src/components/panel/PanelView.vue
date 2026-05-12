@@ -3,7 +3,7 @@ import { computed } from 'vue';
 import { storeToRefs } from 'pinia';
 
 import { useUiStore } from '../../stores/ui';
-import { useBuildStore } from '../../stores/build';
+import { useChatStore } from '../../stores/chat';
 import { openLink } from '../../api/tauri';
 import { makeWikiUrl } from '../../api/markdown';
 import RunicIcon from '../runic/RunicIcon.vue';
@@ -13,9 +13,9 @@ import PanelMechanic from './PanelMechanic.vue';
 import PanelMarkdown from './PanelMarkdown.vue';
 
 const ui = useUiStore();
-const buildStore = useBuildStore();
+const chat = useChatStore();
 const { panelArtifact, panelStack, panelHasHistory } = storeToRefs(ui);
-const game = computed(() => buildStore.current?.game ?? 'poe1');
+const game = computed(() => chat.activeBuild?.game ?? 'poe1');
 
 const kindLabel = computed(() => {
   switch (panelArtifact.value?.type) {

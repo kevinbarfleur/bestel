@@ -3,7 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { storeToRefs } from 'pinia';
 
 import { useBuildStore } from '../../stores/build';
-import { useChatHistoryStore } from '../../stores/chatHistory';
+import { useChatStore } from '../../stores/chat';
 import { useRegistryStore } from '../../stores/registry';
 import { useToastsStore } from '../../stores/toasts';
 import { useUiStore } from '../../stores/ui';
@@ -32,11 +32,12 @@ import FreshPill from '../sheet/FreshPill.vue';
  */
 const ui = useUiStore();
 const buildStore = useBuildStore();
+const chat = useChatStore();
 const registry = useRegistryStore();
-const chatHistory = useChatHistoryStore();
 const toasts = useToastsStore();
 
-const { current: currentBuild, list: discovered, loadingList } = storeToRefs(buildStore);
+const { activeBuild: currentBuild } = storeToRefs(chat);
+const { list: discovered, loadingList } = storeToRefs(buildStore);
 
 const search = ref('');
 const busy = ref(false);
@@ -118,16 +119,58 @@ function close() {
   previewedEntry.value = null;
 }
 
+const FIRST_ATTACH_KEY = 'bestel.firstAttachBannerShown.v1';
+
+/** True the first time the user successfully attaches any build. Used to
+ *  fire the cross-chat-continuity nudge exactly once per install — the
+ *  promise is invisible until we point at it.
+ */
+function consumeFirstAttachFlag(): boolean {
+  try {
+    if (localStorage.getItem(FIRST_ATTACH_KEY) === '1') return false;
+    localStorage.setItem(FIRST_ATTACH_KEY, '1');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function attachEntry(entry: RegistryEntryDto) {
+  // Non-destructive guard: if the active chat already has a different
+  // build AND there are messages in it, ask the user whether they want
+  // to replace the chat's build, open a new chat, or cancel. Silent
+  // attach is only safe when the chat is empty (nothing to lose).
+  const hasOtherBuild =
+    chat.activeBuild !== null &&
+    chat.activeBuild.source_file !== entry.pob_path;
+  const hasMessages = chat.messages.length > 0;
+  if (hasOtherBuild && hasMessages) {
+    const choice = window.confirm(
+      `This chat is currently using "${chat.activeBuild?.main_skill ?? chat.activeBuild?.class ?? 'another build'}".\n\n` +
+        `OK — Replace it in this chat with "${entry.display_name}".\n` +
+        'Cancel — Keep going. (Pick "Open in new chat" instead to use it side-by-side.)',
+    );
+    if (!choice) return;
+  }
+
   busy.value = true;
   try {
-    const dto = await buildStore.setActive(entry.pob_path);
+    const dto = await chat.attachBuild(entry.pob_path);
     if (!dto) {
-      toasts.push({ variant: 'error', title: 'Could not attach build', body: entry.pob_path });
+      toasts.push({ variant: 'error', title: "Couldn't load that PoB file", body: entry.pob_path });
       return;
     }
     void registry.touch(entry.id);
-    toasts.push({ variant: 'success', title: 'Build attached', body: entry.display_name });
+    const firstTime = consumeFirstAttachFlag();
+    if (firstTime && !entry.linked_sheet_id) {
+      toasts.push({
+        variant: 'success',
+        title: `Now using ${entry.display_name}`,
+        body: 'This build follows you across chats. Start the interview to give it a Build Sheet.',
+      });
+    } else {
+      toasts.push({ variant: 'success', title: `Now using ${entry.display_name}` });
+    }
     close();
   } finally {
     busy.value = false;
@@ -137,10 +180,13 @@ async function attachEntry(entry: RegistryEntryDto) {
 async function attachInNewChat(entry: RegistryEntryDto) {
   busy.value = true;
   try {
-    chatHistory.startNew();
-    const dto = await buildStore.setActive(entry.pob_path);
+    // Reset the chat in-place so messages are wiped and a new chat
+    // record is started on the next message. `chat.reset()` does the
+    // mark-history-new dance for us.
+    await chat.reset();
+    const dto = await chat.attachBuild(entry.pob_path);
     if (!dto) {
-      toasts.push({ variant: 'error', title: 'Could not attach build' });
+      toasts.push({ variant: 'error', title: "Couldn't load that PoB file" });
       return;
     }
     void registry.touch(entry.id);
@@ -150,15 +196,35 @@ async function attachInNewChat(entry: RegistryEntryDto) {
   }
 }
 
+async function viewSheet(entry: RegistryEntryDto) {
+  // The sheet store fetches from BuildContext, so we must make this
+  // build the active one first. Then the user can read the existing
+  // sheet — which is exactly what they're asking for. If they want a
+  // different chat, the standard "Open in new chat" path is still there.
+  busy.value = true;
+  try {
+    const dto = await chat.attachBuild(entry.pob_path);
+    if (!dto) {
+      toasts.push({ variant: 'error', title: "Couldn't open that Build Sheet", body: entry.pob_path });
+      return;
+    }
+    void registry.touch(entry.id);
+    close();
+    ui.openSheetModal();
+  } finally {
+    busy.value = false;
+  }
+}
+
 async function registerDiscovered(item: PobBuildSummaryDto) {
   busy.value = true;
   try {
     const entry = await registry.add(item.path);
-    const dto = await buildStore.setActive(entry.pob_path);
+    const dto = await chat.attachBuild(entry.pob_path);
     if (dto) {
       toasts.push({
         variant: 'success',
-        title: 'Build registered & attached',
+        title: 'Saved to library and using now',
         body: entry.display_name,
       });
     }
@@ -166,7 +232,7 @@ async function registerDiscovered(item: PobBuildSummaryDto) {
   } catch (e) {
     toasts.push({
       variant: 'error',
-      title: 'Could not register build',
+      title: "Couldn't save to library",
       body: e instanceof Error ? e.message : String(e),
     });
   } finally {
@@ -189,7 +255,7 @@ async function removeEntry(entry: RegistryEntryDto) {
   try {
     await registry.remove(entry.id);
     if (entry.pob_path === currentBuild.value?.source_file) {
-      await buildStore.clearActive();
+      await chat.detachBuild();
     }
   } catch (e) {
     toasts.push({
@@ -223,11 +289,11 @@ async function commitCustomPath() {
   busy.value = true;
   try {
     const entry = await registry.add(previewedEntry.value.pob_path);
-    const dto = await buildStore.setActive(entry.pob_path);
+    const dto = await chat.attachBuild(entry.pob_path);
     if (dto) {
       toasts.push({
         variant: 'success',
-        title: 'Build registered & attached',
+        title: 'Saved to library and using now',
         body: entry.display_name,
       });
     }
@@ -240,7 +306,7 @@ async function commitCustomPath() {
 }
 
 function clearAttached() {
-  void buildStore.clearActive();
+  void chat.detachBuild();
   close();
 }
 </script>
@@ -252,11 +318,11 @@ function clearAttached() {
       <header class="brm__header">
         <div class="brm__heading">
           <div class="brm__eyebrow">build library</div>
-          <h2 class="brm__title">Pick a build</h2>
+          <h2 class="brm__title">Your build library</h2>
           <p class="brm__subtitle">
-            Every chat needs a Path of Building file. Your library keeps your
-            characters available across chats so you don't re-import them every
-            session.
+            Bestel only talks about builds you've saved here. Pick one to use in
+            this chat — the Build Sheet for that build (Bestel's notes on the
+            character) follows you across every future chat.
           </p>
         </div>
         <button class="brm__close" type="button" aria-label="Close" @click="close">
@@ -269,26 +335,26 @@ function clearAttached() {
         <input
           v-model="search"
           type="search"
-          placeholder="Search library and detected files…"
+          placeholder="Search saved and detected builds…"
           class="brm__search-input"
         />
         <RunicButton
           v-if="currentBuild"
           variant="secondary"
           @click="clearAttached"
-        >Detach current build</RunicButton>
+        >Detach from this chat</RunicButton>
       </div>
 
       <div class="brm__body">
         <!-- ─── LIBRARY (registry entries) ────────────────────────────── -->
         <section class="brm__section">
           <div class="brm__section-head">
-            <span class="brm__section-label">in your library</span>
+            <span class="brm__section-label">saved builds</span>
             <span class="brm__section-rule" />
             <span class="brm__section-count">{{ registry.entries.length }}</span>
           </div>
           <div v-if="registry.entries.length === 0" class="brm__empty">
-            Nothing yet — click a detected build below to save it here.
+            Nothing here yet. Save a detected build below to get started.
           </div>
           <div v-else-if="filteredEntries.length === 0" class="brm__empty">
             No saved build matches your search.
@@ -304,7 +370,7 @@ function clearAttached() {
               <div class="brm__row-meta">
                 <div class="brm__row-title">
                   {{ e.display_name }}
-                  <span v-if="e.id === activeEntryId" class="brm__active-pill">attached</span>
+                  <span v-if="e.id === activeEntryId" class="brm__active-pill">using in this chat</span>
                 </div>
                 <div class="brm__row-sub">
                   {{ e.summary.class }} · {{ e.summary.ascendancy ?? '—' }}
@@ -316,26 +382,45 @@ function clearAttached() {
                 </div>
               </div>
               <div class="brm__row-status">
-                <FreshPill v-if="e.linked_sheet_id" dense />
-                <span v-else class="brm__row-nosheet">no sheet</span>
+                <span v-if="registry.missingIds.has(e.id)" class="brm__row-missing">
+                  file missing
+                </span>
+                <template v-else>
+                  <FreshPill v-if="e.linked_sheet_id" dense />
+                  <span v-else class="brm__row-nosheet">no Build Sheet yet</span>
+                </template>
               </div>
               <div class="brm__row-actions">
                 <button
                   type="button"
                   class="brm__btn brm__btn--primary"
-                  :disabled="busy || e.id === activeEntryId"
+                  :disabled="busy || e.id === activeEntryId || registry.missingIds.has(e.id)"
+                  :title="registry.missingIds.has(e.id)
+                    ? `The PoB file at ${e.pob_path} can't be found. Re-export it from Path of Building, or remove this entry.`
+                    : undefined"
                   @click="attachEntry(e)"
                 >
-                  {{ e.id === activeEntryId ? 'Attached' : 'Attach' }}
+                  {{ e.id === activeEntryId ? 'In use' : 'Use in this chat' }}
                 </button>
                 <button
+                  v-if="!registry.missingIds.has(e.id)"
                   type="button"
                   class="brm__btn brm__btn--ghost"
                   :disabled="busy"
-                  :title="'Open in a new chat'"
+                  title="Open in a new chat"
                   @click="attachInNewChat(e)"
                 >
-                  + new chat
+                  Open in new chat
+                </button>
+                <button
+                  v-if="e.linked_sheet_id && !registry.missingIds.has(e.id)"
+                  type="button"
+                  class="brm__btn brm__btn--ghost"
+                  :disabled="busy"
+                  title="View this build's Build Sheet"
+                  @click="viewSheet(e)"
+                >
+                  View sheet
                 </button>
                 <button
                   type="button"
@@ -354,7 +439,7 @@ function clearAttached() {
         <!-- ─── DETECTED on disk (not yet in registry) ────────────────── -->
         <section class="brm__section">
           <div class="brm__section-head">
-            <span class="brm__section-label">detected on disk</span>
+            <span class="brm__section-label">detected in your watcher folders</span>
             <span class="brm__section-rule" />
             <span v-if="loadingList" class="brm__section-count">scanning…</span>
             <span v-else class="brm__section-count">{{ discoveredNew.length }}</span>
@@ -363,8 +448,8 @@ function clearAttached() {
             Scanning your watcher folders for PoB files…
           </div>
           <div v-else-if="discoveredNew.length === 0" class="brm__empty">
-            Bestel didn't find any new PoB files. Adjust your watcher folders in
-            Settings → Watcher folders, or paste a custom path below.
+            Bestel didn't find any new PoB files. Add a watcher folder in Settings,
+            or paste a path below.
           </div>
           <div v-else-if="filteredDiscovered.length === 0" class="brm__empty">
             No detected build matches your search.
@@ -392,7 +477,7 @@ function clearAttached() {
                   :disabled="busy"
                   @click="registerDiscovered(d)"
                 >
-                  + Add &amp; attach
+                  Save &amp; use in this chat
                 </button>
               </div>
             </article>
@@ -402,7 +487,7 @@ function clearAttached() {
         <!-- ─── CUSTOM path (paste an XML outside your watcher folders) ─── -->
         <section class="brm__section">
           <div class="brm__section-head">
-            <span class="brm__section-label">paste a custom path</span>
+            <span class="brm__section-label">add a file by path</span>
             <span class="brm__section-rule" />
           </div>
           <div class="brm__custom">
@@ -444,7 +529,7 @@ function clearAttached() {
                   class="brm__btn brm__btn--primary"
                   :disabled="busy"
                   @click="commitCustomPath"
-                >Save to library &amp; attach</button>
+                >Save to library &amp; use</button>
               </div>
             </div>
           </div>
@@ -666,6 +751,19 @@ function clearAttached() {
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--ink-faint);
+}
+.brm__row-missing {
+  font-family: var(--label);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--bad);
+  padding: 2px 7px;
+  border: 1px solid var(--bad);
+  border-radius: 3px;
+  background: rgba(167, 73, 67, 0.08);
+  white-space: nowrap;
 }
 .brm__row-actions {
   display: flex;

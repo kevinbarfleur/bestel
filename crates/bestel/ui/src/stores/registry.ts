@@ -3,6 +3,7 @@ import { ref } from 'vue';
 import {
   onRegistryChanged,
   registryAdd,
+  registryCheckPaths,
   registryGetPobPath,
   registryList,
   registryRefresh,
@@ -19,6 +20,10 @@ import type { RegistryEntryDto } from '../api/types';
  */
 export const useRegistryStore = defineStore('registry', () => {
   const entries = ref<RegistryEntryDto[]>([]);
+  /** IDs of entries whose `pob_path` does not currently resolve on disk.
+   *  Populated alongside `entries` by `load()`; used by the modal to badge
+   *  rows red and disable their primary action. */
+  const missingIds = ref<Set<number>>(new Set());
   const loading = ref(false);
   const loaded = ref(false);
   let unlisten: (() => void) | null = null;
@@ -27,7 +32,14 @@ export const useRegistryStore = defineStore('registry', () => {
     if (loaded.value && !force) return;
     loading.value = true;
     try {
-      entries.value = await registryList();
+      const [list, exists] = await Promise.all([
+        registryList(),
+        registryCheckPaths().catch(() => [] as Array<[number, boolean]>),
+      ]);
+      entries.value = list;
+      missingIds.value = new Set(
+        exists.filter(([, ok]) => !ok).map(([id]) => id),
+      );
       loaded.value = true;
     } finally {
       loading.value = false;
@@ -69,6 +81,7 @@ export const useRegistryStore = defineStore('registry', () => {
 
   return {
     entries,
+    missingIds,
     loading,
     loaded,
     load,

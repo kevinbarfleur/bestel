@@ -1403,6 +1403,28 @@ pub async fn registry_get_pob_path(id: i64) -> Result<Option<String>, String> {
         .map_err(|e| format!("get pob path: {e}"))
 }
 
+/// Sprint v3.1 — check which registry entries still have their PoB file
+/// present on disk. Returns one `(id, exists)` tuple per registered
+/// entry. The UI uses this to badge stale rows and disable `Use in this
+/// chat` for missing files, instead of failing on click. Cheap: one
+/// `tokio::fs::metadata` per entry, fanned out concurrently.
+#[tauri::command]
+pub async fn registry_check_paths() -> Result<Vec<(i64, bool)>, String> {
+    let db = bestel_core::persistence::global_db()
+        .ok_or_else(|| "database is not initialized".to_string())?;
+    let entries = bestel_core::registry::list_entries(&db)
+        .map_err(|e| format!("list registry: {e}"))?;
+    // Sequential `metadata` calls — registry lists are bounded (~dozens
+    // of entries) and each stat is sub-millisecond. Avoids pulling in
+    // `futures` for a single use-site.
+    let mut out = Vec::with_capacity(entries.len());
+    for e in entries {
+        let exists = tokio::fs::metadata(&e.pob_path).await.is_ok();
+        out.push((e.id, exists));
+    }
+    Ok(out)
+}
+
 #[tauri::command]
 pub async fn suggestion_dismiss(pob_hash: String, days: u32) -> Result<(), String> {
     let db = bestel_core::persistence::global_db()
