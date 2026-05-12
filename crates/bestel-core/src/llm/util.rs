@@ -80,6 +80,25 @@ pub fn summarize_tool_args(name: &str, args: &Value) -> Option<String> {
                 _ => None,
             }
         }
+        "repoe_mods_for_base" => {
+            let game = s_owned("game").unwrap_or_else(|| "poe1".into());
+            let base = s_owned("base_id").unwrap_or_else(|| "?".into());
+            let influence = s_owned("influence")
+                .map(|i| format!(" +{i}"))
+                .unwrap_or_default();
+            // Shorten the metadata path by keeping the last segment only.
+            let short = base.rsplit('/').next().unwrap_or(&base).to_string();
+            Some(format!("{game} {short}{influence}"))
+        }
+        "poedb_lookup" => {
+            let game = s_owned("game").unwrap_or_else(|| "poe1".into());
+            let op = s_owned("operation").unwrap_or_else(|| "?".into());
+            let arg = s_owned("class").or_else(|| s_owned("gem"));
+            match arg {
+                Some(a) => Some(format!("{game} {op}({a})")),
+                None => Some(format!("{game} {op}")),
+            }
+        }
         "repoe_resolve" => s_owned("tag"),
         "trade_resolve_stats" => s_owned("phrase").map(|p| quote_truncate(&p, MAX_QUERY_LEN)),
         "trade_search_url" => {

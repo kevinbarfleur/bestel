@@ -13,6 +13,7 @@ use crate::llm::sheet_tools::{
 use crate::llm::LlmDelta;
 use crate::pob::semantic::BuildIdentity;
 use crate::pob::{PobBuild, PoeVersion};
+use crate::sources::poedb::PoedbClient;
 use crate::sources::repoe::{self, Category as RepoeCategory, Game as RepoeGame};
 use crate::sources::{FileCache, PoeHttpClient, TradeClient, WikiClient};
 
@@ -26,6 +27,8 @@ pub const TRADE_SEARCH_URL: &str = "trade_search_url";
 pub const WEB_FETCH: &str = "web_fetch";
 pub const READ_INTERNAL_REFERENCE: &str = "read_internal_reference";
 pub const REPOE_LOOKUP: &str = "repoe_lookup";
+pub const REPOE_MODS_FOR_BASE: &str = "repoe_mods_for_base";
+pub const POEDB_LOOKUP: &str = "poedb_lookup";
 pub const POB_CALC: &str = "pob_calc";
 pub const KB_SEARCH: &str = "kb_search";
 pub const LOAD_SKILL: &str = "load_skill";
@@ -151,6 +154,8 @@ pub struct ToolCtx {
     pub wiki_poe2: WikiClient,
     pub trade_poe1: TradeClient,
     pub trade_poe2: TradeClient,
+    pub poedb_poe1: PoedbClient,
+    pub poedb_poe2: PoedbClient,
     pub http: PoeHttpClient,
     /// Lazy headless PoB engine sidecar. Populated by the Tauri layer once
     /// `bundle.externalBin` resource paths are resolved. Left `None` for
@@ -185,7 +190,9 @@ impl ToolCtx {
         let wiki_poe1 = WikiClient::new(http.clone(), cache.clone(), PoeVersion::Poe1);
         let wiki_poe2 = WikiClient::new(http.clone(), cache.clone(), PoeVersion::Poe2);
         let trade_poe1 = TradeClient::new(http.clone(), cache.clone(), PoeVersion::Poe1);
-        let trade_poe2 = TradeClient::new(http.clone(), cache, PoeVersion::Poe2);
+        let trade_poe2 = TradeClient::new(http.clone(), cache.clone(), PoeVersion::Poe2);
+        let poedb_poe1 = PoedbClient::new(http.clone(), cache.clone(), PoeVersion::Poe1);
+        let poedb_poe2 = PoedbClient::new(http.clone(), cache, PoeVersion::Poe2);
         let pob_engine = crate::llm::pob_engine::global();
         let kb = crate::llm::kb::global();
         Ok(Self {
@@ -194,6 +201,8 @@ impl ToolCtx {
             wiki_poe2,
             trade_poe1,
             trade_poe2,
+            poedb_poe1,
+            poedb_poe2,
             http,
             pob_engine,
             kb,
@@ -249,6 +258,13 @@ impl ToolCtx {
         match parse_game(game) {
             PoeVersion::Poe2 => &self.trade_poe2,
             _ => &self.trade_poe1,
+        }
+    }
+
+    fn poedb(&self, game: &str) -> &PoedbClient {
+        match parse_game(game) {
+            PoeVersion::Poe2 => &self.poedb_poe2,
+            _ => &self.poedb_poe1,
         }
     }
 }
@@ -462,6 +478,52 @@ pub fn tool_schemas() -> Vec<Value> {
                     "limit": {"type": "integer", "default": 5, "minimum": 1, "maximum": 20}
                 },
                 "required": ["game", "category"],
+                "additionalProperties": false
+            }
+        }),
+        json!({
+            "name": REPOE_MODS_FOR_BASE,
+            "description": "Enumerate every explicit mod that can spawn on a given base item, with effective spawn weight + stat ranges. Use this for `what can roll on a Shaper Reaver Sword`, `what's the tier 1 prefix on a Vaal Regalia`, `what fractured mods exist for Cluster Jewels`, etc. — the join (mod.spawn_weights × base_item.tags) is computed offline from the bundled RePoE snapshot, so the result is the authoritative GGG mod pool (not a wiki article that may be patches out of date). `base_id` is the metadata path returned by `repoe_lookup category=base_items` (e.g. `Metadata/Items/Weapons/.../ReaverSword`) — call `repoe_lookup` first if you only have the human name. `influence` is optional and one of `shaper`, `elder`, `crusader`, `hunter`, `redeemer`, `warlord`, `exarch`, `eater`; when set, the join also synthesises `<influence>_<base_class>` virtual tags so influence mods are included. Returns mods sorted by group then descending required_level (highest tier first). Result is capped at `limit` (default 60, max 200); `total_matched` shows the pre-truncation count so you can tell when to refine.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "game": {"type": "string", "enum": ["poe1", "poe2"]},
+                    "base_id": {
+                        "type": "string",
+                        "description": "Exact metadata id for the base item, e.g. 'Metadata/Items/Weapons/TwoHandWeapons/TwoHandSwords/TwoHandSword15'. Get it via repoe_lookup category=base_items first."
+                    },
+                    "influence": {
+                        "type": "string",
+                        "enum": ["shaper", "elder", "crusader", "hunter", "redeemer", "warlord", "exarch", "eater"],
+                        "description": "Optional. When set, expands the base tag set with `{influence}_{class_tag}` synthetic tags so influence-gated mods get matched."
+                    },
+                    "limit": {"type": "integer", "default": 60, "minimum": 1, "maximum": 200}
+                },
+                "required": ["game", "base_id"],
+                "additionalProperties": false
+            }
+        }),
+        json!({
+            "name": POEDB_LOOKUP,
+            "description": "Fetch a derived view from PoEDB that RePoE doesn't pre-compute. Three operations: (a) `craft_bench` — the FULL crafting bench mod table (all classes), with `[mod_text, require, item_classes, unlock]` per row; (b) `craft_bench_for_class` — same schema, filtered to one item class (pass `class` as the plural URL slug PoEDB uses, e.g. `Rings`, `Two_Hand_Swords`, `Body_Armours`); (c) `skill_gem` — per-skill level progression table + implicit mods + version-history changelog (pass `gem` as the gem's PoEDB slug, e.g. `Molten_Strike`, `Spark_of_Cataclysm`). Use this **AFTER** trying `repoe_lookup` / `repoe_mods_for_base` — those are instant and offline. Reach for PoEDB when you need the curated joined view: 'what does the bench offer for Body Armour right now?', 'what stats does Molten Strike have at level 21?'. The page is HTTP-fetched and 24h-cached. Returns the URL it pulled in `source_url` so the agent can cite PoEDB in `Sources:`.",
+            "input_schema": {
+                "type": "object",
+                "properties": {
+                    "game": {"type": "string", "enum": ["poe1", "poe2"]},
+                    "operation": {
+                        "type": "string",
+                        "enum": ["craft_bench", "craft_bench_for_class", "skill_gem"]
+                    },
+                    "class": {
+                        "type": "string",
+                        "description": "Required for `craft_bench_for_class`. The plural URL slug PoEDB uses for the item class (e.g. `Rings`, `Two_Hand_Swords`, `Body_Armours`, `Helmets`, `Amulets`)."
+                    },
+                    "gem": {
+                        "type": "string",
+                        "description": "Required for `skill_gem`. The skill gem's PoEDB slug (e.g. `Molten_Strike`, `Spark_of_Cataclysm`). Spaces are auto-converted to underscores."
+                    }
+                },
+                "required": ["game", "operation"],
                 "additionalProperties": false
             }
         }),
@@ -748,6 +810,64 @@ pub async fn dispatch(name: &str, input: &Value, ctx: &ToolCtx) -> Result<String
                 return Err(anyhow!("provide either 'id' or 'name'"));
             };
             let value = serde_json::to_value(&result).context("serialize repoe lookup")?;
+            Ok(truncate(&serde_json::to_string(&value).unwrap_or_default(), 30_000))
+        }
+        REPOE_MODS_FOR_BASE => {
+            let game = input
+                .get("game")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| anyhow!("'game' is required ('poe1' or 'poe2')"))?;
+            let game = RepoeGame::parse(game)
+                .ok_or_else(|| anyhow!("'game' must be 'poe1' or 'poe2', got '{game}'"))?;
+            let base_id = input
+                .get("base_id")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| anyhow!("'base_id' is required"))?;
+            let influence = input.get("influence").and_then(|v| v.as_str());
+            let limit = input
+                .get("limit")
+                .and_then(|v| v.as_u64())
+                .map(|n| n.clamp(1, 200) as usize)
+                .unwrap_or(60);
+            let client = repoe::global();
+            let result = client.mods_for_base(game, base_id, influence, limit)?;
+            let value = serde_json::to_value(&result).context("serialize mods_for_base")?;
+            Ok(truncate(&serde_json::to_string(&value).unwrap_or_default(), 30_000))
+        }
+        POEDB_LOOKUP => {
+            let game = input.get("game").and_then(|v| v.as_str()).unwrap_or("poe1");
+            let operation = input
+                .get("operation")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| anyhow!("'operation' is required (craft_bench|craft_bench_for_class|skill_gem)"))?;
+            let client = ctx.poedb(game);
+            let value = match operation {
+                "craft_bench" => {
+                    let r = client.craft_bench().await?;
+                    serde_json::to_value(&r).context("serialize craft_bench")?
+                }
+                "craft_bench_for_class" => {
+                    let class = input
+                        .get("class")
+                        .and_then(|v| v.as_str())
+                        .ok_or_else(|| anyhow!("'class' is required for craft_bench_for_class"))?;
+                    let r = client.craft_bench_for_class(class).await?;
+                    serde_json::to_value(&r).context("serialize craft_bench_for_class")?
+                }
+                "skill_gem" => {
+                    let gem = input
+                        .get("gem")
+                        .and_then(|v| v.as_str())
+                        .ok_or_else(|| anyhow!("'gem' is required for skill_gem"))?;
+                    let r = client.skill_gem(gem).await?;
+                    serde_json::to_value(&r).context("serialize skill_gem")?
+                }
+                other => {
+                    return Err(anyhow!(
+                        "'operation' must be one of craft_bench/craft_bench_for_class/skill_gem, got '{other}'"
+                    ))
+                }
+            };
             Ok(truncate(&serde_json::to_string(&value).unwrap_or_default(), 30_000))
         }
         READ_INTERNAL_REFERENCE => {
@@ -1453,6 +1573,8 @@ mod tests {
         assert!(names.contains(&WEB_FETCH));
         assert!(names.contains(&READ_INTERNAL_REFERENCE));
         assert!(names.contains(&REPOE_LOOKUP));
+        assert!(names.contains(&REPOE_MODS_FOR_BASE));
+        assert!(names.contains(&POEDB_LOOKUP));
         assert!(names.contains(&POB_CALC));
         assert!(names.contains(&KB_SEARCH));
         assert!(names.contains(&LOAD_SKILL));
@@ -1460,7 +1582,7 @@ mod tests {
         assert!(names.contains(&SHEET_ASK));
         assert!(names.contains(&SHEET_FINALIZE_REQUEST));
         assert!(names.contains(&GET_ACTIVE_BUILD_SHEET));
-        assert_eq!(schemas.len(), 18);
+        assert_eq!(schemas.len(), 20);
     }
 
     #[test]

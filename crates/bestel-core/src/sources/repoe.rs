@@ -276,6 +276,130 @@ impl RepoeClient {
         Ok(LookupResult::from_snap(&snap, entries))
     }
 
+    /// Join `mods × base_items` to enumerate every explicit mod that can
+    /// spawn on a given base item, with the effective spawn weight and
+    /// stat ranges. Mimics GGG's roll algorithm: walk each mod's
+    /// `spawn_weights` array in order, take the FIRST tag whose name
+    /// appears in the base's `tags` set as the effective weight (0 → mod
+    /// can't roll).
+    ///
+    /// `base_id` is the metadata path (e.g. `Metadata/Items/Weapons/.../ReaverSword`)
+    /// — fuzzy name resolution is the caller's job (use `lookup_by_name`).
+    /// `influence` is an optional lowercase string (`shaper`, `elder`,
+    /// `crusader`, `hunter`, `redeemer`, `warlord`, `exarch`, `eater`)
+    /// that synthesises matching virtual tags into the base tag set so
+    /// influence mods (whose spawn_weights reference e.g. `shaper_2h_weapon`)
+    /// get selected.
+    pub fn mods_for_base(
+        &self,
+        game: Game,
+        base_id: &str,
+        influence: Option<&str>,
+        limit: usize,
+    ) -> Result<ModsForBaseResult> {
+        let bases = self.snapshot(game, Category::BaseItems)?;
+        let base_entry = bases
+            .entries
+            .get(base_id)
+            .ok_or_else(|| anyhow!("base item id not found: {base_id}"))?;
+        let base_tags = extract_base_tags(base_entry, influence);
+        if base_tags.is_empty() {
+            return Err(anyhow!(
+                "base {base_id} has no usable tags — RePoE bundle may be malformed"
+            ));
+        }
+
+        let mods = self.snapshot(game, Category::Mods)?;
+        let mut out: Vec<ModForBaseEntry> = Vec::new();
+        for (mod_id, mod_value) in mods.entries.iter() {
+            let domain = mod_value
+                .get("domain")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if domain != "item" {
+                continue;
+            }
+            let weight = effective_spawn_weight(mod_value, &base_tags);
+            if weight <= 0 {
+                continue;
+            }
+            if mod_value
+                .get("is_essence_only")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+            {
+                continue;
+            }
+            let mut entry = ModForBaseEntry {
+                id: mod_id.clone(),
+                weight,
+                name: mod_value
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                generation_type: mod_value
+                    .get("generation_type")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                required_level: mod_value
+                    .get("required_level")
+                    .and_then(|v| v.as_u64())
+                    .map(|n| n as u32)
+                    .unwrap_or(0),
+                group: mod_value
+                    .get("groups")
+                    .and_then(|v| v.as_array())
+                    .and_then(|a| a.first())
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                text: mod_value
+                    .get("text")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                mod_type: mod_value
+                    .get("type")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+                stats: mod_value
+                    .get("stats")
+                    .cloned()
+                    .unwrap_or(Value::Array(vec![])),
+            };
+            // Fall back to the `text` field when GGG doesn't ship a
+            // human name (typical for unique-only / hidden mods).
+            if entry.name.is_empty() {
+                entry.name = entry.text.clone();
+            }
+            out.push(entry);
+        }
+
+        // Sort by group then descending required_level — same group
+        // grouped together with highest tier first (typical "tier 1
+        // before tier 2" display order).
+        out.sort_by(|a, b| {
+            a.group
+                .cmp(&b.group)
+                .then(b.required_level.cmp(&a.required_level))
+                .then(a.id.cmp(&b.id))
+        });
+
+        let total = out.len();
+        out.truncate(limit.clamp(1, 200));
+        Ok(ModsForBaseResult {
+            game,
+            base_id: base_id.to_string(),
+            influence: influence.map(|s| s.to_string()),
+            base_tags,
+            total_matched: total,
+            mods: out,
+        })
+    }
+
     pub fn lookup_by_name(
         &self,
         game: Game,
@@ -317,6 +441,36 @@ impl RepoeClient {
             .collect();
         Ok(LookupResult::from_snap(&snap, entries))
     }
+}
+
+/// One mod row in a `mods_for_base` join. `weight` is the effective
+/// spawn weight for THIS base (not the raw `default` weight from the
+/// mod entry). `stats` keeps the raw RePoE stat array so callers can
+/// read ranges and stat ids.
+#[derive(Debug, Serialize)]
+pub struct ModForBaseEntry {
+    pub id: String,
+    pub name: String,
+    pub mod_type: String,
+    pub group: String,
+    pub generation_type: String,
+    pub required_level: u32,
+    pub weight: i64,
+    pub text: String,
+    pub stats: Value,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ModsForBaseResult {
+    pub game: Game,
+    pub base_id: String,
+    pub influence: Option<String>,
+    /// The expanded tag set used for matching (base tags plus any
+    /// influence virtual tags). Exposed so the caller can confirm
+    /// the join was set up the way they expected.
+    pub base_tags: Vec<String>,
+    pub total_matched: usize,
+    pub mods: Vec<ModForBaseEntry>,
 }
 
 #[derive(Debug, Serialize)]
@@ -450,6 +604,69 @@ fn push_strings(value: &Value, out: &mut Vec<String>, depth: u8) {
     }
 }
 
+/// Read the `tags` array from a base-item RePoE entry, plus optional
+/// influence virtual tags. Returns lowercase-trimmed strings.
+///
+/// Influence tags are synthesised based on the GGG mod-spawning model:
+/// influence mods reference tags like `shaper_2h_weapon`, `elder_helmet`,
+/// `crusader_amulet`, etc. The pattern is `{influence}_{class_tag}`
+/// where `class_tag` is the item-class subset of the base's own tags
+/// (e.g. `2h_weapon`, `helmet`, `ring`). We expand every reasonable
+/// candidate; surplus tags are harmless because mods only check the
+/// ones they reference.
+fn extract_base_tags(base_value: &Value, influence: Option<&str>) -> Vec<String> {
+    let mut tags: Vec<String> = base_value
+        .get("tags")
+        .and_then(|v| v.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str())
+                .map(|s| s.trim().to_lowercase())
+                .filter(|s| !s.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
+    if let Some(inf) = influence.map(|s| s.trim().to_lowercase()).filter(|s| !s.is_empty()) {
+        // Generic `<inf>_item` is referenced by some influence mods.
+        tags.push(format!("{inf}_item"));
+        // `<inf>_<class_tag>` for every existing tag — duplicates are
+        // harmless and the cross-product covers GGG's varied naming.
+        let snapshot = tags.clone();
+        for t in snapshot {
+            tags.push(format!("{inf}_{t}"));
+        }
+    }
+    // Always include `default` — GGG falls back to the catch-all entry
+    // when no class-specific tag matches.
+    if !tags.iter().any(|t| t == "default") {
+        tags.push("default".to_string());
+    }
+    tags.sort();
+    tags.dedup();
+    tags
+}
+
+/// Walk `spawn_weights` in array order — that's exactly how GGG resolves
+/// a mod's effective weight on a given item. The FIRST matching tag
+/// wins, regardless of subsequent entries. A weight of 0 explicitly
+/// blocks the mod (used by entries like `{"tag":"two_hand_weapon","weight":0}`
+/// to exclude two-handers from a one-hander-only mod).
+fn effective_spawn_weight(mod_value: &Value, base_tags: &[String]) -> i64 {
+    let weights = match mod_value.get("spawn_weights").and_then(|v| v.as_array()) {
+        Some(arr) => arr,
+        None => return 0,
+    };
+    let tag_set: std::collections::HashSet<&str> =
+        base_tags.iter().map(|s| s.as_str()).collect();
+    for entry in weights {
+        let tag = entry.get("tag").and_then(|v| v.as_str()).unwrap_or("");
+        if tag_set.contains(tag) {
+            return entry.get("weight").and_then(|v| v.as_i64()).unwrap_or(0);
+        }
+    }
+    0
+}
+
 const BUNDLE_FETCHED_AT: u64 = include_bundle_fetched_at();
 
 const fn include_bundle_fetched_at() -> u64 {
@@ -580,6 +797,138 @@ mod tests {
                 .map(|e| &e.id)
                 .collect::<Vec<_>>()
         );
+    }
+
+    #[test]
+    fn extract_base_tags_no_influence_returns_tags_plus_default() {
+        let v = serde_json::json!({"tags": ["sword", "weapon", "one_hand_sword"]});
+        let tags = extract_base_tags(&v, None);
+        assert!(tags.iter().any(|t| t == "sword"));
+        assert!(tags.iter().any(|t| t == "one_hand_sword"));
+        assert!(tags.iter().any(|t| t == "default"));
+        // No influence tag synthesised.
+        assert!(!tags.iter().any(|t| t.starts_with("shaper_")));
+    }
+
+    #[test]
+    fn extract_base_tags_with_influence_synthesises_virtual_tags() {
+        let v = serde_json::json!({"tags": ["helmet", "armour", "str_armour"]});
+        let tags = extract_base_tags(&v, Some("shaper"));
+        assert!(tags.iter().any(|t| t == "shaper_helmet"));
+        assert!(tags.iter().any(|t| t == "shaper_armour"));
+        assert!(tags.iter().any(|t| t == "shaper_item"));
+        assert!(tags.iter().any(|t| t == "default"));
+    }
+
+    #[test]
+    fn effective_spawn_weight_picks_first_matching_tag() {
+        let v = serde_json::json!({
+            "spawn_weights": [
+                {"tag": "two_hand_weapon", "weight": 0},
+                {"tag": "weapon", "weight": 1000},
+                {"tag": "default", "weight": 500}
+            ]
+        });
+        // Both `two_hand_weapon` and `weapon` are in the base tags; GGG
+        // takes the first match, which is the 0-weight block. This is
+        // the mechanism used to exclude two-handers from one-hand-only
+        // mods.
+        let w = effective_spawn_weight(
+            &v,
+            &["two_hand_weapon".into(), "weapon".into(), "default".into()],
+        );
+        assert_eq!(w, 0);
+
+        // Without `two_hand_weapon` in the base tag set, the weapon
+        // weight (1000) is picked.
+        let w2 = effective_spawn_weight(&v, &["weapon".into(), "default".into()]);
+        assert_eq!(w2, 1000);
+
+        // No matching tag at all → 0 (mod can't roll on this base).
+        let w3 = effective_spawn_weight(&v, &["jewel".into()]);
+        assert_eq!(w3, 0);
+    }
+
+    #[test]
+    fn mods_for_base_filters_by_spawn_weight_and_excludes_essence_only() {
+        // Mini in-memory snapshot of one base + three mods. Use the
+        // public APIs by inserting into a fresh RepoeClient's snapshot
+        // map — saves us from depending on the actual bundle.
+        use std::collections::HashMap;
+
+        let base_id = "Metadata/Items/Weapons/OneHandWeapons/OneHandSwords/OneHandSwordTest";
+        let mut bases = HashMap::new();
+        bases.insert(
+            base_id.to_string(),
+            serde_json::json!({
+                "tags": ["sword", "one_hand_sword", "weapon", "default"]
+            }),
+        );
+        let mut mods = HashMap::new();
+        mods.insert(
+            "RollsOnSwords".to_string(),
+            serde_json::json!({
+                "domain": "item",
+                "spawn_weights": [{"tag": "sword", "weight": 800}],
+                "name": "of Swiftness",
+                "generation_type": "suffix",
+                "required_level": 20,
+                "groups": ["AttackSpeed"],
+                "type": "LocalAttackSpeed",
+                "text": "+#% Attack Speed",
+                "stats": [],
+                "is_essence_only": false
+            }),
+        );
+        mods.insert(
+            "BlockedByZeroWeight".to_string(),
+            serde_json::json!({
+                "domain": "item",
+                "spawn_weights": [{"tag": "two_hand_weapon", "weight": 0}],
+                "name": "of Nothing",
+                "groups": [], "generation_type": "suffix",
+                "type": "X", "text": "X", "stats": [], "required_level": 1,
+                "is_essence_only": false
+            }),
+        );
+        mods.insert(
+            "EssenceOnly".to_string(),
+            serde_json::json!({
+                "domain": "item",
+                "spawn_weights": [{"tag": "sword", "weight": 500}],
+                "name": "of Essence",
+                "groups": [], "generation_type": "suffix",
+                "type": "X", "text": "X", "stats": [], "required_level": 1,
+                "is_essence_only": true
+            }),
+        );
+
+        let client = test_client();
+        client.install(Arc::new(CategorySnapshot {
+            game: Game::Poe1,
+            category: Category::BaseItems,
+            entries: bases,
+            fetched_at: 0,
+            source: SnapshotSource::Refreshed,
+        }));
+        client.install(Arc::new(CategorySnapshot {
+            game: Game::Poe1,
+            category: Category::Mods,
+            entries: mods,
+            fetched_at: 0,
+            source: SnapshotSource::Refreshed,
+        }));
+
+        let res = client
+            .mods_for_base(Game::Poe1, base_id, None, 50)
+            .unwrap();
+        let ids: Vec<&str> = res.mods.iter().map(|m| m.id.as_str()).collect();
+        assert!(ids.contains(&"RollsOnSwords"), "got: {ids:?}");
+        assert!(!ids.contains(&"BlockedByZeroWeight"), "0-weight blocked");
+        assert!(!ids.contains(&"EssenceOnly"), "essence_only excluded");
+        let m = res.mods.iter().find(|m| m.id == "RollsOnSwords").unwrap();
+        assert_eq!(m.weight, 800);
+        assert_eq!(m.required_level, 20);
     }
 
     #[test]

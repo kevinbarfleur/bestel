@@ -66,6 +66,7 @@ sha2 = { workspace = true }
 urlencoding = { workspace = true }
 base64 = { workspace = true }
 regex = "1"
+scraper = "0.21"
 zstd = "0.13"
 toml = "0.8"
 bestel-pob-engine = { path = "../bestel-pob-engine" }
