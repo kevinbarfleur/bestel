@@ -62,6 +62,35 @@ export const deleteBuildSheet = (id: string): Promise<boolean> =>
 export const getActiveBuildSheetForUi = (): Promise<ActiveBuildSheetDto | null> =>
   invoke('get_active_build_sheet_for_ui');
 
+// ─── Sprint v3 — Item → Trade query ─────────────────────────────────────
+
+export interface ItemTradeModInput {
+  kind: string;
+  text: string;
+}
+
+export interface ItemTradeQueryInput {
+  game: string;
+  mods: ItemTradeModInput[];
+  league?: string | null;
+  rarity?: string | null;
+  category?: string | null;
+}
+
+export interface ItemTradeQueryResult {
+  url: string;
+  league: string;
+  total: number;
+  resolved_stat_ids: string[];
+  unresolved_mods: string[];
+}
+
+/** Resolve item mods → trade stat IDs, POST a search to the official PoE
+ *  trade API, and return a shareable URL the frontend opens in the OS
+ *  default browser (so the user's logged-in session works). */
+export const buildItemTradeUrl = (payload: ItemTradeQueryInput): Promise<ItemTradeQueryResult> =>
+  invoke('build_item_trade_url', { payload });
+
 // ─── Sprint v3 — Build Registry IPC wrappers ────────────────────────────
 
 export const registryList = (): Promise<RegistryEntryDto[]> => invoke('registry_list');

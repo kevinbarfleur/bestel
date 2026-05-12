@@ -1611,6 +1611,7 @@ fn run_tauri() {
                 commands::delete_build_sheet,
                 commands::delete_active_build_sheet,
                 commands::get_active_build_sheet_for_ui,
+                commands::build_item_trade_url,
                 commands::registry_preview,
                 commands::registry_list,
                 commands::registry_add,

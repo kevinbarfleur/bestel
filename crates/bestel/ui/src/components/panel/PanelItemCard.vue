@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 
 import { useToastsStore } from '../../stores/toasts';
+import { useBuildStore } from '../../stores/build';
+import { buildItemTradeUrl, openExternal } from '../../api/tauri';
 import { PickerSectionHead } from '../pickers';
-import RunicIcon from '../runic/RunicIcon.vue';
 
 interface ItemMod {
   kind: 'implicit' | 'enchant' | 'explicit' | 'crafted' | 'fractured';
@@ -31,6 +32,37 @@ export interface ItemCardPayload {
 const props = defineProps<{ payload: unknown }>();
 
 const toasts = useToastsStore();
+const buildStore = useBuildStore();
+const tradeBusy = ref(false);
+
+/** Map an item's slot label to the trade-site category filter. The trade
+ *  API uses fine-grained slot names ("armour.helmet" / "weapon.bow") so a
+ *  user with no resolved mods still lands on the right pane. Best-effort:
+ *  unmatched slots return null and the search runs without a category. */
+function inferTradeCategory(slot: string | undefined): string | null {
+  if (!slot) return null;
+  const s = slot.toLowerCase();
+  if (s.includes('helmet')) return 'armour.helmet';
+  if (s.includes('body')) return 'armour.chest';
+  if (s.includes('glove')) return 'armour.gloves';
+  if (s.includes('boot')) return 'armour.boots';
+  if (s.includes('shield')) return 'armour.shield';
+  if (s.includes('quiver')) return 'armour.quiver';
+  if (s.includes('amulet')) return 'accessory.amulet';
+  if (s.includes('belt')) return 'accessory.belt';
+  if (s.includes('ring')) return 'accessory.ring';
+  if (s.includes('flask')) return 'flask';
+  if (s.includes('jewel')) return 'jewel';
+  if (s.includes('bow')) return 'weapon.bow';
+  if (s.includes('claw')) return 'weapon.claw';
+  if (s.includes('dagger')) return 'weapon.dagger';
+  if (s.includes('staff')) return 'weapon.staff';
+  if (s.includes('wand')) return 'weapon.wand';
+  if (s.includes('mace')) return 'weapon.onemace';
+  if (s.includes('sword')) return 'weapon.onesword';
+  if (s.includes('axe')) return 'weapon.oneaxe';
+  return null;
+}
 
 const data = computed<ItemCardPayload>(() => {
   const p = (props.payload ?? {}) as Partial<ItemCardPayload>;
@@ -70,18 +102,49 @@ function deltaToneStyle(tone?: string): string {
   }
 }
 
-function onOpenInBuilder() {
-  toasts.push({
-    variant: 'info',
-    title: 'Builder integration coming.',
-  });
-}
-
-function onFindOnTrade() {
-  toasts.push({
-    variant: 'info',
-    title: 'Trade integration coming in Phase 2.',
-  });
+async function onFindOnTrade() {
+  if (tradeBusy.value) return;
+  const mods = (data.value.mods ?? []).filter((m) => m.text.trim().length > 0);
+  if (mods.length === 0) {
+    toasts.push({
+      variant: 'info',
+      title: 'No mods to search for.',
+      body: 'This item card has no explicit mods to build a trade query from.',
+    });
+    return;
+  }
+  const game = (buildStore.current?.game ?? 'poe1') as string;
+  const rarity = typeof data.value.rarity === 'string' ? data.value.rarity.toLowerCase() : undefined;
+  const category = inferTradeCategory(data.value.slot ?? undefined);
+  tradeBusy.value = true;
+  try {
+    const result = await buildItemTradeUrl({
+      game,
+      mods: mods.map((m) => ({ kind: m.kind, text: m.text })),
+      rarity: rarity && ['normal', 'magic', 'rare', 'unique'].includes(rarity) ? rarity : null,
+      category,
+    });
+    // Open in the OS default browser so the user's pathofexile.com session
+    // is reused and the listings show real prices + contact info.
+    await openExternal(result.url);
+    const summary: string[] = [`${result.total} listings in ${result.league}.`];
+    if (result.unresolved_mods.length > 0) {
+      summary.push(`${result.unresolved_mods.length} mod(s) couldn't be mapped — refine on the trade page.`);
+    }
+    toasts.push({
+      variant: 'success',
+      title: 'Trade search opened',
+      body: summary.join(' '),
+    });
+  } catch (e) {
+    toasts.push({
+      variant: 'error',
+      title: 'Trade search failed',
+      body: e instanceof Error ? e.message : String(e),
+    });
+  } finally {
+    tradeBusy.value = false;
+  }
 }
 </script>
 
@@ -116,12 +179,14 @@ function onFindOnTrade() {
     </section>
 
     <div class="panel-item__cta">
-      <button type="button" class="panel-item__primary-btn" @click="onOpenInBuilder">
-        <RunicIcon name="open" :size="14" />
-        <span>Open in builder</span>
-      </button>
-      <button type="button" class="panel-item__link-btn" @click="onFindOnTrade">
-        Find a similar craft on trade…
+      <button
+        type="button"
+        class="panel-item__primary-btn"
+        :disabled="tradeBusy"
+        @click="onFindOnTrade"
+      >
+        <span v-if="tradeBusy">Building trade query…</span>
+        <span v-else>Find a similar craft on trade…</span>
       </button>
     </div>
 

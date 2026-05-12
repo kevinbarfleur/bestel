@@ -1043,6 +1043,123 @@ pub struct ActiveBuildSheetDto {
     pub current_signatures: SheetSignaturesDto,
 }
 
+// ─── Sprint v3 — Item → Trade query ─────────────────────────────────────────
+
+#[derive(serde::Deserialize)]
+pub struct ItemTradeQueryInput {
+    pub game: String,
+    pub mods: Vec<ItemModInput>,
+    #[serde(default)]
+    pub league: Option<String>,
+    #[serde(default)]
+    pub rarity: Option<String>,
+    #[serde(default)]
+    pub category: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+pub struct ItemModInput {
+    pub kind: String,
+    pub text: String,
+}
+
+#[derive(serde::Serialize)]
+pub struct ItemTradeQueryResult {
+    pub url: String,
+    pub league: String,
+    pub total: u64,
+    pub resolved_stat_ids: Vec<String>,
+    pub unresolved_mods: Vec<String>,
+}
+
+/// Build a shareable PoE trade URL pre-filled with stat filters derived from
+/// an item card's explicit + fractured + crafted mods. Resolves each mod
+/// phrase to its trade-stat id via the bundled catalogue (with HTTP
+/// fallback), POSTs the search to GGG to obtain the canonical share id,
+/// and returns the URL the frontend opens in the OS default browser.
+///
+/// Implicit + enchant mods are dropped: they're base-determined and rarely
+/// what a user searching for a "similar craft" wants in the filter set.
+#[tauri::command]
+pub async fn build_item_trade_url(
+    payload: ItemTradeQueryInput,
+) -> Result<ItemTradeQueryResult, String> {
+    use bestel_core::sources::cache::FileCache;
+    use bestel_core::sources::http::PoeHttpClient;
+    use bestel_core::sources::trade::TradeClient;
+    use bestel_core::PoeVersion;
+
+    let game = match payload.game.trim().to_ascii_lowercase().as_str() {
+        "poe2" | "poe 2" | "pathofexile2" | "path of exile 2" => PoeVersion::Poe2,
+        _ => PoeVersion::Poe1,
+    };
+
+    let http = PoeHttpClient::new().map_err(|e| format!("init http: {e}"))?;
+    let cache = FileCache::new(FileCache::default_dir());
+    let client = TradeClient::new(http, cache, game);
+
+    // Resolve league. Prefer the caller's explicit choice; otherwise pick
+    // the first non-Standard league (which is the current temp league for
+    // PoE1, or "Standard"/"Hardcore" for permanent realms / PoE2 EA).
+    let league = match payload.league.as_deref() {
+        Some(s) if !s.trim().is_empty() => s.trim().to_string(),
+        _ => {
+            let leagues = client.leagues().await.map_err(|e| format!("leagues: {e}"))?;
+            leagues
+                .into_iter()
+                .next()
+                .ok_or_else(|| "no leagues returned by trade API".to_string())?
+        }
+    };
+
+    // Only mods that the trade site treats as searchable rolled affixes.
+    // Implicits + enchants are dropped — they're base-determined and would
+    // over-narrow the search to the exact same item.
+    let searchable_kinds: [&str; 3] = ["explicit", "crafted", "fractured"];
+
+    let mut resolved_ids: Vec<String> = Vec::new();
+    let mut unresolved: Vec<String> = Vec::new();
+    for m in &payload.mods {
+        let kind_lower = m.kind.to_ascii_lowercase();
+        if !searchable_kinds.contains(&kind_lower.as_str()) {
+            continue;
+        }
+        let text = m.text.trim();
+        if text.is_empty() {
+            continue;
+        }
+        match client.resolve(text, true, 1).await {
+            Ok(hits) if !hits.is_empty() => resolved_ids.push(hits[0].id.clone()),
+            _ => unresolved.push(text.to_string()),
+        }
+    }
+
+    // Build the query body. Stats are all `and` so trade returns items
+    // matching every recognized affix; if nothing resolved, return a
+    // category-only search so the user lands on the right slot rather
+    // than an empty results page.
+    let stats: Vec<(String, Option<f64>, Option<f64>)> = resolved_ids
+        .iter()
+        .map(|id| (id.clone(), None, None))
+        .collect();
+    let rarity_arg = payload.rarity.as_deref();
+    let category_arg = payload.category.as_deref();
+    let query = TradeClient::build_query_body(category_arg, rarity_arg, &stats, None);
+
+    let resp = client
+        .search(&league, query)
+        .await
+        .map_err(|e| format!("trade search: {e}"))?;
+
+    Ok(ItemTradeQueryResult {
+        url: resp.share_url,
+        league,
+        total: resp.total,
+        resolved_stat_ids: resolved_ids,
+        unresolved_mods: unresolved,
+    })
+}
+
 // ─── Sprint v3 — Build Registry ─────────────────────────────────────────────
 
 /// DTO for the Active Builds picker + Settings list. Same shape as the
