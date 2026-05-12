@@ -1410,6 +1410,35 @@ fn render_build_for_llm(b: &PobBuild) -> String {
         .collect();
     summary.insert("items".into(), json!(items));
 
+    // Sprint v5 — surface PoB fields the parser captures but the LLM was
+    // not seeing. Pantheon + bandit, Karui tattoos, the full allocated
+    // node list, mastery picks, jewel placements, active spectres, the
+    // active item-set slot map, and the pobb.in import link.
+    if !b.pantheon.is_empty() {
+        summary.insert("pantheon".into(), json!(b.pantheon));
+    }
+    if !b.tattoos.is_empty() {
+        summary.insert("tattoos".into(), json!(b.tattoos));
+    }
+    if !b.allocated_nodes.is_empty() {
+        summary.insert("allocated_nodes".into(), json!(b.allocated_nodes));
+    }
+    if !b.mastery_picks.is_empty() {
+        summary.insert("mastery_picks".into(), json!(b.mastery_picks));
+    }
+    if !b.jewel_placements.is_empty() {
+        summary.insert("jewel_placements".into(), json!(b.jewel_placements));
+    }
+    if !b.spectres.is_empty() {
+        summary.insert("spectres".into(), json!(b.spectres));
+    }
+    if !b.slot_map.is_empty() {
+        summary.insert("slot_map".into(), json!(b.slot_map));
+    }
+    if let Some(url) = &b.import_link {
+        summary.insert("import_link".into(), json!(url));
+    }
+
     // Sprint 3 — semantic build identity. Computed on every render
     // (cheap, ~1-5 ms). Surfaces archetype tags, defining uniques, and
     // the conversion chain so the agent quotes them instead of guessing
@@ -1632,5 +1661,89 @@ mod tests {
         let html = "<p>Hello   <b>World</b></p>\n<div>foo</div>";
         let plain = strip_html(html);
         assert_eq!(plain, "Hello World foo");
+    }
+
+    #[test]
+    fn render_surfaces_pantheon_tattoos_tree_jewels_spectres_slot_map_import() {
+        let xml = br#"<?xml version="1.0"?>
+<PathOfBuilding>
+  <Build level="92" className="Templar" ascendClassName="Inquisitor"
+         pantheonMajorGod="Solaris" pantheonMinorGod="Ralakesh" bandit="Alira"
+         mainSocketGroup="1">
+    <Spectre id="Metadata/Monsters/X/Y"/>
+    <Spectre id="Metadata/Monsters/Z"/>
+  </Build>
+  <Import importLink="https://pobb.in/pob/abc123"/>
+  <Tree activeSpec="1">
+    <Spec nodes="100,200,300" masteryEffects="{100,5},{200,7}" treeVersion="3_25" classId="5">
+      <Sockets>
+        <Socket nodeId="2311" itemId="13"/>
+        <Socket nodeId="9408" itemId="1"/>
+      </Sockets>
+      <Overrides>
+        <Override dn="Tattoo of the Tukohama Warrior" nodeId="55555">+4% to Fire Resistance</Override>
+      </Overrides>
+    </Spec>
+  </Tree>
+  <Skills>
+    <SkillSet id="1">
+      <Skill mainActiveSkill="1" slot="Helmet" label="">
+        <Gem nameSpec="Penance Brand" enabled="true"/>
+      </Skill>
+    </SkillSet>
+  </Skills>
+  <Items activeItemSet="1">
+    <Item id="1">Rarity: RARE
+Mind Star
+Praetor Crown</Item>
+    <ItemSet id="1">
+      <Slot name="Helmet" itemId="1"/>
+    </ItemSet>
+  </Items>
+</PathOfBuilding>"#;
+        let build = crate::pob::parser::parse_bytes(xml, std::path::PathBuf::from("t.xml"))
+            .expect("parse fixture");
+        let rendered = render_build_for_llm(&build);
+        let v: serde_json::Value =
+            serde_json::from_str(&rendered).expect("render output is valid JSON");
+        let obj = v.as_object().expect("render output is a JSON object");
+
+        // Pantheon carries major / minor / bandit.
+        let pantheon = obj.get("pantheon").expect("pantheon present");
+        assert_eq!(pantheon.get("major").and_then(|v| v.as_str()), Some("Solaris"));
+        assert_eq!(pantheon.get("minor").and_then(|v| v.as_str()), Some("Ralakesh"));
+        assert_eq!(pantheon.get("bandit").and_then(|v| v.as_str()), Some("Alira"));
+
+        // Tattoos with their node id and display name.
+        let tattoos = obj.get("tattoos").and_then(|v| v.as_array()).expect("tattoos array");
+        assert_eq!(tattoos.len(), 1);
+        assert_eq!(
+            tattoos[0].get("display_name").and_then(|v| v.as_str()),
+            Some("Tattoo of the Tukohama Warrior")
+        );
+
+        // Full allocated-node and mastery-pick lists.
+        let nodes = obj.get("allocated_nodes").and_then(|v| v.as_array()).unwrap();
+        assert_eq!(nodes.len(), 3);
+        let masteries = obj.get("mastery_picks").and_then(|v| v.as_array()).unwrap();
+        assert_eq!(masteries.len(), 2);
+
+        // Jewel placements from the Sockets block.
+        let jewels = obj.get("jewel_placements").and_then(|v| v.as_array()).unwrap();
+        assert_eq!(jewels.len(), 2);
+
+        // Spectres list.
+        let spectres = obj.get("spectres").and_then(|v| v.as_array()).unwrap();
+        assert_eq!(spectres.len(), 2);
+
+        // Slot map from the active item set.
+        let slot_map = obj.get("slot_map").and_then(|v| v.as_object()).unwrap();
+        assert_eq!(slot_map.get("Helmet").and_then(|v| v.as_str()), Some("1"));
+
+        // pobb.in import link.
+        assert_eq!(
+            obj.get("import_link").and_then(|v| v.as_str()),
+            Some("https://pobb.in/pob/abc123")
+        );
     }
 }
