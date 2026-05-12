@@ -138,6 +138,14 @@ export function useStreaming() {
           });
           break;
         }
+        case 'mode_assigned': {
+          // Sprint v3 — deterministic turn classifier output. The default
+          // mode is suppressed server-side, so anything reaching here is
+          // a user-visible chip. Pin the value on the current assistant
+          // message so a reload reproduces the chip from chat history.
+          chat.setAssistantMode(ev.mode);
+          break;
+        }
       }
     });
   });

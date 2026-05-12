@@ -101,6 +101,16 @@ export const useUiStore = defineStore('ui', () => {
     panelStack.value = [];
   };
 
+  /** Sprint v3 — DriftDrawer state. Opens a slide-from-right drawer per
+   *  drifted signature axis. `axis === null` means closed. */
+  const driftDrawerAxis = ref<'identity' | 'gear' | 'tree' | 'skill' | 'config' | null>(null);
+  const openDriftDrawer = (axis: 'identity' | 'gear' | 'tree' | 'skill' | 'config') => {
+    driftDrawerAxis.value = axis;
+  };
+  const closeDriftDrawer = () => {
+    driftDrawerAxis.value = null;
+  };
+
   return {
     picker,
     linkViewerUrl,
@@ -108,6 +118,7 @@ export const useUiStore = defineStore('ui', () => {
     panelArtifact,
     panelHasHistory,
     panelStack,
+    driftDrawerAxis,
     openBuild,
     openModel,
     openChat,
@@ -120,5 +131,7 @@ export const useUiStore = defineStore('ui', () => {
     openPanel,
     goBackPanel,
     closePanel,
+    openDriftDrawer,
+    closeDriftDrawer,
   };
 });

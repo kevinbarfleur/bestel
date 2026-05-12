@@ -9,7 +9,7 @@
 use rusqlite::{params, Connection};
 
 #[allow(dead_code)]
-pub const LATEST_VERSION: i64 = 2;
+pub const LATEST_VERSION: i64 = 3;
 
 const SCHEMA_V1: &str = r#"
 CREATE TABLE runs (
@@ -108,7 +108,54 @@ CREATE INDEX build_sheets_fingerprint ON build_sheets(fingerprint);
 CREATE INDEX build_sheets_validated   ON build_sheets(validated);
 "#;
 
-const MIGRATIONS: &[(i64, &str)] = &[(1, SCHEMA_V1), (2, SCHEMA_V2)];
+/// v3 — Sprint v3 (registry + drift indicator).
+///
+/// Adds five orthogonal signature columns to `build_sheets` so the sheet
+/// sidebar can render WHICH axis of the build drifted, not just the
+/// binary `pob_hash_match`. Existing rows get NULL until the next time
+/// they're loaded with a live PoB attached — `get_active_build_sheet_for_ui`
+/// backfills them.
+///
+/// `build_registry` persists user-selected PoBs across sessions so a chat
+/// can pick one from the dropdown without re-importing the XML. The 5
+/// signatures are stored per entry so picker rows render a `DriftChipStrip`
+/// at a glance.
+///
+/// `suggestion_dismissals` tracks per-build "hide for N days" state for
+/// the Path A soft suggestion card.
+const SCHEMA_V3: &str = r#"
+ALTER TABLE build_sheets ADD COLUMN identity_sig TEXT;
+ALTER TABLE build_sheets ADD COLUMN gear_sig     TEXT;
+ALTER TABLE build_sheets ADD COLUMN tree_sig     TEXT;
+ALTER TABLE build_sheets ADD COLUMN skill_sig    TEXT;
+ALTER TABLE build_sheets ADD COLUMN config_sig   TEXT;
+
+CREATE TABLE build_registry (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    display_name       TEXT NOT NULL,
+    game               TEXT NOT NULL,
+    pob_path           TEXT NOT NULL UNIQUE,
+    pob_hash           TEXT NOT NULL,
+    identity_sig       TEXT NOT NULL,
+    gear_sig           TEXT NOT NULL,
+    tree_sig           TEXT NOT NULL,
+    skill_sig          TEXT NOT NULL,
+    config_sig         TEXT NOT NULL,
+    linked_sheet_id    TEXT REFERENCES build_sheets(id) ON DELETE SET NULL,
+    summary_json       TEXT NOT NULL,
+    last_seen_at       INTEGER NOT NULL,
+    authored_at        INTEGER NOT NULL
+);
+CREATE INDEX build_registry_identity   ON build_registry(identity_sig);
+CREATE INDEX build_registry_last_seen  ON build_registry(last_seen_at DESC);
+
+CREATE TABLE suggestion_dismissals (
+    build_pob_hash    TEXT PRIMARY KEY,
+    dismissed_until   INTEGER NOT NULL
+);
+"#;
+
+const MIGRATIONS: &[(i64, &str)] = &[(1, SCHEMA_V1), (2, SCHEMA_V2), (3, SCHEMA_V3)];
 
 pub fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     let current: i64 = conn
@@ -149,5 +196,52 @@ mod tests {
             .pragma_query_value(None, "user_version", |r| r.get(0))
             .unwrap();
         assert_eq!(v, LATEST_VERSION);
+    }
+
+    #[test]
+    fn v3_creates_registry_and_dismissal_tables() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn).unwrap();
+        // build_registry exists with all signature columns
+        let registry_cols: Vec<String> = conn
+            .prepare("PRAGMA table_info(build_registry)")
+            .unwrap()
+            .query_map([], |r| r.get::<_, String>(1))
+            .unwrap()
+            .map(|c| c.unwrap())
+            .collect();
+        for col in [
+            "id", "display_name", "game", "pob_path", "pob_hash",
+            "identity_sig", "gear_sig", "tree_sig", "skill_sig", "config_sig",
+            "linked_sheet_id", "summary_json", "last_seen_at", "authored_at",
+        ] {
+            assert!(
+                registry_cols.iter().any(|c| c == col),
+                "build_registry missing column {col}"
+            );
+        }
+        // suggestion_dismissals exists
+        let count: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='suggestion_dismissals'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1);
+        // build_sheets has the 5 signature columns
+        let sheet_cols: Vec<String> = conn
+            .prepare("PRAGMA table_info(build_sheets)")
+            .unwrap()
+            .query_map([], |r| r.get::<_, String>(1))
+            .unwrap()
+            .map(|c| c.unwrap())
+            .collect();
+        for col in ["identity_sig", "gear_sig", "tree_sig", "skill_sig", "config_sig"] {
+            assert!(
+                sheet_cols.iter().any(|c| c == col),
+                "build_sheets missing column {col}"
+            );
+        }
     }
 }

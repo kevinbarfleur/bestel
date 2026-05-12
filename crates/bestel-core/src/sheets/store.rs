@@ -26,6 +26,18 @@ pub struct SheetRow {
     pub updated_at: String,
     pub authored_in_chat: Option<String>,
     pub validated: bool,
+    /// Sprint v3 multi-signature drift columns. NULL on pre-v3 sheets until
+    /// backfilled by `get_active_build_sheet_for_ui` on first live read.
+    #[serde(default)]
+    pub identity_sig: Option<String>,
+    #[serde(default)]
+    pub gear_sig: Option<String>,
+    #[serde(default)]
+    pub tree_sig: Option<String>,
+    #[serde(default)]
+    pub skill_sig: Option<String>,
+    #[serde(default)]
+    pub config_sig: Option<String>,
 }
 
 impl SheetRow {
@@ -132,7 +144,8 @@ pub fn find_by_fingerprint(db: &Db, fingerprint: &str) -> Result<Option<SheetRow
     db.with_conn_rusqlite(|c| {
         c.query_row(
             "SELECT id, fingerprint, pob_hash, name, schema_version, payload,
-                    authored_at, updated_at, authored_in_chat, validated
+                    authored_at, updated_at, authored_in_chat, validated,
+                    identity_sig, gear_sig, tree_sig, skill_sig, config_sig
              FROM build_sheets
              WHERE fingerprint = ?1 AND validated = 1
              ORDER BY updated_at DESC
@@ -150,7 +163,8 @@ pub fn list_all_sheets(db: &Db) -> Result<Vec<SheetRow>> {
     db.with_conn_rusqlite(|c| {
         let mut stmt = c.prepare(
             "SELECT id, fingerprint, pob_hash, name, schema_version, payload,
-                    authored_at, updated_at, authored_in_chat, validated
+                    authored_at, updated_at, authored_in_chat, validated,
+                    identity_sig, gear_sig, tree_sig, skill_sig, config_sig
              FROM build_sheets
              ORDER BY updated_at DESC",
         )?;
@@ -177,7 +191,8 @@ pub fn get_by_id(db: &Db, id: &str) -> Result<Option<SheetRow>> {
     db.with_conn_rusqlite(|c| {
         c.query_row(
             "SELECT id, fingerprint, pob_hash, name, schema_version, payload,
-                    authored_at, updated_at, authored_in_chat, validated
+                    authored_at, updated_at, authored_in_chat, validated,
+                    identity_sig, gear_sig, tree_sig, skill_sig, config_sig
              FROM build_sheets
              WHERE id = ?1",
             params![id],
@@ -199,6 +214,40 @@ fn row_to_sheet(row: &rusqlite::Row) -> rusqlite::Result<SheetRow> {
         updated_at: row.get(7)?,
         authored_in_chat: row.get(8)?,
         validated: row.get::<_, i64>(9)? != 0,
+        identity_sig: row.get(10)?,
+        gear_sig: row.get(11)?,
+        tree_sig: row.get(12)?,
+        skill_sig: row.get(13)?,
+        config_sig: row.get(14)?,
+    })
+}
+
+/// Backfill or update the five drift signatures for an existing sheet. No-op
+/// on the sheet's other fields. Called from `dispatch_sheet_finalize_request`
+/// right after insert/update (when the live build is at hand), and from the
+/// UI command `get_active_build_sheet_for_ui` to backfill pre-v3 sheets the
+/// first time they're read with a build attached.
+pub fn update_sheet_signatures(
+    db: &Db,
+    id: &str,
+    identity_sig: &str,
+    gear_sig: &str,
+    tree_sig: &str,
+    skill_sig: &str,
+    config_sig: &str,
+) -> Result<()> {
+    db.with_conn_rusqlite(|c| {
+        c.execute(
+            "UPDATE build_sheets
+             SET identity_sig = ?2,
+                 gear_sig     = ?3,
+                 tree_sig     = ?4,
+                 skill_sig    = ?5,
+                 config_sig   = ?6
+             WHERE id = ?1",
+            params![id, identity_sig, gear_sig, tree_sig, skill_sig, config_sig],
+        )?;
+        Ok(())
     })
 }
 

@@ -6,6 +6,7 @@ pub mod persistence;
 pub mod pob;
 pub mod prompt;
 pub mod prompts;
+pub mod registry;
 pub mod settings;
 pub mod sheets;
 pub mod skills;

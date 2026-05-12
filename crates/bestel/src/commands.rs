@@ -944,6 +944,42 @@ pub async fn get_active_build_sheet_for_ui(
     let canonical = serde_json::to_string(&build).unwrap_or_default();
     let current_hash = bestel_core::sheets::compute_pob_hash(&canonical);
     let pob_hash_match = current_hash == row.pob_hash;
+    // Compute the live build's 5 signatures so the frontend drift chip
+    // strip can render per-axis state without a second round-trip.
+    let current_sigs = bestel_core::pob::signatures::BuildSignatures::from_build(&build);
+    // Backfill: if the stored sheet has no signatures yet AND the hash
+    // matches (so the live build IS the authoring state), persist the
+    // current sigs into the row. After this one-shot backfill, every
+    // subsequent open of the chat renders true drift, not "drift since
+    // backfill".
+    let mut authored = SheetSignaturesDto {
+        identity: row.identity_sig.clone(),
+        gear: row.gear_sig.clone(),
+        tree: row.tree_sig.clone(),
+        skill: row.skill_sig.clone(),
+        config: row.config_sig.clone(),
+    };
+    if authored.identity.is_none() && pob_hash_match {
+        if let Err(e) = bestel_core::sheets::store::update_sheet_signatures(
+            &db,
+            &row.id,
+            &current_sigs.identity,
+            &current_sigs.gear,
+            &current_sigs.tree,
+            &current_sigs.skill,
+            &current_sigs.config,
+        ) {
+            tracing::warn!(error = ?e, "backfill sheet signatures failed");
+        } else {
+            authored = SheetSignaturesDto {
+                identity: Some(current_sigs.identity.clone()),
+                gear: Some(current_sigs.gear.clone()),
+                tree: Some(current_sigs.tree.clone()),
+                skill: Some(current_sigs.skill.clone()),
+                config: Some(current_sigs.config.clone()),
+            };
+        }
+    }
     let parsed = row
         .parse_payload()
         .map_err(|e| format!("parse sheet payload: {e}"))?;
@@ -961,7 +997,27 @@ pub async fn get_active_build_sheet_for_ui(
         validated: row.validated,
         payload,
         pob_hash_match,
+        authored_signatures: authored,
+        current_signatures: SheetSignaturesDto {
+            identity: Some(current_sigs.identity),
+            gear: Some(current_sigs.gear),
+            tree: Some(current_sigs.tree),
+            skill: Some(current_sigs.skill),
+            config: Some(current_sigs.config),
+        },
     }))
+}
+
+/// Per-axis 5 signatures, all `Option<String>` because pre-v3 sheets have
+/// NULLs until backfilled (see ActiveBuildSheetDto::authored_signatures).
+/// `current_signatures` is always fully populated.
+#[derive(serde::Serialize, Clone, Default)]
+pub struct SheetSignaturesDto {
+    pub identity: Option<String>,
+    pub gear: Option<String>,
+    pub tree: Option<String>,
+    pub skill: Option<String>,
+    pub config: Option<String>,
 }
 
 #[derive(serde::Serialize)]
@@ -977,5 +1033,239 @@ pub struct ActiveBuildSheetDto {
     pub validated: bool,
     pub payload: serde_json::Value,
     pub pob_hash_match: bool,
+    /// Signatures of the build at sheet authoring time. NULL fields mean
+    /// the sheet is pre-v3 and the backfill hasn't kicked in yet
+    /// (`pob_hash_match` was false when the sheet was last read with a
+    /// live build attached).
+    pub authored_signatures: SheetSignaturesDto,
+    /// Signatures of the live PoB right now. Always populated (the active
+    /// build was successfully parsed for this call).
+    pub current_signatures: SheetSignaturesDto,
 }
 
+// ─── Sprint v3 — Build Registry ─────────────────────────────────────────────
+
+/// DTO for the Active Builds picker + Settings list. Same shape as the
+/// stored entry plus the summary unrolled inline for frontend convenience.
+#[derive(serde::Serialize)]
+pub struct RegistryEntryDto {
+    pub id: i64,
+    pub display_name: String,
+    pub game: String,
+    pub pob_path: String,
+    pub pob_hash: String,
+    pub identity_sig: String,
+    pub gear_sig: String,
+    pub tree_sig: String,
+    pub skill_sig: String,
+    pub config_sig: String,
+    pub linked_sheet_id: Option<String>,
+    pub summary: bestel_core::registry::RegistrySummary,
+    pub last_seen_at: i64,
+    pub authored_at: i64,
+}
+
+impl From<bestel_core::registry::RegistryEntry> for RegistryEntryDto {
+    fn from(e: bestel_core::registry::RegistryEntry) -> Self {
+        Self {
+            id: e.id,
+            display_name: e.display_name,
+            game: e.game,
+            pob_path: e.pob_path,
+            pob_hash: e.pob_hash,
+            identity_sig: e.identity_sig,
+            gear_sig: e.gear_sig,
+            tree_sig: e.tree_sig,
+            skill_sig: e.skill_sig,
+            config_sig: e.config_sig,
+            linked_sheet_id: e.linked_sheet_id,
+            summary: e.summary,
+            last_seen_at: e.last_seen_at,
+            authored_at: e.authored_at,
+        }
+    }
+}
+
+fn now_ms() -> i64 {
+    chrono::Utc::now().timestamp_millis()
+}
+
+/// Parse a PoB file at the given path, compute the 5 signatures + canonical
+/// hash + summary, and return all of it bundled so the caller can either
+/// preview (Add modal) or insert (registry_add).
+fn build_registry_artifacts(
+    pob_path: &str,
+) -> Result<
+    (
+        bestel_core::PobBuild,
+        String,
+        bestel_core::pob::signatures::BuildSignatures,
+        bestel_core::registry::RegistrySummary,
+    ),
+    String,
+> {
+    let path = PathBuf::from(pob_path);
+    let build = parse_file(&path).map_err(|e| format!("parse pob: {e}"))?;
+    let canonical = serde_json::to_string(&build).map_err(|e| format!("canonical: {e}"))?;
+    let pob_hash = bestel_core::sheets::compute_pob_hash(&canonical);
+    let sigs = bestel_core::pob::signatures::BuildSignatures::from_build(&build);
+    let defining = build
+        .items
+        .iter()
+        .filter(|i| {
+            i.rarity
+                .as_deref()
+                .map(|r| r.eq_ignore_ascii_case("UNIQUE"))
+                .unwrap_or(false)
+        })
+        .filter_map(|i| i.name.clone())
+        .collect();
+    let summary = bestel_core::registry::RegistrySummary {
+        class: build.class.clone(),
+        ascendancy: build.ascendancy.clone(),
+        level: build.level,
+        main_skill: build.main_skill.clone(),
+        defining_uniques: defining,
+    };
+    Ok((build, pob_hash, sigs, summary))
+}
+
+/// Emit `registry:changed` to every Tauri window so the chat picker,
+/// Settings page, and any open dev panel re-pull `registry_list`. The
+/// payload is intentionally empty — clients re-fetch the full list to
+/// avoid having to track per-entry deltas.
+fn emit_registry_changed(app: &AppHandle) {
+    let _ = app.emit("registry:changed", serde_json::json!({}));
+}
+
+#[tauri::command]
+pub async fn registry_list() -> Result<Vec<RegistryEntryDto>, String> {
+    let db = bestel_core::persistence::global_db()
+        .ok_or_else(|| "database is not initialized".to_string())?;
+    let entries = bestel_core::registry::list_entries(&db)
+        .map_err(|e| format!("list registry: {e}"))?;
+    Ok(entries.into_iter().map(RegistryEntryDto::from).collect())
+}
+
+#[tauri::command]
+pub async fn registry_add(
+    pob_path: String,
+    app: AppHandle,
+) -> Result<RegistryEntryDto, String> {
+    let (build, pob_hash, sigs, summary) = build_registry_artifacts(&pob_path)?;
+    let db = bestel_core::persistence::global_db()
+        .ok_or_else(|| "database is not initialized".to_string())?;
+    // Auto-link to an existing sheet by fingerprint if one matches.
+    let linked = bestel_core::sheets::compute_fingerprint_from_pob(&build)
+        .and_then(|fp| {
+            bestel_core::sheets::store::find_by_fingerprint(&db, &fp)
+                .ok()
+                .flatten()
+        })
+        .map(|row| row.id);
+    let display_name = build
+        .main_skill
+        .clone()
+        .or_else(|| build.ascendancy.clone())
+        .unwrap_or_else(|| build.class.clone());
+    let now = now_ms();
+    let id = bestel_core::registry::insert_entry(
+        &db,
+        &display_name,
+        build.game.label(),
+        &pob_path,
+        &pob_hash,
+        &sigs.identity,
+        &sigs.gear,
+        &sigs.tree,
+        &sigs.skill,
+        &sigs.config,
+        linked.as_deref(),
+        &summary,
+        now,
+    )
+    .map_err(|e| format!("insert registry: {e}"))?;
+    let entry = bestel_core::registry::get_entry(&db, id)
+        .map_err(|e| format!("get registry: {e}"))?
+        .ok_or_else(|| "inserted entry vanished".to_string())?;
+    emit_registry_changed(&app);
+    Ok(entry.into())
+}
+
+#[tauri::command]
+pub async fn registry_remove(id: i64, app: AppHandle) -> Result<bool, String> {
+    let db = bestel_core::persistence::global_db()
+        .ok_or_else(|| "database is not initialized".to_string())?;
+    let removed = bestel_core::registry::delete_entry(&db, id)
+        .map_err(|e| format!("delete registry: {e}"))?;
+    if removed {
+        emit_registry_changed(&app);
+    }
+    Ok(removed)
+}
+
+#[tauri::command]
+pub async fn registry_refresh(
+    id: i64,
+    app: AppHandle,
+) -> Result<RegistryEntryDto, String> {
+    let db = bestel_core::persistence::global_db()
+        .ok_or_else(|| "database is not initialized".to_string())?;
+    let Some(existing) = bestel_core::registry::get_entry(&db, id)
+        .map_err(|e| format!("get registry: {e}"))?
+    else {
+        return Err(format!("no registry entry {id}"));
+    };
+    let (_build, pob_hash, sigs, summary) = build_registry_artifacts(&existing.pob_path)?;
+    bestel_core::registry::update_entry_signatures(
+        &db,
+        id,
+        &pob_hash,
+        &sigs.identity,
+        &sigs.gear,
+        &sigs.tree,
+        &sigs.skill,
+        &sigs.config,
+        &summary,
+        now_ms(),
+    )
+    .map_err(|e| format!("update registry: {e}"))?;
+    let entry = bestel_core::registry::get_entry(&db, id)
+        .map_err(|e| format!("get registry: {e}"))?
+        .ok_or_else(|| "refreshed entry vanished".to_string())?;
+    emit_registry_changed(&app);
+    Ok(entry.into())
+}
+
+#[tauri::command]
+pub async fn registry_touch(id: i64) -> Result<(), String> {
+    let db = bestel_core::persistence::global_db()
+        .ok_or_else(|| "database is not initialized".to_string())?;
+    bestel_core::registry::touch_last_seen(&db, id, now_ms())
+        .map_err(|e| format!("touch registry: {e}"))
+}
+
+#[tauri::command]
+pub async fn registry_get_pob_path(id: i64) -> Result<Option<String>, String> {
+    let db = bestel_core::persistence::global_db()
+        .ok_or_else(|| "database is not initialized".to_string())?;
+    bestel_core::registry::get_pob_path(&db, id)
+        .map_err(|e| format!("get pob path: {e}"))
+}
+
+#[tauri::command]
+pub async fn suggestion_dismiss(pob_hash: String, days: u32) -> Result<(), String> {
+    let db = bestel_core::persistence::global_db()
+        .ok_or_else(|| "database is not initialized".to_string())?;
+    let until = now_ms() + (days as i64) * 86_400_000;
+    bestel_core::registry::suggestion_dismiss(&db, &pob_hash, until)
+        .map_err(|e| format!("dismiss: {e}"))
+}
+
+#[tauri::command]
+pub async fn suggestion_check(pob_hash: String) -> Result<bool, String> {
+    let db = bestel_core::persistence::global_db()
+        .ok_or_else(|| "database is not initialized".to_string())?;
+    bestel_core::registry::suggestion_check(&db, &pob_hash, now_ms())
+        .map_err(|e| format!("check: {e}"))
+}

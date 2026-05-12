@@ -311,6 +311,26 @@ impl AnthropicClient {
             .as_deref()
             .map(|s| s.to_ascii_lowercase())
             .unwrap_or_default();
+        // Sprint v3 — deterministic turn-mode classifier. Runs once per
+        // turn BEFORE the first LLM call so the system prompt receives a
+        // `[Mode: ...]` runtime tag and the frontend renders a ModeChip
+        // for non-default modes. Routes brief mechanical questions away
+        // from forced interviews, escalates explicit "skip the sheet"
+        // phrasing to the legacy diagnostic flow.
+        let has_active_sheet = matches!(
+            sheet_status_kind,
+            SheetStatusKind::Fresh | SheetStatusKind::Stale
+        );
+        let turn_mode = super::turn_classifier::classify_turn(
+            &last_user_lower,
+            has_active_build,
+            has_active_sheet,
+        );
+        if turn_mode.surfaces_to_user() {
+            let _ = deltas.send(LlmDelta::ModeAssigned {
+                mode: turn_mode.as_str().to_string(),
+            });
+        }
         let mut tool_ctx = ToolCtx::new(ctx).context("build ToolCtx")?;
         tool_ctx = tool_ctx.with_deltas(deltas.clone());
         if let Some(q) = last_user_question {
@@ -366,6 +386,11 @@ impl AnthropicClient {
                 }));
             }
             let mut state_block = format!("[{build_state_line}]");
+            // Sprint v3 — surface the deterministic mode classification as
+            // a runtime tag so the system-prompt `<answer_mode_router>`
+            // block can branch on it. Always emit (even default) so the
+            // router has a known value to dispatch on.
+            state_block.push_str(&format!("\n[Mode: {}]", turn_mode.as_str()));
             // Sprint M — anti-hallucination anchor. The 2026-05-10 quality
             // batch caught Haiku 4.5 fabricating build stats: Q1 invented
             // a "Ranger Kinetic Blast" PoB that didn't match the loaded
@@ -535,12 +560,22 @@ impl AnthropicClient {
             // force fires at most once and never after a successful call.
             let sheet_open_interview_emitted_already =
                 messages_contain_tool_use(&messages, super::sheet_tools::SHEET_OPEN_INTERVIEW);
+            // Sprint v3 — only pivot to the sheet interview when the
+            // deterministic classifier flagged the turn as DeepAudit. Brief
+            // mechanic questions ("what's my fire res") and explicit
+            // skip-the-sheet overrides bypass the interview entirely.
+            let mode_allows_pivot = matches!(
+                turn_mode,
+                super::turn_classifier::TurnMode::DeepAudit
+                    | super::turn_classifier::TurnMode::Default
+            );
             let force_pivot_to_sheet = iterations > 8
                 && !force_finalize
                 && has_active_build
                 && matches!(sheet_status_kind, SheetStatusKind::Absent)
                 && !sheet_open_interview_emitted_already
-                && !last_user_was_interview_submission;
+                && !last_user_was_interview_submission
+                && mode_allows_pivot;
             // 2026-05-09 — when the previous user turn was an interview
             // submission and the agent has just received the build context
             // (iter 2 of the post-submission turn), force

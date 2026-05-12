@@ -167,6 +167,9 @@ async fn main() -> anyhow::Result<()> {
             LlmDelta::SheetLoaded { sheet_id, name, stale, .. } => {
                 writeln!(log, "SHEET_LOADED sheet_id={sheet_id} name={name} stale={stale}").ok();
             }
+            LlmDelta::ModeAssigned { mode } => {
+                writeln!(log, "MODE_ASSIGNED {mode}").ok();
+            }
             LlmDelta::Error(msg) => {
                 error = Some(msg.clone());
                 eprintln!("\n[ERROR] {msg}");

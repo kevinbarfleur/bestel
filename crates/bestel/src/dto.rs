@@ -529,6 +529,14 @@ pub enum DeltaEvent {
         schema_version: i64,
         payload: serde_json::Value,
     },
+    /// Sprint v3 — deterministic mode classification emitted once per turn
+    /// before the first LLM call. Renders a `ModeChip` over the assistant
+    /// message for non-default modes (brief-mechanic, deep-audit,
+    /// legacy-diagnostic, refusal).
+    ModeAssigned {
+        session_id: u64,
+        mode: String,
+    },
 }
 
 impl DeltaEvent {
@@ -656,6 +664,7 @@ impl DeltaEvent {
                 schema_version,
                 payload,
             },
+            LlmDelta::ModeAssigned { mode } => DeltaEvent::ModeAssigned { session_id, mode },
             LlmDelta::MessageEnd => DeltaEvent::MessageEnd { session_id },
             LlmDelta::Error(message) => DeltaEvent::Error {
                 session_id,

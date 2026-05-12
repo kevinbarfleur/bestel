@@ -19,6 +19,7 @@ import type {
 import { useSheetStore } from '../../stores/sheet';
 import ToolCallBadge from './ToolCallBadge.vue';
 import VerifyClaimsCard from './VerifyClaimsCard.vue';
+import ModeChip from './ModeChip.vue';
 import ArtThinking from './artifacts/ArtThinking.vue';
 import ArtPoBImport from './artifacts/ArtPoBImport.vue';
 import ArtWikiPage from './artifacts/ArtWikiPage.vue';
@@ -470,6 +471,10 @@ const turns = computed<Turn[]>(() => {
   <!-- ASSISTANT turns — one turn per segment, hairline divider before -->
   <template v-else>
     <hr class="sk-hr turn-divider" />
+    <!-- Sprint v3 — deterministic mode chip above non-default assistant
+         turns. Rendered once per assistant message, anchored above the
+         first turn so it reads like a banner over the whole reply. -->
+    <ModeChip v-if="message.mode" :mode="message.mode" class="turn__mode-chip" />
     <article
       v-for="(t, i) in turns"
       :key="t.key"

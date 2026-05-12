@@ -236,10 +236,12 @@ impl Recorder {
             | LlmDelta::SheetAskUser { .. }
             | LlmDelta::SheetInterviewOpen { .. }
             | LlmDelta::SheetFinalized { .. }
-            | LlmDelta::SheetLoaded { .. } => {
-                // Sheet UI events — not persisted in the run JSON. The
-                // sheet itself lives in `build_sheets` (SQLite mirror), and
-                // the chat run only references it by id.
+            | LlmDelta::SheetLoaded { .. }
+            | LlmDelta::ModeAssigned { .. } => {
+                // UI-only events — not persisted in the run JSON. The
+                // sheet lives in `build_sheets`; the turn mode is
+                // recomputed deterministically from the user message on
+                // replay so persisting it would be redundant.
             }
             LlmDelta::Error(msg) => {
                 self.error = Some(msg.clone());

@@ -324,4 +324,63 @@ export type LlmDeltaEvent =
       findings_summary: string;
       claims_checked: VerifiedClaimDto[];
       corrections_count: number;
+    }
+  | {
+      kind: 'mode_assigned';
+      session_id: number;
+      /** Deterministic turn-mode classification — values: `brief-mechanic`,
+       * `deep-audit`, `legacy-diagnostic`, `refusal`. The `default` mode
+       * is suppressed at the source so the frontend only sees values that
+       * surface as a ModeChip. */
+      mode: string;
     };
+
+// ─── Sprint v3 — Build Registry DTOs ─────────────────────────────────────
+
+export interface RegistrySummaryDto {
+  class: string;
+  ascendancy: string | null;
+  level: number | null;
+  main_skill: string | null;
+  /** Names of unique-rarity items extracted from the PoB at registration
+   *  time. Drives the "Pillar · Inpulsa's · Ashes" line in registry rows. */
+  defining_uniques: string[];
+}
+
+export interface RegistryEntryDto {
+  id: number;
+  display_name: string;
+  /** `'PoE1'` or `'PoE2'` (uppercase — matches the Rust label). */
+  game: string;
+  pob_path: string;
+  pob_hash: string;
+  identity_sig: string;
+  gear_sig: string;
+  tree_sig: string;
+  skill_sig: string;
+  config_sig: string;
+  linked_sheet_id: string | null;
+  summary: RegistrySummaryDto;
+  /** Unix ms timestamp. */
+  last_seen_at: number;
+  authored_at: number;
+}
+
+/** Five-axis drift signatures stored on a Build Sheet row + computed for
+ *  the live PoB. Fields are nullable for pre-v3 sheets until backfill. */
+export interface SheetSignaturesDto {
+  identity: string | null;
+  gear: string | null;
+  tree: string | null;
+  skill: string | null;
+  config: string | null;
+}
+
+/** Extended ActiveBuildSheetDto carrying the drift signatures alongside
+ *  the legacy `pob_hash_match`. The frontend compares `authored` against
+ *  `current` per-axis to render the `DriftChipStrip`. */
+export interface ActiveBuildSheetDto extends BuildSheetDetailDto {
+  pob_hash_match: boolean;
+  authored_signatures: SheetSignaturesDto;
+  current_signatures: SheetSignaturesDto;
+}

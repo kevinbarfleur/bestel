@@ -150,6 +150,12 @@ export type Segment =
   | SheetFinalizedSegment
   | VerifyClaimsSegment;
 
+export type AssistantTurnMode =
+  | 'brief-mechanic'
+  | 'deep-audit'
+  | 'legacy-diagnostic'
+  | 'refusal';
+
 export interface ChatMessageVm {
   id: string;
   role: ChatRole;
@@ -166,6 +172,11 @@ export interface ChatMessageVm {
    * inter-segment thinking indicator when the gap exceeds
    * THINKING_GAP_MS while status === 'streaming'. */
   lastDeltaAt?: number;
+  /** Sprint v3 deterministic mode classification emitted once per turn
+   * by the Rust `TurnClassifier`. The default mode is suppressed by the
+   * provider so anything pinned here surfaces as a `ModeChip` above the
+   * message. Persisted via the chat-history autosave watch. */
+  mode?: AssistantTurnMode | null;
 }
 
 const segId = () => `s_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -578,6 +589,25 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  /** Sprint v3 — pin the deterministic mode classification on the
+   * current assistant message. Called from `useStreaming` when the
+   * provider emits `mode_assigned`. Drives the `<ModeChip>` render in
+   * `ChatView`. Default mode is suppressed at the provider level so any
+   * value reaching here surfaces a chip. */
+  function setAssistantMode(mode: string) {
+    const a = currentAssistant.value;
+    if (!a) return;
+    const allowed: AssistantTurnMode[] = [
+      'brief-mechanic',
+      'deep-audit',
+      'legacy-diagnostic',
+      'refusal',
+    ];
+    a.mode = (allowed as readonly string[]).includes(mode)
+      ? (mode as AssistantTurnMode)
+      : null;
+  }
+
   /** Append a verifier audit segment to the current assistant message.
    * Called once per turn (the verifier runs after the draft is fully
    * streamed). Idempotent — replaces an existing verify segment so a
@@ -894,6 +924,7 @@ export const useChatStore = defineStore('chat', () => {
     sheetInterviewOpen,
     sheetFinalized,
     verifierResult,
+    setAssistantMode,
     updateSheetInterviewState,
     findLatestSheetInterviewSegment,
     findToolSegment,

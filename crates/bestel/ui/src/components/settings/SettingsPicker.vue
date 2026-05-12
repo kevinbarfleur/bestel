@@ -18,6 +18,7 @@ import SettingsRadioCard from './SettingsRadioCard.vue';
 import SettingsModelRow from './SettingsModelRow.vue';
 import SettingsPromptsPane from './SettingsPromptsPane.vue';
 import SettingsDeveloperPane from './SettingsDeveloperPane.vue';
+import ActiveBuildsSection from './ActiveBuildsSection.vue';
 
 defineProps<{ modelValue: boolean }>();
 const emit = defineEmits<{ 'update:modelValue': [value: boolean] }>();
@@ -27,6 +28,7 @@ type Section =
   | 'links'
   | 'model'
   | 'folders'
+  | 'builds'
   | 'prompts'
   | 'developer'
   | 'shortcuts'
@@ -37,6 +39,7 @@ const SECTIONS: Array<{ id: Section; label: string; hint: string }> = [
   { id: 'links', label: 'Links', hint: 'Wiki & external behavior' },
   { id: 'model', label: 'Default model', hint: 'Boot selection' },
   { id: 'folders', label: 'Watcher folders', hint: 'PoB build sources' },
+  { id: 'builds', label: 'Active Builds', hint: 'Persistent registry of PoBs you discuss' },
   { id: 'prompts', label: 'Prompts & docs', hint: 'Edit system prompt + per-model overrides' },
   { id: 'developer', label: 'Developer', hint: 'Test panel + battery runner' },
   { id: 'shortcuts', label: 'Shortcuts', hint: 'Keyboard reference' },
@@ -387,6 +390,9 @@ const chatCount = computed(() => history.chats.length);
             </div>
           </SettingsField>
         </div>
+
+        <!-- ============== ACTIVE BUILDS (Sprint v3 registry) ============== -->
+        <ActiveBuildsSection v-else-if="active === 'builds'" />
 
         <!-- ============== PROMPTS & DOCS ============== -->
         <SettingsPromptsPane v-else-if="active === 'prompts'" />

@@ -16,6 +16,7 @@ pub mod recorder;
 pub mod session_notes;
 pub mod sheet_tools;
 pub mod tools;
+pub mod turn_classifier;
 pub mod util;
 pub mod verifier;
 pub mod wiki;
@@ -181,6 +182,15 @@ pub enum LlmDelta {
         updated_at: String,
         schema_version: i64,
         payload: serde_json::Value,
+    },
+    /// Sprint v3 — fires once at the very start of an agent turn after the
+    /// deterministic `TurnClassifier` decides which conversational mode
+    /// applies. The frontend renders a `ModeChip` above the assistant
+    /// message for non-default modes; persisted on the assistant message
+    /// so the chip survives a reload. Values: "brief-mechanic",
+    /// "deep-audit", "legacy-diagnostic", "refusal", "default".
+    ModeAssigned {
+        mode: String,
     },
     MessageEnd,
     Error(String),

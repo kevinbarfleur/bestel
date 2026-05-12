@@ -3,6 +3,7 @@ import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 
 import type {
+  ActiveBuildSheetDto,
   AttachmentDto,
   BuildEvent,
   BuildSheetDetailDto,
@@ -16,6 +17,7 @@ import type {
   PobBuildDto,
   PobBuildSummaryDto,
   ProviderStatusEvent,
+  RegistryEntryDto,
   SettingsDto,
 } from './types';
 
@@ -48,21 +50,40 @@ export const getBuildSheet = (id: string): Promise<BuildSheetDetailDto | null> =
 export const deleteBuildSheet = (id: string): Promise<boolean> =>
   invoke('delete_build_sheet', { id });
 
-/** DTO returned by `get_active_build_sheet_for_ui` — the BuildSheetDetailDto
- * shape plus `pob_hash_match` so the caller can decide fresh-vs-stale
- * presentation. */
-export interface ActiveBuildSheetDto extends BuildSheetDetailDto {
-  pob_hash_match: boolean;
-}
-
 /** Frontend-side lookup of the persisted Build Sheet (if any) for the
  * currently active build. Resolves to null when no build is attached OR
  * when no sheet exists for the build's fingerprint. Triggered by the
  * build store on app boot, build attach, and chat switch — the sheet
  * sidebar card no longer needs the agent to volunteer
- * `get_active_build_sheet` to discover an existing sheet. */
+ * `get_active_build_sheet` to discover an existing sheet. Sprint v3 adds
+ * `authored_signatures` + `current_signatures` per axis so the drift
+ * indicator can render WHICH signature(s) drifted, not just the binary
+ * `pob_hash_match`. */
 export const getActiveBuildSheetForUi = (): Promise<ActiveBuildSheetDto | null> =>
   invoke('get_active_build_sheet_for_ui');
+
+// ─── Sprint v3 — Build Registry IPC wrappers ────────────────────────────
+
+export const registryList = (): Promise<RegistryEntryDto[]> => invoke('registry_list');
+export const registryAdd = (pobPath: string): Promise<RegistryEntryDto> =>
+  invoke('registry_add', { pobPath });
+export const registryRemove = (id: number): Promise<boolean> =>
+  invoke('registry_remove', { id });
+export const registryRefresh = (id: number): Promise<RegistryEntryDto> =>
+  invoke('registry_refresh', { id });
+export const registryTouch = (id: number): Promise<void> =>
+  invoke('registry_touch', { id });
+export const registryGetPobPath = (id: number): Promise<string | null> =>
+  invoke('registry_get_pob_path', { id });
+export const suggestionDismiss = (pobHash: string, days: number): Promise<void> =>
+  invoke('suggestion_dismiss', { pobHash, days });
+export const suggestionCheck = (pobHash: string): Promise<boolean> =>
+  invoke('suggestion_check', { pobHash });
+
+/** Fires from any window when the build_registry table mutates. Carries
+ *  no payload — listeners re-fetch via `registryList()`. */
+export const onRegistryChanged = (cb: () => void): Promise<UnlistenFn> =>
+  listen<unknown>('registry:changed', () => cb());
 
 export const chatStart = (
   prompt: string,
