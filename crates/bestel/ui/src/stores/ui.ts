@@ -47,8 +47,11 @@ export const useUiStore = defineStore('ui', () => {
    *  to show the back button in the panel header. */
   const panelHasHistory = computed(() => panelStack.value.length > 1);
 
+  /** Sprint v3 — legacy alias. The standalone `BuildPicker` modal was
+   *  retired in favor of `BuildRegistryModal`; every old `openBuild()`
+   *  call now lands the user in the new dedicated library modal. */
   const openBuild = () => {
-    picker.value = 'build';
+    registryModalOpen.value = true;
   };
   const openModel = () => {
     picker.value = 'model';
@@ -111,6 +114,18 @@ export const useUiStore = defineStore('ui', () => {
     driftDrawerAxis.value = null;
   };
 
+  /** Sprint v3 — dedicated Build Library modal. Replaces both the old
+   *  BuildPicker modal and the (now removed) Settings → Active Builds
+   *  tab. The TopBar build pill is the only entry point; it always lands
+   *  the user here. */
+  const registryModalOpen = ref(false);
+  const openRegistryModal = () => {
+    registryModalOpen.value = true;
+  };
+  const closeRegistryModal = () => {
+    registryModalOpen.value = false;
+  };
+
   return {
     picker,
     linkViewerUrl,
@@ -119,6 +134,7 @@ export const useUiStore = defineStore('ui', () => {
     panelHasHistory,
     panelStack,
     driftDrawerAxis,
+    registryModalOpen,
     openBuild,
     openModel,
     openChat,
@@ -133,5 +149,7 @@ export const useUiStore = defineStore('ui', () => {
     closePanel,
     openDriftDrawer,
     closeDriftDrawer,
+    openRegistryModal,
+    closeRegistryModal,
   };
 });

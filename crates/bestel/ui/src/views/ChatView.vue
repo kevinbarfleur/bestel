@@ -21,6 +21,7 @@ import ChatStream from '../components/chat/ChatStream.vue';
 import ChatComposer from '../components/chat/ChatComposer.vue';
 import PanelView from '../components/panel/PanelView.vue';
 import DriftDrawer from '../components/sheet/DriftDrawer.vue';
+import BuildRegistryModal from '../components/registry/BuildRegistryModal.vue';
 import { useSheetStore } from '../stores/sheet';
 
 const chat = useChatStore();
@@ -60,7 +61,7 @@ useStreaming();
 useBuildWatcher();
 
 useShortcuts({
-  onBuildPicker: () => ui.openBuild(),
+  onBuildPicker: () => ui.openRegistryModal(),
   onModelPicker: () => ui.openModel(),
   onSettings: () => ui.openSettings(),
   onEscape: () => {
@@ -108,7 +109,7 @@ onMounted(async () => {
   >
     <div class="chat-view__sidebar">
       <div class="chat-view__sidebar-stack">
-        <BuildPanel @open-picker="ui.openBuild()">
+        <BuildPanel @open-picker="ui.openRegistryModal()">
           <template #after-header>
             <BSInviteSidebarCard />
             <BSInterviewSidebarCard />
@@ -128,6 +129,10 @@ onMounted(async () => {
     </div>
 
     <BSSheetFullModal />
+
+    <!-- Sprint v3 — dedicated build library modal. Replaces the legacy
+         BuildPicker as the sole entry point for build attachment. -->
+    <BuildRegistryModal />
 
     <!-- Sprint v3 — slide-from-right drift drawer. Mounts globally so a
          chip click anywhere in the sidebar / sheet detail can open it. -->
