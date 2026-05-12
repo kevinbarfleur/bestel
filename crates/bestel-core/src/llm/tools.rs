@@ -1447,6 +1447,9 @@ fn render_build_for_llm(b: &PobBuild) -> String {
                     "quality": gem.quality,
                     "enabled": gem.enabled,
                     "skill_id": gem.skill_id,
+                    "variant_id": gem.variant_id,
+                    "gem_id": gem.gem_id,
+                    "stat_set_index": gem.stat_set_index,
                     "is_minion": gem.is_minion,
                 })).collect::<Vec<_>>(),
             })
@@ -1747,7 +1750,10 @@ mod tests {
   <Skills>
     <SkillSet id="1">
       <Skill mainActiveSkill="1" slot="Helmet" label="">
-        <Gem nameSpec="Penance Brand" enabled="true"/>
+        <Gem nameSpec="Penance Brand of Dissipation" enabled="true"
+             skillId="PenanceBrandOfDissipationPlayer"
+             variantId="PenanceBrandOfDissipation"
+             gemId="Metadata/Items/Gems/SkillGemPenanceBrandOfDissipation"/>
       </Skill>
     </SkillSet>
   </Skills>
@@ -1804,5 +1810,27 @@ Praetor Crown</Item>
             obj.get("import_link").and_then(|v| v.as_str()),
             Some("https://pobb.in/pob/abc123")
         );
+
+        // Gem variant_id + gem_id flow through to disambiguate transfigure
+        // variants (Penance Brand of Dissipation vs base).
+        let skill_groups = obj
+            .get("skill_groups")
+            .and_then(|v| v.as_array())
+            .expect("skill_groups array");
+        assert!(!skill_groups.is_empty());
+        let gem = skill_groups[0]
+            .get("gems")
+            .and_then(|v| v.as_array())
+            .and_then(|g| g.first())
+            .expect("first gem present");
+        assert_eq!(
+            gem.get("variant_id").and_then(|v| v.as_str()),
+            Some("PenanceBrandOfDissipation")
+        );
+        assert!(gem
+            .get("gem_id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .contains("PenanceBrandOfDissipation"));
     }
 }
