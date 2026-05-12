@@ -1270,16 +1270,176 @@ async fn dispatch_pob_calc(input: &Value, ctx: &ToolCtx) -> Result<String> {
     let response = engine
         .calc(CalcRequest {
             game,
-            build_xml: xml,
+            build_xml: xml.clone(),
             category,
             skill_index,
-            calcs,
+            calcs: calcs.clone(),
         })
         .await
         .map_err(|e| anyhow!("pob engine: {e}"))?;
 
+    // Wrong-skill gate (Sprint v5). Compare the engine's active_skill_label
+    // against the build's main_skill (case-insensitive trim, transfigure-
+    // tolerant). On mismatch, locate the correct skill_index from
+    // build.skill_groups and retry once. If retry also mismatches, return
+    // a structured `wrong_skill` error so the LLM re-plans rather than
+    // quoting numbers for the wrong skill.
+    if let Some(out) = wrong_skill_recover(
+        engine,
+        &build,
+        skill_index,
+        &response,
+        game,
+        &xml,
+        category,
+        &calcs,
+    )
+    .await?
+    {
+        return Ok(out);
+    }
+
     let payload = serde_json::to_value(&response).context("serialize pob_calc response")?;
     Ok(truncate(&serde_json::to_string(&payload).unwrap_or_default(), 30_000))
+}
+
+/// Returns `Some(tool_result_json)` when the engine returned numbers for a
+/// skill other than the build's main one and we either successfully
+/// auto-retried or need to surface a structured error. `None` means the
+/// active skill matches expectations and the caller should serialise the
+/// original response.
+#[allow(clippy::too_many_arguments)]
+async fn wrong_skill_recover(
+    engine: &std::sync::Arc<bestel_pob_engine::PobEngineHandle>,
+    build: &PobBuild,
+    attempted_skill_index: Option<u32>,
+    response: &bestel_pob_engine::CalcResponse,
+    game: bestel_pob_engine::lifecycle::Game,
+    xml: &str,
+    category: bestel_pob_engine::Category,
+    calcs: &bestel_pob_engine::EngineCalcs,
+) -> Result<Option<String>> {
+    use bestel_pob_engine::CalcRequest;
+
+    let expected = build
+        .main_skill
+        .as_deref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string());
+    let got = response
+        .active_skill
+        .get("active_skill_label")
+        .and_then(|v| v.as_str())
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string());
+
+    let (Some(expected), Some(got)) = (expected, got) else {
+        return Ok(None);
+    };
+    if skill_labels_match(&expected, &got) {
+        return Ok(None);
+    }
+
+    let target = find_skill_index_for(build, &expected);
+    let available = available_indices_for(build, &expected);
+
+    // Retry once when we have a different index to try.
+    if let Some(idx) = target {
+        if Some(idx) != attempted_skill_index {
+            let retry = engine
+                .calc(CalcRequest {
+                    game,
+                    build_xml: xml.to_string(),
+                    category,
+                    skill_index: Some(idx),
+                    calcs: calcs.clone(),
+                })
+                .await
+                .map_err(|e| anyhow!("pob engine retry: {e}"))?;
+            let retry_label = retry
+                .active_skill
+                .get("active_skill_label")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if skill_labels_match(&expected, retry_label) {
+                let mut annotated = retry;
+                annotated.warnings.push(format!(
+                    "auto-retry: engine reported '{}' for skill_index={} but build.main_skill is '{}'; re-queried with skill_index={} and the engine confirmed",
+                    got,
+                    attempted_skill_index
+                        .map(|i| i.to_string())
+                        .unwrap_or_else(|| "default".to_string()),
+                    expected,
+                    idx
+                ));
+                let payload = serde_json::to_value(&annotated)
+                    .context("serialize pob_calc retry response")?;
+                return Ok(Some(truncate(
+                    &serde_json::to_string(&payload).unwrap_or_default(),
+                    30_000,
+                )));
+            }
+        }
+    }
+
+    Ok(Some(
+        json!({
+            "error": "wrong_skill",
+            "expected": expected,
+            "got": got,
+            "attempted_skill_index": attempted_skill_index,
+            "retry_skill_index": target,
+            "available_skill_indices": available,
+            "message": format!(
+                "pob_calc returned numbers for '{got}' but the build's main_skill is '{expected}'. Pick one of available_skill_indices and retry pob_calc with that skill_index. If the list is empty, the build's main_skill may be stale — verify by re-reading get_active_build's skill_groups and main_skill fields."
+            )
+        })
+        .to_string(),
+    ))
+}
+
+/// Two skill labels match when they are equal (case-insensitive trim) or
+/// one is a transfigure suffix of the other. PoB sometimes stores the
+/// base name ("Penance Brand") in main_skill while the engine reports
+/// the transfigure ("Penance Brand of Dissipation"), or vice versa.
+fn skill_labels_match(a: &str, b: &str) -> bool {
+    let aa = a.trim().to_ascii_lowercase();
+    let bb = b.trim().to_ascii_lowercase();
+    if aa.is_empty() || bb.is_empty() {
+        return false;
+    }
+    aa == bb || aa.starts_with(&bb) || bb.starts_with(&aa)
+}
+
+/// Scan skill_groups for the FIRST group whose enabled gems or label match
+/// `expected`. Returns the 1-indexed group number (PoB's mainSocketGroup
+/// convention), or None when nothing matches.
+fn find_skill_index_for(build: &PobBuild, expected: &str) -> Option<u32> {
+    available_indices_for(build, expected).into_iter().next()
+}
+
+/// All 1-indexed skill_group positions whose label or any enabled gem name
+/// is a transfigure-tolerant match for `expected`.
+fn available_indices_for(build: &PobBuild, expected: &str) -> Vec<u32> {
+    let needle = expected.trim().to_ascii_lowercase();
+    if needle.is_empty() {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    for (i, group) in build.skill_groups.iter().enumerate() {
+        let label_match = !group.label.is_empty()
+            && skill_labels_match(&group.label, expected);
+        let gem_match = group
+            .gems
+            .iter()
+            .any(|gem| gem.enabled && skill_labels_match(&gem.name, expected));
+        if label_match || gem_match {
+            out.push(i as u32 + 1);
+        }
+    }
+    out
 }
 
 fn render_build_for_llm(b: &PobBuild) -> String {
@@ -1740,6 +1900,50 @@ mod tests {
         let html = "<p>Hello   <b>World</b></p>\n<div>foo</div>";
         let plain = strip_html(html);
         assert_eq!(plain, "Hello World foo");
+    }
+
+    #[test]
+    fn skill_labels_match_is_transfigure_tolerant() {
+        assert!(skill_labels_match("Penance Brand", "Penance Brand"));
+        assert!(skill_labels_match(
+            "Penance Brand",
+            "Penance Brand of Dissipation"
+        ));
+        assert!(skill_labels_match(
+            "Penance Brand of Conduction",
+            "penance brand"
+        ));
+        assert!(!skill_labels_match("Penance Brand", "Hatred"));
+        assert!(!skill_labels_match("", "Penance Brand"));
+        assert!(!skill_labels_match("Penance Brand", ""));
+    }
+
+    #[test]
+    fn available_indices_for_finds_active_skill_in_groups() {
+        let xml = br#"<?xml version="1.0"?>
+<PathOfBuilding>
+  <Build level="92" className="Witch" mainSocketGroup="1"/>
+  <Skills>
+    <SkillSet id="1">
+      <Skill mainActiveSkill="1" label="">
+        <Gem nameSpec="Hatred" enabled="true"/>
+      </Skill>
+      <Skill mainActiveSkill="1" label="Mapping">
+        <Gem nameSpec="Penance Brand of Dissipation" enabled="true"/>
+      </Skill>
+      <Skill mainActiveSkill="1" label="Boss">
+        <Gem nameSpec="Penance Brand of Conduction" enabled="true"/>
+      </Skill>
+    </SkillSet>
+  </Skills>
+</PathOfBuilding>"#;
+        let build =
+            crate::pob::parser::parse_bytes(xml, std::path::PathBuf::from("t.xml")).unwrap();
+        let indices = available_indices_for(&build, "Penance Brand");
+        assert_eq!(indices, vec![2, 3]);
+        assert_eq!(find_skill_index_for(&build, "Penance Brand"), Some(2));
+        assert_eq!(find_skill_index_for(&build, "Hatred"), Some(1));
+        assert_eq!(find_skill_index_for(&build, "Cyclone"), None);
     }
 
     #[test]
