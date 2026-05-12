@@ -272,55 +272,110 @@ fn tag_mechanic(b: &PobBuild) -> Vec<String> {
 // Defining uniques registry
 // ─────────────────────────────────────────────────────────────────────
 
-/// (name, category, identity_hint). Names are matched case-insensitively
-/// against `PobItem::name`. Categories: `engine` (build collapses without),
-/// `defining` (shapes archetype), `amplifier` (boosts but replaceable).
-const DEFINING_UNIQUES: &[(&str, &str, &str)] = &[
-    // ── engine ─────────────────────────────────────────────────────
-    ("Mageblood", "engine", "magic-flask uptime engine — sustains 4 magic flasks permanently"),
-    ("Headhunter", "engine", "rare-monster mod stealing — defines map-clear identity"),
-    ("Original Sin", "engine", "dual-conversion + curse uniqueness — entire build pivots on it"),
-    ("Cospri's Malice", "engine", "Cast on Crit cold-skill engine for triggerbot melee"),
-    ("Mjölner", "engine", "Cast on Crit lightning-spell engine for melee staff"),
-    ("Mjolner", "engine", "Cast on Crit lightning-spell engine for melee staff"),
-    ("Voll's Devotion", "engine", "endurance-charge generation engine for cycling builds"),
-    ("Maw of Mischief", "engine", "Death Aura DD engine — entire skill granted by helm"),
-    ("Replica Cold Iron Point", "engine", "physical-spell scaling — converts spell phys"),
-    ("The Squire", "engine", "+2 socket support amplifier — defines AG-stacker ceilings"),
-    ("Doryani's Prototype", "engine", "lightning-resist conversion defender — reshapes EHP entirely"),
+/// (name, category, identity_hint, game). Names are matched case-
+/// insensitively against `PobItem::name`. Categories: `engine` (build
+/// collapses without), `defining` (shapes archetype), `amplifier` (boosts
+/// but replaceable). `game` gates the entry to PoE1 or PoE2; matches in
+/// the wrong game are skipped so PoE1 names don't pollute PoE2 builds.
+const DEFINING_UNIQUES: &[(&str, &str, &str, super::PoeVersion)] = &[
+    // ── PoE1 engine ────────────────────────────────────────────────
+    ("Mageblood", "engine", "magic-flask uptime engine — sustains 4 magic flasks permanently", super::PoeVersion::Poe1),
+    ("Headhunter", "engine", "rare-monster mod stealing — defines map-clear identity", super::PoeVersion::Poe1),
+    ("Original Sin", "engine", "dual-conversion + curse uniqueness — entire build pivots on it", super::PoeVersion::Poe1),
+    ("Cospri's Malice", "engine", "Cast on Crit cold-skill engine for triggerbot melee", super::PoeVersion::Poe1),
+    ("Mjölner", "engine", "Cast on Crit lightning-spell engine for melee staff", super::PoeVersion::Poe1),
+    ("Mjolner", "engine", "Cast on Crit lightning-spell engine for melee staff", super::PoeVersion::Poe1),
+    ("Voll's Devotion", "engine", "endurance-charge generation engine for cycling builds", super::PoeVersion::Poe1),
+    ("Maw of Mischief", "engine", "Death Aura DD engine — entire skill granted by helm", super::PoeVersion::Poe1),
+    ("Replica Cold Iron Point", "engine", "physical-spell scaling — converts spell phys", super::PoeVersion::Poe1),
+    ("The Squire", "engine", "+2 socket support amplifier — defines AG-stacker ceilings", super::PoeVersion::Poe1),
+    ("Doryani's Prototype", "engine", "lightning-resist conversion defender — reshapes EHP entirely", super::PoeVersion::Poe1),
+    ("Voidforge", "engine", "random-elemental-roll sword — drives Cyclone/Vaal Slam crits with elemental conversion", super::PoeVersion::Poe1),
+    ("Voltaxic Rift", "engine", "lightning-to-chaos shock-stack bow — defines bow-chaos identity", super::PoeVersion::Poe1),
+    ("Replica Atziri's Acuity", "engine", "instant leech on hit — sustains every leech-dependent build", super::PoeVersion::Poe1),
+    ("Beltimber Blade", "engine", "movement-speed-on-hit bow — frenzy generation backbone for clear", super::PoeVersion::Poe1),
+    ("Ashes of the Stars", "engine", "wildwood-modifier amulet — defines alt-quality aura/support stack", super::PoeVersion::Poe1),
+    ("The Devouring Diadem", "engine", "feast-of-flesh ES helm + free reservation — defines auras+ES setup", super::PoeVersion::Poe1),
+    ("Heatshiver", "engine", "frozen-to-fire conversion helm — defines cold-strike ignite identity", super::PoeVersion::Poe1),
+    ("Crown of the Inward Eye", "engine", "life-as-extra-ES + reservation reducer — Cyclone/MoM enabler", super::PoeVersion::Poe1),
+    ("Bloodnotch", "engine", "stun-recoup amulet — defines impale/stun defensive layer", super::PoeVersion::Poe1),
+    ("Tempered Spirits", "engine", "trigger gem-level mace — Volcanic Fissure / Frostblink trigger engine", super::PoeVersion::Poe1),
+    ("Coward's Legacy", "engine", "Low Life via belt + flagellant trinity — defines low-life-without-Shavronne", super::PoeVersion::Poe1),
+    ("Replica Conqueror's Efficiency", "engine", "reservation reduction belt — enables triple-aura stacks", super::PoeVersion::Poe1),
+    ("Replica Farrul's Fur", "engine", "frenzy-charge stack on kill body armour — replaces Determination-only profile", super::PoeVersion::Poe1),
+    ("Carcass Jack", "engine", "+AoE area-overlap multiplier — defines self-shotgun damage profile", super::PoeVersion::Poe1),
 
-    // ── defining ───────────────────────────────────────────────────
-    ("Shavronne's Wrappings", "defining", "low-life enabler — chaos damage doesn't bypass ES"),
-    ("Solaris Lorica", "defining", "low-life alternative — guards against critical strikes"),
-    ("Lori's Lantern", "defining", "stun-immunity + low-life synergy ring"),
-    ("Replica Soul Tether", "defining", "life-as-extra-ES on top of regular life pool"),
-    ("Replica Restless Ward", "defining", "movement-skill cooldown reduction enabler"),
-    ("Replica Dragonfang's Flight", "defining", "skill-gem-level cluster — defines aura stack"),
-    ("Asenath's Gentle Touch", "defining", "death-curse trigger glove — defines hex chain"),
-    ("Kingmaker", "defining", "Animate Guardian leadership weapon — fortify + culling"),
-    ("Brutal Restraint", "defining", "Maraketh timeless jewel — re-rolls passive cluster"),
-    ("Glorious Vanity", "defining", "Vaal timeless jewel — corrupts passive cluster"),
-    ("Lethal Pride", "defining", "Karui timeless jewel — strength-cluster rework"),
-    ("Militant Faith", "defining", "Templar timeless jewel — devotion conversion cluster"),
-    ("Elegant Hubris", "defining", "Eternal Empire timeless jewel — passive replacement"),
-    ("The Pandemonius", "defining", "blind + cold-pen amulet — defines cold-conversion identity"),
-    ("Indigon", "defining", "mana-spent damage helm — defines mana-stack identity"),
-    ("Inpulsa's Broken Heart", "defining", "shock-explosion clear identity body armour"),
-    ("Crown of the Tyrant", "defining", "abyss-jewel socket helm — engine for jewel stack"),
-    ("Eyes of the Greatwolf", "defining", "double-talisman amulet — abyss/eldritch synergy"),
-    ("Forbidden Flesh", "defining", "ascendancy-cross jewel — pairs with Forbidden Flame"),
-    ("Forbidden Flame", "defining", "ascendancy-cross jewel — pairs with Forbidden Flesh"),
+    // ── PoE1 defining ──────────────────────────────────────────────
+    ("Shavronne's Wrappings", "defining", "low-life enabler — chaos damage doesn't bypass ES", super::PoeVersion::Poe1),
+    ("Solaris Lorica", "defining", "low-life alternative — guards against critical strikes", super::PoeVersion::Poe1),
+    ("Lori's Lantern", "defining", "stun-immunity + low-life synergy ring", super::PoeVersion::Poe1),
+    ("Replica Soul Tether", "defining", "life-as-extra-ES on top of regular life pool", super::PoeVersion::Poe1),
+    ("Replica Restless Ward", "defining", "movement-skill cooldown reduction enabler", super::PoeVersion::Poe1),
+    ("Replica Dragonfang's Flight", "defining", "skill-gem-level cluster — defines aura stack", super::PoeVersion::Poe1),
+    ("Asenath's Gentle Touch", "defining", "death-curse trigger glove — defines hex chain", super::PoeVersion::Poe1),
+    ("Kingmaker", "defining", "Animate Guardian leadership weapon — fortify + culling", super::PoeVersion::Poe1),
+    ("Brutal Restraint", "defining", "Maraketh timeless jewel — re-rolls passive cluster", super::PoeVersion::Poe1),
+    ("Glorious Vanity", "defining", "Vaal timeless jewel — corrupts passive cluster", super::PoeVersion::Poe1),
+    ("Lethal Pride", "defining", "Karui timeless jewel — strength-cluster rework", super::PoeVersion::Poe1),
+    ("Militant Faith", "defining", "Templar timeless jewel — devotion conversion cluster", super::PoeVersion::Poe1),
+    ("Elegant Hubris", "defining", "Eternal Empire timeless jewel — passive replacement", super::PoeVersion::Poe1),
+    ("The Pandemonius", "defining", "blind + cold-pen amulet — defines cold-conversion identity", super::PoeVersion::Poe1),
+    ("Indigon", "defining", "mana-spent damage helm — defines mana-stack identity", super::PoeVersion::Poe1),
+    ("Inpulsa's Broken Heart", "defining", "shock-explosion clear identity body armour", super::PoeVersion::Poe1),
+    ("Crown of the Tyrant", "defining", "abyss-jewel socket helm — engine for jewel stack", super::PoeVersion::Poe1),
+    ("Eyes of the Greatwolf", "defining", "double-talisman amulet — abyss/eldritch synergy", super::PoeVersion::Poe1),
+    ("Forbidden Flesh", "defining", "ascendancy-cross jewel — pairs with Forbidden Flame", super::PoeVersion::Poe1),
+    ("Forbidden Flame", "defining", "ascendancy-cross jewel — pairs with Forbidden Flesh", super::PoeVersion::Poe1),
+    ("The Eternal Apple", "defining", "life-as-extra-ES shield + endurance generation", super::PoeVersion::Poe1),
+    ("Mahuxotl's Machination", "defining", "all-keystone shield — locks the build into specific keystones", super::PoeVersion::Poe1),
+    ("The Fourth Vow", "defining", "Divine Flesh-aligned chest — chaos taken as ele identity", super::PoeVersion::Poe1),
+    ("Defiance of Destiny", "defining", "missing-life-protection amulet — defines life-recovery EHP", super::PoeVersion::Poe1),
+    ("Hyrri's Truth", "defining", "accuracy-stack amulet — defines pure-physical bow/melee crit", super::PoeVersion::Poe1),
+    ("Astramentis", "defining", "all-attribute amulet — defines attribute-stack identity", super::PoeVersion::Poe1),
+    ("Replica Stampede", "defining", "movement-speed-cap-removing boots — defines speed-stack", super::PoeVersion::Poe1),
+    ("Yoke of Suffering", "defining", "double-ailment amulet — defines ailment-stack hybrid", super::PoeVersion::Poe1),
+    ("The Light of Meaning", "defining", "consecrated-ground prefix jewel — defines crit-without-resolute build", super::PoeVersion::Poe1),
+    ("Sublime Vision", "defining", "aura-specific keystone amulet — locks a single aura's modifier", super::PoeVersion::Poe1),
 
-    // ── amplifier ──────────────────────────────────────────────────
-    ("Watcher's Eye", "amplifier", "aura-mod jewel — strong but replaceable"),
-    ("Thread of Hope", "amplifier", "ring-radius cluster jewel — passive efficiency"),
-    ("Impossible Escape", "amplifier", "keystone-radius cluster jewel"),
-    ("That Which Was Taken", "amplifier", "buff-effect cluster jewel"),
-    ("Stormshroud", "amplifier", "shock-aura body armour — defensive amplifier"),
-    ("Bottled Faith", "amplifier", "consecrated-ground flask — crit + clear amplifier"),
-    ("Dying Sun", "amplifier", "extra-projectiles flask — projectile amplifier"),
-    ("The Wise Oak", "amplifier", "balanced-resists flask — penetration amplifier"),
-    ("Atziri's Promise", "amplifier", "chaos-leech flask — early league amplifier"),
+    // ── PoE1 amplifier ─────────────────────────────────────────────
+    ("Watcher's Eye", "amplifier", "aura-mod jewel — strong but replaceable", super::PoeVersion::Poe1),
+    ("Thread of Hope", "amplifier", "ring-radius cluster jewel — passive efficiency", super::PoeVersion::Poe1),
+    ("Impossible Escape", "amplifier", "keystone-radius cluster jewel", super::PoeVersion::Poe1),
+    ("That Which Was Taken", "amplifier", "buff-effect cluster jewel", super::PoeVersion::Poe1),
+    ("Stormshroud", "amplifier", "shock-aura body armour — defensive amplifier", super::PoeVersion::Poe1),
+    ("Bottled Faith", "amplifier", "consecrated-ground flask — crit + clear amplifier", super::PoeVersion::Poe1),
+    ("Dying Sun", "amplifier", "extra-projectiles flask — projectile amplifier", super::PoeVersion::Poe1),
+    ("The Wise Oak", "amplifier", "balanced-resists flask — penetration amplifier", super::PoeVersion::Poe1),
+    ("Atziri's Promise", "amplifier", "chaos-leech flask — early league amplifier", super::PoeVersion::Poe1),
+    ("Megalomaniac", "amplifier", "three-random-notable medium cluster — passive-shape amplifier", super::PoeVersion::Poe1),
+    ("Forbidden Shako", "amplifier", "random-support-gem helm — versatile amplifier", super::PoeVersion::Poe1),
+    ("Progenesis", "amplifier", "life-recovery flask — defensive cushion amplifier", super::PoeVersion::Poe1),
+    ("Hunter's Omen", "amplifier", "movement-speed amulet — clear-speed amplifier", super::PoeVersion::Poe1),
+    ("Hand of Wisdom and Action", "amplifier", "Int-to-Dex claw — attack-speed stack amplifier", super::PoeVersion::Poe1),
+    ("Aul's Uprising", "amplifier", "free-aura-reservation amulet — defines what fits the aura stack", super::PoeVersion::Poe1),
+    ("Voll's Vision", "amplifier", "PoE1 alternative-quality helm — converts crit damage", super::PoeVersion::Poe1),
+
+    // ── PoE2 engine ────────────────────────────────────────────────
+    ("Pillar of the Caged God", "engine", "PoE2 dex-stack staff — defines pillar-attack staff builds", super::PoeVersion::Poe2),
+    ("El Coro", "engine", "PoE2 spirit-stacker amulet — defines spirit-reservation engine", super::PoeVersion::Poe2),
+    ("Astramentis", "engine", "PoE2 omni-attribute amulet — defines attribute-stack engine", super::PoeVersion::Poe2),
+    ("Hateforge", "engine", "PoE2 trigger-skill weapon — defines automated-spell engine", super::PoeVersion::Poe2),
+    ("Skybreaker", "engine", "PoE2 lightning-conversion staff — defines hit-converting attack identity", super::PoeVersion::Poe2),
+    ("Howl of the Wolf", "engine", "PoE2 minion-companion amulet — defines companion-engine identity", super::PoeVersion::Poe2),
+
+    // ── PoE2 defining ──────────────────────────────────────────────
+    ("Morior Invictus", "defining", "PoE2 +socket body armour — defines socket-count identity", super::PoeVersion::Poe2),
+    ("Ingenuity", "defining", "PoE2 ring-effect belt — amplifies both rings, defines ring-stack", super::PoeVersion::Poe2),
+    ("Bramblejack", "defining", "PoE2 reflect chest — defines thorn/reflect identity", super::PoeVersion::Poe2),
+    ("Pillars of Arun", "defining", "PoE2 demon-form transition staff — defines demon-form identity", super::PoeVersion::Poe2),
+    ("The Adorned", "defining", "PoE2 magic-jewel-effect jewel — defines magic-jewel-stack identity", super::PoeVersion::Poe2),
+    ("Megalomaniac", "defining", "PoE2 three-random-notable cluster — defines passive-shape identity", super::PoeVersion::Poe2),
+
+    // ── PoE2 amplifier ─────────────────────────────────────────────
+    ("Sanctuary of Thought", "amplifier", "PoE2 spell-mana amplifier helm", super::PoeVersion::Poe2),
+    ("Doomgate Cord", "amplifier", "PoE2 reservation amplifier belt", super::PoeVersion::Poe2),
+    ("Charms Galore", "amplifier", "PoE2 charm-slot amulet — charm-stack amplifier", super::PoeVersion::Poe2),
+    ("Stormcaller", "amplifier", "PoE2 lightning-conversion ring — caster amplifier", super::PoeVersion::Poe2),
 ];
 
 fn match_defining_uniques(b: &PobBuild) -> Vec<DefiningUniqueMatch> {
@@ -335,7 +390,14 @@ fn match_defining_uniques(b: &PobBuild) -> Vec<DefiningUniqueMatch> {
             continue;
         };
         let needle = name.to_ascii_lowercase();
-        for (uname, cat, hint) in DEFINING_UNIQUES {
+        for (uname, cat, hint, game) in DEFINING_UNIQUES {
+            // Sprint v5: gate by game so PoE1 entries don't pollute PoE2
+            // matches (and vice versa). Same name may legitimately exist
+            // in both registries with different identity hints
+            // (Astramentis, Megalomaniac).
+            if *game != b.game {
+                continue;
+            }
             if uname.to_ascii_lowercase() == needle {
                 out.push(DefiningUniqueMatch {
                     name: (*uname).into(),
@@ -347,15 +409,15 @@ fn match_defining_uniques(b: &PobBuild) -> Vec<DefiningUniqueMatch> {
             }
         }
     }
-    // Second pass — auto-engine via mod patterns. Catches uniques the
+    // Second pass — auto-engine via mod patterns. Catches items the
     // hardcoded registry doesn't know about but that are clearly
     // engineered into the build (built-in gem supports, gem-level
-    // boosts, conditional triggers, main-skill-named mods). Restricted
-    // to UNIQUE rarity so we don't surprise the agent with random rares
-    // — those can be re-crafted, uniques cannot. See the
-    // `<failure_policy>` section of `SYSTEM_PROMPT.md` for how the
-    // agent should treat `category: "engine"` items: never propose
-    // swap without explicit user invitation.
+    // boosts, conditional triggers, main-skill-named mods). Sprint v5:
+    // also runs on RARE items — engineered rares (Awakener's Touch
+    // trigger-on-crit rings, +1 socketed gem helms, fractured/elevated
+    // skill-name mods) deserve `engine` flagging just like uniques.
+    // See the `<failure_policy>` section of `SYSTEM_PROMPT.md` for how
+    // the agent should treat `category: "engine"` items.
     let main_skill_lower = b
         .main_skill
         .as_deref()
@@ -374,7 +436,12 @@ fn match_defining_uniques(b: &PobBuild) -> Vec<DefiningUniqueMatch> {
             .as_deref()
             .map(|r| r.eq_ignore_ascii_case("UNIQUE"))
             .unwrap_or(false);
-        if !is_unique {
+        let is_rare = item
+            .rarity
+            .as_deref()
+            .map(|r| r.eq_ignore_ascii_case("RARE"))
+            .unwrap_or(false);
+        if !is_unique && !is_rare {
             continue;
         }
         if let Some(hint) = detect_engine_mod_pattern(&item.raw, &main_skill_lower) {
