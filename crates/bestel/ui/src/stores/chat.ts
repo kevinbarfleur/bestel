@@ -386,6 +386,7 @@ export const useChatStore = defineStore('chat', () => {
   function reasoningBegin() {
     const a = currentAssistant.value;
     if (!a) return;
+    flushStreamingText();
     a.lastDeltaAt = Date.now();
     a.segments.push({ kind: 'reasoning', id: segId(), text: '', open: true });
   }
@@ -393,6 +394,7 @@ export const useChatStore = defineStore('chat', () => {
   function reasoningDelta(text: string) {
     const a = currentAssistant.value;
     if (!a) return;
+    flushStreamingText();
     a.lastDeltaAt = Date.now();
     for (let i = a.segments.length - 1; i >= 0; i--) {
       const s = a.segments[i];
@@ -419,6 +421,7 @@ export const useChatStore = defineStore('chat', () => {
   function toolBegin(id: string, name: string, detail: string | null) {
     const a = currentAssistant.value;
     if (!a) return;
+    flushStreamingText();
     a.lastDeltaAt = Date.now();
     a.segments.push({
       kind: 'tool',
@@ -470,6 +473,7 @@ export const useChatStore = defineStore('chat', () => {
   }) {
     const a = currentAssistant.value;
     if (!a) return;
+    flushStreamingText();
     a.lastDeltaAt = Date.now();
     const existing = a.segments.find(
       (s): s is SheetDraftSegment => s.kind === 'sheet_draft' && s.sectionId === payload.sectionId,
@@ -503,6 +507,7 @@ export const useChatStore = defineStore('chat', () => {
   }) {
     const a = currentAssistant.value;
     if (!a) return;
+    flushStreamingText();
     a.lastDeltaAt = Date.now();
     a.segments.push({
       kind: 'sheet_ask',
@@ -525,6 +530,7 @@ export const useChatStore = defineStore('chat', () => {
   function sheetInterviewOpen(payload: SheetInterviewSegment['payload']) {
     const a = currentAssistant.value;
     if (!a) return;
+    flushStreamingText();
     a.lastDeltaAt = Date.now();
     const existing = a.segments.find(
       (s): s is SheetInterviewSegment => s.kind === 'sheet_interview',
@@ -585,6 +591,7 @@ export const useChatStore = defineStore('chat', () => {
   }) {
     const a = currentAssistant.value;
     if (!a) return;
+    flushStreamingText();
     a.lastDeltaAt = Date.now();
     const existing = a.segments.find(
       (s): s is VerifyClaimsSegment => s.kind === 'verify_claims',
@@ -614,6 +621,7 @@ export const useChatStore = defineStore('chat', () => {
   function sheetFinalized(sheetId: string, name: string) {
     const a = currentAssistant.value;
     if (!a) return;
+    flushStreamingText();
     a.lastDeltaAt = Date.now();
     const existing = a.segments.find(
       (s): s is SheetFinalizedSegment => s.kind === 'sheet_finalized',
