@@ -1064,9 +1064,15 @@ async fn dispatch_get_active_build(ctx: &ToolCtx) -> Result<String> {
         summary.insert("next_required_action".into(), json!(text));
     }
 
+    // Sprint v5: raised from 30_000 to 80_000. The structured item-mod
+    // surface added in this sprint roughly doubles the items-array size,
+    // and at 30 KB the binding cap dropped skill_groups / signatures /
+    // stats / tattoos for full-gear builds (alphabetical key order puts
+    // them after `items`). 80 KB sits comfortably under Anthropic /
+    // DeepSeek tool-result limits while preserving the full surface.
     let body = truncate(
         &serde_json::to_string(&value).unwrap_or_else(|_| base.clone()),
-        30_000,
+        80_000,
     );
     // Prepend the directive as a plain-text banner so the model reads it
     // BEFORE the JSON payload. Empirically a directive buried in the
@@ -1360,7 +1366,10 @@ async fn dispatch_pob_calc(input: &Value, ctx: &ToolCtx) -> Result<String> {
     }
 
     let payload = serde_json::to_value(&response).context("serialize pob_calc response")?;
-    Ok(truncate(&serde_json::to_string(&payload).unwrap_or_default(), 30_000))
+    // Sprint v5: 30 KB cap was too tight for `category=all` payloads
+    // after Step 7's CATEGORY_KEYS expansion. 60 KB matches the
+    // dispatch_get_active_build budget.
+    Ok(truncate(&serde_json::to_string(&payload).unwrap_or_default(), 60_000))
 }
 
 /// Returns `Some(tool_result_json)` when the engine returned numbers for a
@@ -1400,6 +1409,18 @@ async fn wrong_skill_recover(
         return Ok(None);
     };
     if skill_labels_match(&expected, &got) {
+        return Ok(None);
+    }
+
+    // Sprint v5: only auto-correct when the LLM did NOT specify a
+    // skill_index. If the LLM explicitly requested skill_index=N it is
+    // asking for a non-default skill on purpose (e.g. "compute Hatred
+    // DPS" on a Penance Brand build). Overriding back to main_skill
+    // would silently ignore the user's intent. The verification step
+    // in the schema documentation still tells the LLM to recheck
+    // active_skill_label against its target; we only intervene on
+    // the silent-default-fallback class of failure.
+    if attempted_skill_index.is_some() {
         return Ok(None);
     }
 
@@ -1687,7 +1708,21 @@ fn render_build_for_llm(b: &PobBuild) -> String {
             entry.insert("rarity".into(), json!(it.rarity));
             entry.insert("name".into(), json!(it.name));
             entry.insert("base".into(), json!(it.base));
-            entry.insert("raw".into(), json!(truncate(&it.raw, 1500)));
+            // Sprint v5: drop the raw blob when structured item mods are
+            // populated — the structured fields already carry every line,
+            // and keeping a 1500-char raw per item pushed the overall
+            // render past the 60 KB truncate cap on full-gear builds,
+            // dropping skill_groups / signatures / stats silently. Keep
+            // a short raw fallback for items the parser couldn't split
+            // (mostly non-named gear or one-line entries).
+            let has_structured = !it.implicit_mods.is_empty()
+                || !it.explicit_mods.is_empty()
+                || !it.enchant_mods.is_empty()
+                || !it.runic_mods.is_empty()
+                || !it.sockets.is_empty();
+            if !has_structured {
+                entry.insert("raw".into(), json!(truncate(&it.raw, 600)));
+            }
             // Sprint v5 — structured item fields. Skip entries whose
             // structured field is empty so the JSON stays tight on
             // common (e.g. low-mod) items.
@@ -1810,7 +1845,12 @@ fn render_build_for_llm(b: &PobBuild) -> String {
 
     let value = serde_json::Value::Object(summary);
     let s = serde_json::to_string(&value).unwrap_or_default();
-    truncate(&s, 60_000)
+    // Sprint v5: raised from 60_000 to 120_000 to absorb the structured
+    // item-mod surface without dropping alphabetically-late fields
+    // (signatures, skill_groups, stats, tattoos, tree_specs) when the
+    // alphabetically-early `items` array is rich. Claude / DeepSeek-V4
+    // tokens easily fit 120 KB into context.
+    truncate(&s, 120_000)
 }
 
 /// Compose the canonical `Identity:` card line that the agent must echo
