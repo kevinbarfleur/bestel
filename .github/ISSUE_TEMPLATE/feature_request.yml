@@ -1,0 +1,62 @@
+name: Feature request
+description: Suggest something Bestel should be able to do.
+title: "[feature] "
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the suggestion. Bestel is shaped by what testers
+        actually want, so concrete user stories help more than feature
+        wishlists.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem you're trying to solve
+      description: What are you trying to do with Bestel that's hard, slow, or impossible today?
+      placeholder: |
+        When I switch builds in PoB, Bestel sees the new build but my
+        chat is still about the previous one. I'd like a way to "anchor"
+        the conversation to the new build without losing the history.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed
+    attributes:
+      label: What you have in mind
+      description: A rough idea of how the feature would work. UI sketches, examples from other apps, anything is welcome.
+      placeholder: |
+        A "Switch build for this conversation" action in the build
+        picker. Confirms before switching. Tags the next assistant
+        turn with a note about the build change.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which area
+      description: Roughly where this feature lives. (Best guess is fine.)
+      options:
+        - Chat / agent behaviour
+        - Build watcher / PoB integration
+        - Knowledge / references
+        - UI / UX
+        - Model picker / API keys
+        - Build Sheets
+        - Developer tooling (eval, driver, dev panel)
+        - Other / not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you've considered (optional)
+      description: Any workarounds you've tried, or other ways this could be solved.
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else
+      description: Screenshots, links to similar features in other tools, etc.

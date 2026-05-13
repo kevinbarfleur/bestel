@@ -1,0 +1,89 @@
+name: Bug report
+description: Something in Bestel is broken or wrong.
+title: "[bug] "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file this. The more concrete you
+        are, the faster it gets fixed.
+
+        For wrong answers from the agent (hallucinations, broken
+        reasoning), please grab the conversation JSON from the
+        **debug** button at the top of the chat header — it copies
+        the whole turn (messages, tool calls, stats) to your clipboard
+        and is the single most useful thing for me to reproduce.
+
+  - type: input
+    id: bestel-version
+    attributes:
+      label: Bestel version
+      description: The version you downloaded from the Releases page, or the commit hash if you built from source.
+      placeholder: v0.1.0 (or `git rev-parse --short HEAD`)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: model
+    attributes:
+      label: Active model
+      description: Which model was selected when the bug happened?
+      options:
+        - DeepSeek V4-Flash
+        - DeepSeek V4-Pro
+        - Claude Haiku 4.5
+        - Claude Sonnet 4.6
+        - Claude Opus 4.7
+        - Ollama (local)
+        - Other / not applicable
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: Describe the bug in plain English. What did you do, what did you see, what did you expect?
+      placeholder: |
+        I loaded a PoE1 build with Penance Brand. I asked "am I going
+        to oom in extended boss fights?". The agent answered "you'll
+        oom in 2 seconds" without calling get_active_build.
+    validations:
+      required: true
+
+  - type: textarea
+    id: chat-json
+    attributes:
+      label: Chat JSON (debug button)
+      description: |
+        Paste here the JSON copied from the **debug** button at the top
+        of the chat header. This contains the full turn — messages,
+        tool calls, stats. If your turn touched a PoB build, also
+        attach the relevant `.xml` if possible.
+
+        > If the JSON is huge, paste a [GitHub Gist](https://gist.github.com)
+        > link instead.
+      render: json
+    validations:
+      required: false
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce (if you can)
+      description: Most reliably reproducible bugs are the ones I fix first.
+      placeholder: |
+        1. Launch Bestel.
+        2. Open the build picker (Ctrl+B), pick build "X".
+        3. Type "y" in the prompt and hit enter.
+        4. Bestel does Z, but I expected W.
+
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment (optional)
+      description: OS, build of PoB you have installed, anything that might be relevant.
+      placeholder: |
+        Windows 11 23H2
+        PoB Community 2.42.0

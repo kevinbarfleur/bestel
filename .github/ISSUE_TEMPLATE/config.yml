@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Read the README first
+    url: https://github.com/kevinbarfleur/bestel/blob/main/README.md
+    about: Setup, model picker, supported providers, project status.
+  - name: Read the contributing guide
+    url: https://github.com/kevinbarfleur/bestel/blob/main/CONTRIBUTING.md
+    about: Local dev setup, design-system rules, PR workflow.
