@@ -50,24 +50,24 @@ testers so I can see where it actually breaks.
 - Build Sheet workflow — a structured spec the agent re-reads on
   every later turn instead of redoing the interview.
 
-**⚠️ Integrated but not reliable yet**
-- **Claim grounding.** The model sometimes invents build-specific
-  numbers ("you'll oom in 2 s", "your resists are uncapped at 60 %")
-  even when the real numbers are one tool call away. There's a
-  verification pipeline catching some of it, but **don't trust a
-  numeric claim about your build without spot-checking it in PoB**.
-- **Process-narration leaks.** Phrases like "let me check" sometimes
-  end up in the final answer instead of staying internal.
-- **PoE2 coverage.** PoE1 is the better-tested side. PoE2 is supported
-  but the bundled methodology references are thinner.
+**⚠️ Integrated but not reliable yet — what I'm actively working on**
 
-**🛠️ On the roadmap**
-- Stronger guardrails on build-specific math (active rewrite-on-the-fly
-  instead of warn-only).
-- Better PoE2 reference coverage (keystones, mod tiers, league
-  mechanics).
-- Curated build templates so a fresh conversation isn't a blank page.
-- macOS build (Windows-only for now; Linux compiles).
+These are real today, integrated end-to-end, but still rough. They
+double as my current priority list:
+
+- **Claim grounding** (top priority). The model sometimes invents
+  build-specific numbers ("you'll oom in 2 s", "your resists are
+  uncapped at 60 %") even when the real numbers are one tool call
+  away. There's a verification pipeline catching some of it and I'm
+  iterating on stronger guardrails (active rewrite-on-the-fly instead
+  of warn-only). For now — **don't trust a numeric claim about your
+  build without spot-checking it in PoB**.
+- **PoE2 coverage.** PoE1 is the better-tested side. PoE2 is
+  supported but the bundled methodology references are thinner; I'm
+  filling those in (keystones, mod tiers, league mechanics).
+- **Process-narration leaks.** Phrases like "let me check" sometimes
+  end up in the final answer instead of staying internal. Cosmetic
+  but annoying; on the cleanup list.
 
 If something on this list blocks you, open an issue — I prioritise
 by what testers actually run into.
@@ -155,8 +155,17 @@ exactly what each answer costs as you go.
   [platform.deepseek.com](https://platform.deepseek.com/apikeys),
   create a key starting with `sk-`, paste it in the picker.
 - **Ollama (local)** — install [Ollama](https://ollama.com), then
-  `ollama pull qwen3:14b` (or any tool-calling model you like).
-  Bestel auto-discovers anything you've pulled — no key needed.
+  `ollama pull qwen3:14b` (or any tool-calling model you like, see
+  the [model library](https://ollama.com/library)). Bestel
+  auto-discovers anything you've pulled — no key needed.
+
+> **A note on local quality.** Ollama answers are still noticeably
+> below the cloud models on long PoE reasoning chains — local
+> open-weight models lag the frontier on agentic tool use. The local
+> path works for quick lookups today; I'm actively working on the
+> tool dispatch + prompt shape so the qwen3 / llama3 class can keep up
+> on full build audits. Use Sonnet 4.6 (or DeepSeek V4-Flash if you
+> want it cheap) until the local path catches up.
 
 The picker has a **"Get a key from <provider> ↗"** link right under
 the input field that opens the right page in your browser.
