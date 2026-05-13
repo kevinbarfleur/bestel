@@ -285,9 +285,18 @@ pub async fn chat_start(
         }
 
         if let Some(rec_arc) = Arc::try_unwrap(recorder_for_save).ok().and_then(|m| m.into_inner().ok()) {
-            let run = rec_arc.finish(final_text);
-            if let Err(e) = debug_recorder::save_run(&run) {
-                eprintln!("failed to persist debug run: {e}");
+            // Per-turn debug autosave is OPT-IN. Without
+            // `BESTEL_DEBUG_RECORDER=1` set at launch, the recorder
+            // builds the run in memory (so the in-app debug button can
+            // still copy it to the clipboard) but does NOT write a
+            // JSON file under `~/.bestel/runtime/debug-chats/`. The
+            // user-facing chat history (conversation-logs) is
+            // unaffected — that's how chats survive a restart.
+            if std::env::var("BESTEL_DEBUG_RECORDER").ok().as_deref() == Some("1") {
+                let run = rec_arc.finish(final_text);
+                if let Err(e) = debug_recorder::save_run(&run) {
+                    eprintln!("failed to persist debug run: {e}");
+                }
             }
         }
 

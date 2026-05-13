@@ -17,8 +17,9 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/license-MIT-amber" alt="MIT license" />
-  <img src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux-lightgrey" alt="Windows | Linux" />
+  <img src="https://img.shields.io/badge/platform-Windows-lightgrey" alt="Windows" />
   <img src="https://img.shields.io/badge/built%20with-Rust%20%2B%20Tauri%202-orange" alt="Built with Rust + Tauri 2" />
+  <img src="https://img.shields.io/badge/status-early%20preview-yellow" alt="Early preview" />
 </p>
 
 ---
@@ -26,119 +27,123 @@
 The voice is Bestel, chronicler of Lioneye's Watch. Wraeclast wisdom,
 no pep talks.
 
-## What it does
+## Project status — read this before you try it
 
-- **Live Path of Building watcher.** Save a build in PoB / PoB2 → it
-  appears in the sidebar. Switch builds, the panel updates. The active
-  build is sent to the LLM as ground truth.
-- **Structured research.** Bestel calls a curated PoE toolkit while
-  answering your question — official wiki pages, synergy sweeps
-  (`Special:WhatLinksHere`), datamined PoEDB lookups, GGG trade stat
-  resolution, allowlisted web fetches. Every tool call shows up as its
-  own artifact card in the chat so you can see the work that produced
-  the answer.
-- **Side panels for items / gems / mechanics.** When the answer hinges
-  on a specific entity (a unique to swap, a keystone to allocate, a
-  mechanic to understand), Bestel pops a structured side panel with the
-  full mod list, comparison vs your current gear, scaling notes. One
-  click on the panel chrome opens the wiki page in the in-app webview.
-- **Persistent chat history.** Conversations are saved locally with
-  their attached build, restored on the next launch.
-- **PoE-aware reasoning core.** A baked-in knowledge layer
-  (`prompts/CORE_KNOWLEDGE.md`) gives the agent build
-  ontology, search planning, validation reflexes, and the genre / GGG
-  priors — so it plans searches well rather than guessing from memory.
-- **MCP server mode.** Run `bestel mcp-serve` to expose Bestel's PoE
-  tools to other AI tools (Claude Desktop, Cursor, Windsurf, etc.).
+Bestel is an **early preview**. It does a lot of useful things already,
+but it is not production-grade yet — answers can be wrong, especially
+on build-specific math. The whole point of this release is to share it
+with a few friendly testers so I can see where it actually breaks.
 
-## Two ways to run it
+### ✅ What works today
 
-Bestel ships with **two operation modes**. Pick one based on whether
-you want frontier-model quality (paid) or fully local / free.
+- **Live PoB watcher** — save a build in Path of Building / PoB2, it
+  appears in the sidebar within ~1 s. Switching builds updates the
+  active context automatically.
+- **PoB engine sidecar** — a bundled LuaJIT subprocess runs the real
+  PathOfBuilding calc pipeline. The agent can ask for actual DPS / EHP
+  / max hit numbers against a Pinnacle profile, not just paraphrased
+  sheet values.
+- **Tool-calling research loop** — Anthropic Messages API (native
+  tool-use + thinking blocks) and Ollama, sharing the same dispatch
+  layer. Tools: wiki parse / search / synergies, PoEDB lookups, RePoE
+  mods/base-item joins, GGG trade stat resolution, whitelisted web
+  fetches, and the PoB calc.
+- **RAG over a curated PoE knowledge base** — LanceDB hybrid retrieval
+  (vector + BM25) over the bundled reference docs (build methodology,
+  source registry, item taxonomy, mod tier conventions, etc.). The
+  agent searches the KB before guessing.
+- **Side-panel artifacts** — when the answer hinges on a specific item
+  / keystone / mechanic, Bestel pops a structured panel with the mod
+  list, scaling notes, and a one-click "open the wiki page in app".
+- **Build Sheet workflow** — guided interview that distills your build
+  into a structured spec the agent can re-read on every later turn,
+  with drift detection when your gear / tree / skills change.
+- **Persistent chats** — every conversation is saved locally with the
+  attached build, restored on the next launch.
+- **MCP server mode** — `bestel mcp-serve` exposes the PoE tools over
+  JSON-RPC so you can wire them into Claude Desktop, Cursor, etc.
 
-### Mode 1 — Anthropic API (recommended)
+### ⚠️ Integrated but not reliable yet
 
-You bring your own [Anthropic API key](https://platform.claude.com/settings/keys)
-(or DeepSeek API key for the cheaper alternative). Bestel calls the
-API directly, with the full tool ecosystem and structured thinking
-blocks. Pay-per-token, with prompt caching cutting recurring costs by
-~75% per turn.
+This is the part I am actively working on:
 
-| Model | Speed | Cost (input / output per Mtok) | Quality |
-|-------|-------|-------------------------------|---------|
-| Claude Haiku 4.5 (default) | Fast | $1 / $5 | ⭐⭐⭐⭐ |
-| Claude Sonnet 4.6 | Balanced | $3 / $15 | ⭐⭐⭐⭐⭐ |
-| Claude Opus 4.7 | Heavy | $5 / $25 | ⭐⭐⭐⭐⭐ |
-| DeepSeek V3.2 (Anthropic-compat) | Balanced | $0.28 / $0.42 | ⭐⭐⭐ |
+- **Claim grounding.** The model sometimes invents build-specific
+  numbers ("you'll oom in 2 s", "your resists are uncapped at 60 %")
+  without checking the actual PoB data — even when the data is one
+  tool call away. There's a Chain-of-Verification pass, a response
+  linter and a turn classifier helping, but **don't trust a numeric
+  claim about your build without spot-checking it in PoB**.
+- **Process narration leakage.** Phrases like "let me check" or "I'll
+  search the wiki" sometimes leak into the final answer instead of
+  staying internal. Cosmetic but annoying.
+- **PoE2 coverage.** PoE1 is the better-tested side. PoE2 is supported
+  (parsing, trade, wiki) but the bundled methodology references are
+  thinner.
+- **Cost on big builds.** A full build audit with Sonnet can spend
+  10–30 ¢ per turn. The free DeepSeek tier and Haiku are cheaper but
+  weaker on long reasoning chains.
 
-**Typical cost per answer**: $0.005–$0.05 with Haiku, $0.02–$0.20 with
-Sonnet, $0.05–$0.50 with Opus. Build-coaching answers run wider
-research loops (more tool calls) so they hit the higher end. The chat
-shows the live cost + cache hit rate per turn.
+### 🛠️ On the roadmap
 
-### Mode 2 — Ollama (local, free)
+- Active response-lint mode (rewrite-on-the-fly instead of warn-only)
+- Verifier that always reads the same-turn tool transcript before
+  judging build claims (Sprint v6 is shipping the foundations)
+- Better PoE2 reference coverage (keystones, mod tiers, league
+  mechanics)
+- macOS build (currently Windows-only release; Linux compiles)
+- Curated build templates so you don't have to start from a blank
+  conversation
+- Reliability evals you can run yourself to verify a new model is not
+  worse than the previous one
 
-Run an open-weight model on your own machine via [Ollama](https://ollama.com).
-No API key, no subscription, no data leaves your computer. Quality
-depends entirely on the model you pull and your GPU/RAM budget.
+If something on this list matters to you, open an issue — I prioritise
+by what testers actually run into.
 
-| Model size | RAM/VRAM | Quality | Note |
-|-----------|----------|---------|------|
-| 7–8B (e.g. `llama3.1:8b`, `qwen3:8b`) | 8 GB | ⭐⭐ | Reduced tool schema; struggles on multi-step research. Fine for simple lookups. |
-| 14–32B (e.g. `qwen3:14b`, `qwen2.5:32b`) | 16–32 GB | ⭐⭐⭐ | Full tool ecosystem; usable for build coaching. The local sweet spot. |
-| 70B+ (e.g. `llama3.1:70b`) | 48+ GB | ⭐⭐⭐⭐ | Approaches Haiku quality on long-context PoE questions. |
+---
 
-No cloud-grade model rivals Sonnet/Opus on the depth of PoE research
-yet. Local mode is great for the "I want to ask a question about my
-build without paying" use case; for hard build-coaching the cloud
-modes pull ahead.
+# Part 1 — Using Bestel
 
-### Comparison
+## What it does, in one paragraph
 
-| | Anthropic API | Ollama (local) |
-|--|---------------|----------------|
-| **Cost** | Pay-per-token (cents per answer) | Free, runs on your hardware |
-| **Privacy** | Prompts sent to Anthropic | Stays on your machine |
-| **Quality** | Frontier (Haiku → Opus) | Depends on the model you pull |
-| **Setup** | Drop your API key in settings | Install Ollama, `ollama pull <model>` |
-| **Internet required** | Yes (API + tool fetches) | Tool fetches only (wiki, trade); model itself is offline |
-| **Tool ecosystem** | Full (build, wiki, trade, synergies, web) | Full (reduced for ≤8B models) |
-| **Streaming reasoning** | Yes (Anthropic thinking blocks) | Model-dependent |
+You save a build in Path of Building. Bestel sees it appear and reads
+the XML. You ask a question — "am I going to one-shot in Maven phase
+3?", "should I swap my chest for a Cloak of Defiance?", "how much
+chill effect does Hatred give me with Elemental Focus support?". The
+agent calls the right tools (active build, PoB calc, wiki, datamine,
+trade), composes a short answer, and pops a side panel for the
+specific item / skill / mechanic when there is one to look at.
 
-You can switch between modes any time via `Ctrl+P` (model picker). The
-active conversation continues with whichever mode you pick next.
+## Install
 
-## Requirements
+There are two ways: download the prebuilt Windows installer, or build
+it from source.
 
-- **Path of Building** (PoE1) and / or **Path of Building 2** (PoE2)
-  installed and used at least once. Bestel reads the build XML files
-  those tools save under your Documents directory.
-- One of:
-  - An **Anthropic API key** ([get one here](https://platform.claude.com/settings/keys))
-    — for Mode 1.
-  - A **DeepSeek API key** ([get one here](https://platform.deepseek.com/apikeys))
-    — also Mode 1, ~10× cheaper than Haiku.
-  - **[Ollama](https://ollama.com)** with at least one model pulled —
-    for Mode 2.
-- **Rust 1.80+** and **Node 18+** to build from source.
-- Windows is the primary target. Linux build is supported (less
-  testing). macOS support is on hold.
+### Option A — prebuilt Windows binary (easiest)
 
-## Build and run
+1. Grab the latest `bestel-vX.Y.Z-windows.zip` from the
+   [Releases page](https://github.com/kevinbarfleur/bestel/releases).
+2. Unzip somewhere and double-click `bestel.exe`. The app stores its
+   data under `%USERPROFILE%\.bestel\` (chats, cache, keys) — nothing
+   leaks into Program Files.
+3. First launch downloads the PoB engine vendor files on demand
+   (~30 MB) the first time you ask for a `pob_calc`. Internet required
+   that first time only.
+
+### Option B — build from source
 
 ```sh
 git clone https://github.com/kevinbarfleur/bestel
 cd bestel
 
-# install frontend deps
+# frontend deps (once)
 cd crates/bestel/ui && npm install && cd ../../..
 
-# release build
+# release build — needs Rust 1.80+ and Node 18+
 cargo build --release -p bestel
 
 # launch
-./target/release/bestel.exe        # Windows
-./target/release/bestel            # Linux
+./target/release/bestel.exe          # Windows
+./target/release/bestel              # Linux (built but lightly tested)
 ```
 
 For development with hot-reload:
@@ -148,55 +153,147 @@ cd crates/bestel
 cargo tauri dev
 ```
 
-## Setting up Mode 1 — Anthropic API
+### Requirements
 
-1. Get an API key from
-   [platform.claude.com/settings/keys](https://platform.claude.com/settings/keys)
-   (or [platform.deepseek.com/apikeys](https://platform.deepseek.com/apikeys)
-   for DeepSeek).
-2. Launch Bestel.
-3. Open the model picker (`Ctrl+P`), pick a Claude or DeepSeek
-   profile, paste the API key into the field on the right, click
-   **Use this model**.
-4. The key is stored securely in `~/.bestel/runtime/keys.json` (per-user,
-   not in the repo). You can also set `ANTHROPIC_API_KEY` /
-   `DEEPSEEK_API_KEY` as environment variables and Bestel will pick
-   them up.
+- **Path of Building** (PoE1) or **Path of Building 2** (PoE2)
+  installed and used at least once. Bestel reads the build XML files
+  PoB saves under your Documents directory — no extra config needed,
+  it just watches the right folder.
+- An API key for one of the supported cloud providers (see below) **or**
+  a local Ollama install.
+- Windows 10/11 is the primary platform. Linux compiles; macOS is on
+  hold.
 
-That's it. The model picker shows the current cost telemetry per turn
-and you can hot-swap between Haiku/Sonnet/Opus/DeepSeek any time.
+## Pick your model
 
-## Setting up Mode 2 — Ollama (local)
+Bestel ships with three cloud profiles plus local Ollama. **You only
+need one of these to be useful.** My recommendations:
 
-1. Install Ollama from [ollama.com](https://ollama.com) (one-time
-   install, system tray on Windows, daemon on Linux).
-2. Pull a model with native tool calling. Pick based on your hardware:
+### Recommended starting points
+
+| If you want… | Use this | Why |
+|---|---|---|
+| **The cheapest way to try Bestel out** | **DeepSeek V4-Flash** | ~$0.001–0.01 per answer. Lets you see what the tool can do without burning credits. Good enough on quick lookups; weaker on long build audits. |
+| **The best answer quality** | **Claude Sonnet 4.6** | Frontier reasoning, deepest tool chains, best at staying grounded on build-specific math. ~$0.02–0.20 per answer. |
+| **A free local setup** | **Ollama** with `qwen3:14b` (or bigger) | Runs on your own GPU, nothing leaves your machine. Quality below cloud but usable for lookups. |
+
+Full cost comparison:
+
+| Model | Provider | $/Mtok input | $/Mtok output | Speed | Quality |
+|---|---|---|---|---|---|
+| **DeepSeek V4-Flash** ⭐ first try | DeepSeek | $0.14 | $0.28 | Fast | ⭐⭐⭐ |
+| DeepSeek V4-Pro | DeepSeek | $1.74 | $3.48 | Balanced | ⭐⭐⭐⭐ |
+| Claude Haiku 4.5 | Anthropic | $1 | $5 | Fast | ⭐⭐⭐⭐ |
+| **Claude Sonnet 4.6** ⭐ best | Anthropic | $3 | $15 | Balanced | ⭐⭐⭐⭐⭐ |
+| Claude Opus 4.7 | Anthropic | $5 | $25 | Slow | ⭐⭐⭐⭐⭐ |
+| Ollama (qwen3 / llama3 / etc.) | Local | free | free | Hardware-bound | ⭐⭐ → ⭐⭐⭐⭐ |
+
+The picker (`Ctrl+P`) shows the live token / cost telemetry per turn,
+so you can see exactly what each answer costs as you go.
+
+### Setting up cloud (Anthropic / DeepSeek)
+
+1. Grab an API key:
+   - [platform.claude.com/settings/keys](https://platform.claude.com/settings/keys)
+     for Anthropic models (Haiku / Sonnet / Opus).
+   - [platform.deepseek.com/apikeys](https://platform.deepseek.com/apikeys)
+     for DeepSeek V4-Flash and V4-Pro.
+2. Launch Bestel, hit `Ctrl+P`, pick the profile, paste the key into
+   the field on the right, click **Use this model**.
+3. Keys are stored under `%USERPROFILE%\.bestel\runtime\keys.json`
+   (per-user, never written into the repo). You can also set
+   `ANTHROPIC_API_KEY` / `DEEPSEEK_API_KEY` as system environment
+   variables — Bestel reads them as a fallback.
+
+You can hot-swap between cloud profiles any time; the active
+conversation keeps going with the new model.
+
+### Setting up Ollama (local)
+
+1. Install [Ollama](https://ollama.com) and let the daemon run.
+2. Pull a model with native tool calling:
    ```sh
-   # Light, fast, 8 GB VRAM is enough
+   # 8 GB VRAM — lightweight, OK for quick lookups
    ollama pull qwen3:8b
 
-   # Better quality, 16+ GB recommended
+   # 16+ GB — best balance on consumer hardware
    ollama pull qwen3:14b
 
-   # Frontier-adjacent local, needs serious GPU
+   # 48+ GB — approaches Haiku-class on long PoE chains
    ollama pull llama3.1:70b
    ```
-3. Make sure Ollama is running (`ollama serve` if it's not auto-started).
-4. Launch Bestel. The model picker auto-discovers every model you've
-   pulled and lists them under **Ollama (local)**. Pick one, click
-   **Use this model**.
+3. Launch Bestel. The picker auto-discovers everything you've pulled
+   under `Ollama (local)`. Pick one, click **Use this model**.
+4. If your Ollama is on a different host or port, set
+   `OLLAMA_HOST=http://your-host:11434`.
 
-Bestel polls the daemon's `/api/tags` endpoint at startup, so the
-picker only shows models you've actually pulled — no fictional ghosts.
-If your Ollama is on a different host or port, set
-`OLLAMA_HOST=http://your-host:11434`.
+## How the build system works
 
-**Tested model recommendations for PoE coaching**:
-- `qwen3:14b` — best balance of quality and resource budget on a
-  single consumer GPU.
-- `qwen2.5:32b` — better at multi-step reasoning if you have the VRAM.
-- `llama3.1:8b` — reliable fallback when nothing bigger fits.
-- For images (screenshots in chat): `llama3.2-vision` or `qwen2.5vl`.
+The piece that makes Bestel different from a generic LLM chat:
+
+1. **You don't upload a file.** Bestel watches the folder Path of
+   Building saves into (`%USERPROFILE%\Documents\Path of Building\Builds\`
+   for PoE1, the equivalent PoB2 path for PoE2) and reacts to changes.
+2. **The XML is parsed locally.** Class, ascendancy, level, gear,
+   passives, skill links, jewels, anointments, allocated keystones —
+   all extracted into a structured payload.
+3. **The active build is one tool call away.** Every conversation
+   knows which build is loaded. When you ask a question that's
+   actually about your character, the model calls `get_active_build`
+   and reads the payload. You can also force a fresh `pob_calc` for
+   computed numbers (real DPS, max hit, EHP, recovery breakdowns).
+4. **The build moves with the conversation.** If you swap a chest in
+   PoB, the next message you send already sees the new gear. If you
+   start a new chat with `Ctrl+N`, it inherits the currently active
+   build by default.
+
+The Build Sheet workflow goes one step further: after a deep audit,
+Bestel can write a structured "build sheet" (intent, archetype,
+defining items, known gaps) that future conversations re-read instead
+of redoing the whole interview. Drift detection flags when your gear
+diverges from the sheet so the agent knows when to refresh.
+
+## Configuration
+
+| Variable | Default | Role |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | — | Anthropic API key (env-var fallback). |
+| `DEEPSEEK_API_KEY` | — | DeepSeek API key (Anthropic-compat endpoint). |
+| `OLLAMA_HOST` | `http://localhost:11434` | Ollama daemon URL. |
+| `BESTEL_MODEL` | (picker selection) | One-off override for the model id. |
+| `BESTEL_CACHE_DIR` | `~/.bestel/cache` | Cache dir for wiki / trade / fetch tools. |
+| `BESTEL_DEV_LOG` | unset | `1` enables the JSONL devlog under `~/.bestel/logs/`. |
+| `BESTEL_FILE_LOG` | unset | `1` writes the full tracing log to `~/.bestel/runtime/logs/`. |
+| `BESTEL_DEBUG_RECORDER` | unset | `1` enables the per-turn debug autosave to `~/.bestel/runtime/debug-chats/{run_id}.json`. Off by default so testers don't accumulate snapshot files. The in-app **debug** button always works — it reads the run from memory regardless. |
+| `RUST_LOG` | `info` | Standard `tracing_subscriber` filter. |
+| `BESTEL_CONTACT_EMAIL` | `hi@kevinbarfleur.dev` | Contact email injected into the User-Agent sent to GGG APIs (their ToS asks for one). Override when forking. |
+
+Everything lives under `%USERPROFILE%\.bestel\`:
+
+```
+~/.bestel/
+├── runtime/
+│   ├── keys.json            # your API keys (gitignored, per-user)
+│   ├── model.json           # last picked model
+│   ├── bestel.sqlite3       # chats + lint findings + verifier records
+│   └── debug-chats/         # per-run JSON snapshots
+├── cache/                   # wiki / trade / RePoE fetches
+├── index/                   # LanceDB knowledge-base index
+├── logs/                    # tracing logs (when BESTEL_FILE_LOG=1)
+└── prompts/                 # seeded copy of the bundled prompts (editable)
+```
+
+## Sources Bestel trusts
+
+The agent uses a strict source allowlist: official `pathofexile.com`
+(forum, patch notes, trade, dev docs) → official wikis (`poewiki.net`,
+`poe2wiki.net`) → datamined data (`poedb.tw`, `poe2db.tw`,
+`repoe-fork`) → calculators (`pathofbuilding.community`,
+`craftofexile.com`) → economy (`poe.ninja`) → trusted creator guides
+(Maxroll, Mobalytics, pohx.net) with explicit patch + author + date.
+Fandom, Fextralife, RMT sites, and AI-aggregator answers are blocked.
+
+Full registry: `prompts/references/15_source_registry.md`.
 
 ## MCP server mode
 
@@ -205,53 +302,221 @@ bestel mcp-serve
 ```
 
 Bestel speaks JSON-RPC on stdin / stdout. Wire it into Claude Desktop,
-Cursor or any MCP-aware client by pointing the client at the
-`bestel.exe` binary with the `mcp-serve` argument. The same PoE tools
-the in-app chat uses become available to the host model.
+Cursor or any MCP-aware client by pointing it at `bestel.exe` with
+the `mcp-serve` argument. The same PoE tools the in-app chat uses
+become available to the host model.
 
-## Configuration
+---
 
-| Variable | Default | Role |
-|---|---|---|
-| `ANTHROPIC_API_KEY` | — | Anthropic API key. Read from env if not set in the picker. |
-| `DEEPSEEK_API_KEY` | — | DeepSeek API key (Anthropic-compat endpoint). |
-| `BESTEL_MODEL` | (picker selection) | Override the model id for one-off testing. |
-| `OLLAMA_HOST` | `http://localhost:11434` | Ollama daemon URL (override for remote / non-default port). |
-| `BESTEL_CACHE_DIR` | `~/.bestel/cache` | Cache directory for wiki / trade / fetch tools. |
-| `BESTEL_DEV_LOG` | unset | `1` to enable JSONL devlog under `~/.bestel/logs/`. |
-| `BESTEL_DEV_LOG_DIR` | `~/.bestel/logs` | Devlog directory override. |
-| `BESTEL_CONTACT_EMAIL` | `hi@kevinbarfleur.dev` | Email injected into the User-Agent sent to GGG APIs (their ToS asks for a contact). Override when forking. |
+# Part 2 — Contributing
 
-## Sources Bestel trusts
+If you want to help Bestel get less wrong, this section is for you.
+The two highest-leverage areas are **the knowledge layer** (what the
+agent knows about PoE before it starts) and **the prompts** (how it
+behaves). Both are plain markdown / TOML you can edit and rebuild.
 
-The agent uses a strict source allowlist: official `pathofexile.com`
-(forum, patch notes, trade, developer docs) → official wikis
-(`poewiki.net`, `poe2wiki.net`) → datamined data (`poedb.tw`,
-`poe2db.tw`, `repoe-fork`) → calculators
-(`pathofbuilding.community`, `craftofexile.com`) → economy
-(`poe.ninja`) → trusted creator guides (Maxroll, Mobalytics, pohx.net)
-with explicit patch + author + date. Fandom, Fextralife, RMT sites,
-and AI-aggregator answers are blocked.
+## Local development setup
 
-The full registry lives in `prompts/references/15_source_registry.md`.
+```sh
+# 1. Clone and install
+git clone https://github.com/kevinbarfleur/bestel
+cd bestel
+cd crates/bestel/ui && npm install && cd ../../..
 
-## Stack
+# 2. Run the dev loop with hot-reload (Vite + cargo watch)
+cd crates/bestel
+cargo tauri dev
+
+# 3. Run focused tests (don't use --workspace on low-RAM machines)
+cargo test -p bestel-core --lib
+cargo fmt --all
+cargo clippy -p bestel-core --lib --tests --no-deps
+
+# 4. Headless eval against a scenario set
+./target/release/bestel.exe run-battery tests/eval/scenarios-mini \
+    --model deepseek-v4-flash --out /tmp/bestel-battery
+```
+
+For UI-level diagnostics there's a dedicated debug harness — see
+[`crates/bestel-driver/`](crates/bestel-driver/). It speaks Chrome
+DevTools Protocol to a running Bestel instance:
+
+```sh
+# launch Bestel with the CDP listener open
+pwsh tools/launch-debuggable.ps1
+
+# in another shell — attach + scripted user turns
+./target/release/bestel-driver.exe attach --port 9222
+./target/release/bestel-driver.exe new-chat --build "C:\path\to\build.xml"
+./target/release/bestel-driver.exe send "what's my fire res?" --wait-completion
+./target/release/bestel-driver.exe chat-state | jq .
+```
+
+Useful for catching bugs the headless `run-battery` can't see (UI
+state drift, streaming oddities, panel rendering).
+
+## The knowledge layer — where Bestel's PoE smarts live
+
+There are **three** distinct knowledge surfaces, in increasing
+specificity:
+
+### 1. The runtime system prompt — `prompts/SYSTEM_PROMPT.md`
+
+This is the agent's personality and policy. It's kept tight on
+purpose: persona, refusal stance, response shape, source policy. If
+you find Bestel doing the wrong thing systematically (e.g. ignoring
+the active build, or padding answers with disclaimers), the fix
+usually goes here. **Test prompt changes against the eval set before
+shipping** — a one-word change can swing pass rates.
+
+### 2. The core knowledge file — `prompts/CORE_KNOWLEDGE.md`
+
+A baked-in conceptual layer that travels with every conversation.
+Build ontology (archetypes, ascendancy axes), search planning
+heuristics, validation reflexes, GGG/PoE priors. Not facts that change
+patch-to-patch — methodology only.
+
+### 3. The references library — `prompts/references/`
+
+Long-form markdown docs the agent retrieves on-demand via
+`read_internal_reference` and `kb_search`. This is where contributors
+add lasting knowledge. Each file is a chapter — see what's there:
+
+```
+prompts/references/
+├── 01_player_taxonomy.md          # how to read what a player wants
+├── 10_skills_gems_passives.md     # gem mechanics, passive tree basics
+├── 14_pob_workflow.md             # PoB literacy for build advice
+├── 15_source_registry.md          # the source allowlist
+├── 16_build_methodology.md        # creator workflows + decision tree
+├── 20_item_basetype_identity.md   # item taxonomies, mod tiers
+├── 30_panel_marker_grammar.md     # how side panels are encoded
+├── 32_build_sheets.md             # build-sheet schema and lifecycle
+└── ...                            # several more — full list in the dir
+```
+
+**To add knowledge:**
+
+1. Drop a new markdown file in `prompts/references/` with a numbered
+   prefix that places it in the right neighbourhood
+   (`12_xxx.md` for skills, `2x_xxx.md` for items, etc.).
+2. Write it as a chapter — explain the concept once, give 2–3 worked
+   examples, list edge cases. Don't dump version-pinned numbers
+   unless explicitly marked (PoE patch-cycle moves fast and a stale
+   number is worse than no number — the agent should always re-fetch
+   live values).
+3. Restart Bestel — the KB ingest runs at startup and picks up new
+   chunks automatically.
+4. Verify it's findable: open the dev panel (`Ctrl+D`), pick the
+   **KB** tab, type a query that should match. You should see your
+   chunks in the top results.
+
+### 4. The skills layer — `prompts/skills/`
+
+Tightly scoped behavioural recipes the agent can `load_skill` into
+context on demand. Use these for repeatable workflows that don't
+belong in the always-loaded core knowledge — for example a specific
+crafting decision tree, or the steps to audit an Atziri-killer build.
+They keep the system prompt thin.
+
+## Modifying the system prompt
+
+The shipped prompt lives at `prompts/SYSTEM_PROMPT.md`. On first
+launch Bestel **copies** it to `~/.bestel/prompts/SYSTEM_PROMPT.md`,
+and from then on reads the user copy. This lets you tweak the prompt
+without rebuilding:
+
+```sh
+# 1. Edit your local copy
+notepad %USERPROFILE%\.bestel\prompts\SYSTEM_PROMPT.md
+
+# 2. Restart Bestel (prompt is loaded at chat-creation time)
+```
+
+The in-app **Prompts & documentation** window (`Ctrl+Shift+P`)
+exposes a side-by-side diff between the shipped and the user copy, so
+you can see what you've drifted and reset cleanly.
+
+If your prompt change is general-purpose and improves results, open
+a PR against `prompts/SYSTEM_PROMPT.md` in the repo. **Treat prompt
+changes as code** — they go through the eval set the same way a Rust
+change would.
+
+## Adding a tool
+
+Tools live under `crates/bestel-core/src/llm/tools.rs` (registry) and
+each tool is a function in the same crate. To add one:
+
+1. Define the JSON schema in the `tool_schemas()` builder.
+2. Write the dispatch arm in the `dispatch()` async match.
+3. Add an integration test under `crates/bestel-core/src/test_runner/`.
+4. Document it in `docs/architecture/04_tools_catalogue.md`.
+5. If the tool fetches from a new domain, add the host to the source
+   allowlist in `prompts/references/15_source_registry.md`.
+
+## The eval harness
+
+Reliability is tracked via TOML scenarios in `tests/eval/`. Each
+scenario is a prompt + a list of expectations (regex matches,
+forbidden phrases, required tool calls). The harness runs them in
+batch against any provider:
+
+```sh
+./target/release/bestel.exe run-battery tests/eval/scenarios-mini \
+    --model claude-sonnet-4-6 \
+    --filter-name "build_invented" \
+    --out /tmp/eval-out
+
+# Inspect the JSON + lint side-cars
+ls /tmp/eval-out
+```
+
+Outputs land as `<scenario>.json` (full run trace: messages, tool
+calls, stats, verifier verdict) plus `<scenario>.lint.json` (the 12
+response-lint rules with severity). Use this to:
+
+- Reproduce a bug a tester reported.
+- Smoke-test a prompt change before committing.
+- Compare two models on the same scenario set.
+
+The scenarios are generated from `tests/eval/eval_set.toml` via
+`cargo run --example eval_split` — keep the master TOML as the
+single source of truth.
+
+## Project layout
+
+```
+crates/
+├── bestel-core/       # LLM providers, tools, prompts, PoB parser, RAG, sheets
+├── bestel/            # Tauri binary + Vue UI (under ui/)
+├── bestel-pob-engine/ # LuaJIT sidecar + vendored PathOfBuilding
+├── bestel-rag/        # LanceDB hybrid retrieval layer
+├── bestel-test/       # scenario + regression harness
+└── bestel-driver/     # CDP harness for live UI tests
+prompts/               # bundled system prompt, core knowledge, references
+docs/architecture/     # entry-point architecture docs — read these first
+tests/eval/            # scenarios, eval set, baselines
+tools/                 # dev scripts (launch-debuggable, cleanup, scenarios)
+```
+
+The architecture entry points are in
+[`docs/architecture/`](docs/architecture/) — short, navigation-focused.
+Start with `01_runtime_topology.md` and follow the links from there.
+
+## Stack at a glance
 
 - **Backend** — Rust 2021 workspace. `tokio` async, `reqwest` (rustls),
-  `quick-xml` for PoB, `notify` for the watcher, `rmcp` for MCP.
+  `quick-xml` for PoB, `notify` for the watcher, `rmcp` for MCP,
+  `rusqlite` for persistence, `lance` for the KB index.
 - **Frontend** — Tauri 2 + Vue 3 + TypeScript + Vite + Pinia. Custom
   titlebar, manuscript-style design system (small caps + leader dots +
   EB Garamond + Kalam).
 - **LLM providers** — Anthropic Messages API with native tool-use
   (Anthropic, DeepSeek via Anthropic-compat) and Ollama HTTP API for
-  local inference. Both share the same tool dispatch loop in
+  local inference. Both share the dispatch loop in
   `crates/bestel-core/src/llm/tools.rs`.
-
-The full structure is documented in `prompts/references/` (concept docs,
-source policy, build reasoning, retrieval playbooks, validation
-checklists, vocabulary, plus the Maxroll catalogs and the
-build-creators methodology).
 
 ## License
 
-[MIT](LICENSE).
+[MIT](LICENSE). The bundled Path of Building vendor code keeps its own
+license — see `crates/bestel-pob-engine/vendor/`.

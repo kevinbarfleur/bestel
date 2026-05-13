@@ -13,6 +13,33 @@ const chatHistory = useChatHistoryStore();
 const toasts = useToastsStore();
 const { messages } = storeToRefs(chat);
 
+/** Delete the active chat — gated by a native confirm dialog so a
+ *  misclick doesn't wipe a long conversation. When the active chat
+ *  is removed we also reset the in-memory chat store so the UI
+ *  doesn't keep showing the deleted messages. No-op when there's
+ *  nothing saved yet. */
+async function deleteActiveChat() {
+  const active = chatHistory.findActive();
+  if (!active) {
+    toasts.push({
+      variant: 'info',
+      title: 'Nothing to delete',
+      body: 'This conversation hasn’t been saved yet.',
+    });
+    return;
+  }
+  const ok = window.confirm(
+    `Delete the conversation "${active.title || 'Untitled'}"? This cannot be undone.`,
+  );
+  if (!ok) return;
+  chatHistory.remove(active.id);
+  await chat.reset();
+  toasts.push({
+    variant: 'info',
+    title: 'Conversation deleted',
+  });
+}
+
 /** Copy the entire current conversation as JSON to the clipboard. Mirrors
  *  what the autosave persists to `~/.bestel/runtime/conversation-logs/{id}.json`
  *  so the user can paste it directly to a coding agent for debugging. */
@@ -93,9 +120,14 @@ const turnCount = computed(() => messages.value.length);
       <span class="chat-thread__title">conversation</span>
       <span v-if="turnCount" class="chat-thread__meta">· {{ turnCount }} turns</span>
       <span class="chat-thread__grow" />
-      <span class="chat-thread__build-tag" title="Build marker — confirms the running binary contains the latest layout fixes">UX-2.6</span>
-      <button type="button" class="chat-thread__action">share</button>
-      <button type="button" class="chat-thread__action">archive</button>
+      <button
+        type="button"
+        class="chat-thread__action"
+        title="Delete the current conversation (cannot be undone)"
+        @click="deleteActiveChat"
+      >
+        delete
+      </button>
       <button
         type="button"
         class="chat-thread__action chat-thread__action--debug"
@@ -183,23 +215,6 @@ const turnCount = computed(() => messages.value.length);
   transition: color 0.15s ease;
 }
 .chat-thread__action:hover { color: var(--amber); }
-
-/* Build marker — small amber tag in the header so the dev can verify
- * at a glance which build the running binary corresponds to. Tagged as
- * `UX-2.6` for the layout-containment pass; bump the literal in the
- * template each time we ship a CSS-only chat-layout patch so a visual
- * comparison against an old screenshot is trivial. */
-.chat-thread__build-tag {
-  font-family: var(--label);
-  font-size: 9px;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--paper);
-  background: var(--amber);
-  padding: 2px 6px;
-  border-radius: 3px;
-  font-weight: 700;
-}
 
 /* Layout chain for chat content (window resize behavior).
  *

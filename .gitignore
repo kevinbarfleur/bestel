@@ -42,6 +42,14 @@ tools/scenarios/runs/
 # Design handoff bundles — ephemeral exploration artifacts from
 # claude.ai/design. Extracted locally for reference, not versioned.
 .design-bundle-v*/
+.design-handoff/
+
+# Internal sprint planning notes — detailed roadmaps + journals,
+# kept out of the public repo to keep the root tidy for testers.
+SPRINT_*.md
+
+# Scratch test scenarios that reference user-local PoB build paths.
+tools/scenarios/poedb-mods-tools-live.toml
 
 # Generated dev-panel run exports (dev_export_all_runs IPC)
 runs-export-*.json
