@@ -56,11 +56,7 @@ fn logger() -> Option<&'static DevLogger> {
             }
             let stamp = Local::now().format("session-%Y%m%d-%H%M%S").to_string();
             let path = dir.join(format!("{stamp}.jsonl"));
-            let file = match OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(&path)
-            {
+            let file = match OpenOptions::new().create(true).append(true).open(&path) {
                 Ok(f) => f,
                 Err(e) => {
                     eprintln!("[bestel devlog] open {} failed: {e}", path.display());

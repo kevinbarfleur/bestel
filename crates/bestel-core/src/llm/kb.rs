@@ -14,9 +14,7 @@ use std::sync::Arc;
 use std::sync::OnceLock;
 
 use anyhow::{Context, Result};
-use bestel_rag::{
-    detect_default, IngestConfig, KbEngine, KbIndex, LanceIndex, SharedKbEngine,
-};
+use bestel_rag::{detect_default, IngestConfig, KbEngine, KbIndex, LanceIndex, SharedKbEngine};
 use chrono::Utc;
 use tracing::{info, warn};
 
@@ -137,11 +135,15 @@ pub async fn bootstrap_global() -> Result<bool> {
     Ok(true)
 }
 
-async fn mirror_kb_versions(
-    engine: &SharedKbEngine,
-    label: &str,
-    dim: usize,
-) -> Result<()> {
+/// Mirror the LanceDB doc fingerprints into the SQLite `kb_versions`
+/// table. Idempotent. The watcher calls this after each successful
+/// incremental re-ingest so `bestel db stats` reflects the live state
+/// without opening the LanceDB table.
+///
+/// `label` and `dim` are derived from the engine's embedder; passed
+/// explicitly so the caller can label them once instead of re-pulling
+/// them on every upsert.
+pub async fn mirror_kb_versions(engine: &SharedKbEngine, label: &str, dim: usize) -> Result<()> {
     let Some(db) = global_db() else {
         return Ok(());
     };
@@ -163,4 +165,3 @@ async fn mirror_kb_versions(
     }
     Ok(())
 }
-

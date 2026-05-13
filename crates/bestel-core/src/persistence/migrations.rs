@@ -211,9 +211,20 @@ mod tests {
             .map(|c| c.unwrap())
             .collect();
         for col in [
-            "id", "display_name", "game", "pob_path", "pob_hash",
-            "identity_sig", "gear_sig", "tree_sig", "skill_sig", "config_sig",
-            "linked_sheet_id", "summary_json", "last_seen_at", "authored_at",
+            "id",
+            "display_name",
+            "game",
+            "pob_path",
+            "pob_hash",
+            "identity_sig",
+            "gear_sig",
+            "tree_sig",
+            "skill_sig",
+            "config_sig",
+            "linked_sheet_id",
+            "summary_json",
+            "last_seen_at",
+            "authored_at",
         ] {
             assert!(
                 registry_cols.iter().any(|c| c == col),
@@ -237,7 +248,13 @@ mod tests {
             .unwrap()
             .map(|c| c.unwrap())
             .collect();
-        for col in ["identity_sig", "gear_sig", "tree_sig", "skill_sig", "config_sig"] {
+        for col in [
+            "identity_sig",
+            "gear_sig",
+            "tree_sig",
+            "skill_sig",
+            "config_sig",
+        ] {
             assert!(
                 sheet_cols.iter().any(|c| c == col),
                 "build_sheets missing column {col}"

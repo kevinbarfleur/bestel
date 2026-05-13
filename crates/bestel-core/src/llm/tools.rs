@@ -232,10 +232,7 @@ impl ToolCtx {
     /// Attach a lazy PoB engine handle. Called from the Tauri bootstrap
     /// once vendored LuaJIT + harness paths are resolved via
     /// `app.path().resource_dir()`.
-    pub fn with_pob_engine(
-        mut self,
-        engine: Arc<bestel_pob_engine::PobEngineHandle>,
-    ) -> Self {
+    pub fn with_pob_engine(mut self, engine: Arc<bestel_pob_engine::PobEngineHandle>) -> Self {
         self.pob_engine = Some(engine);
         self
     }
@@ -281,8 +278,7 @@ fn parse_game(s: &str) -> PoeVersion {
 /// reason — the message is fed back to the LLM as a tool-result error so
 /// it can retry with a valid host.
 pub fn host_allowed(url: &str) -> Result<()> {
-    let parsed = reqwest::Url::parse(url)
-        .with_context(|| format!("parse url '{url}'"))?;
+    let parsed = reqwest::Url::parse(url).with_context(|| format!("parse url '{url}'"))?;
     if !matches!(parsed.scheme(), "http" | "https") {
         return Err(anyhow!(
             "Bestel only fetches http(s) URLs (got scheme '{}').",
@@ -293,17 +289,17 @@ pub fn host_allowed(url: &str) -> Result<()> {
         .host_str()
         .ok_or_else(|| anyhow!("URL has no host"))?
         .to_ascii_lowercase();
-    let blocked = FETCH_BLOCKLIST.iter().any(|b| {
-        host == *b || host.ends_with(&format!(".{b}"))
-    });
+    let blocked = FETCH_BLOCKLIST
+        .iter()
+        .any(|b| host == *b || host.ends_with(&format!(".{b}")));
     if blocked {
         return Err(anyhow!(
             "Host '{host}' is on Bestel's tier-4 SEO blocklist (no editorial integrity, frequently wrong on PoE mechanics). Find the same fact via wiki / patch notes / official source instead."
         ));
     }
-    let ok = FETCH_ALLOWLIST.iter().any(|allowed| {
-        host == *allowed || host.ends_with(&format!(".{allowed}"))
-    });
+    let ok = FETCH_ALLOWLIST
+        .iter()
+        .any(|allowed| host == *allowed || host.ends_with(&format!(".{allowed}")));
     if ok {
         Ok(())
     } else {
@@ -689,10 +685,7 @@ pub async fn dispatch(name: &str, input: &Value, ctx: &ToolCtx) -> Result<String
                 .get("topic")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| anyhow!("'topic' is required and must be a string"))?;
-            let game = input
-                .get("game")
-                .and_then(|v| v.as_str())
-                .unwrap_or("poe1");
+            let game = input.get("game").and_then(|v| v.as_str()).unwrap_or("poe1");
             let limit = input
                 .get("limit")
                 .and_then(|v| v.as_u64())
@@ -713,7 +706,10 @@ pub async fn dispatch(name: &str, input: &Value, ctx: &ToolCtx) -> Result<String
                 .unwrap_or(6);
             let hits = ctx.wiki(game).search(query, limit).await?;
             let value = serde_json::to_value(&hits).context("serialize wiki hits")?;
-            Ok(truncate(&serde_json::to_string(&value).unwrap_or_default(), 30_000))
+            Ok(truncate(
+                &serde_json::to_string(&value).unwrap_or_default(),
+                30_000,
+            ))
         }
         WIKI_PARSE => {
             let title = input
@@ -724,7 +720,10 @@ pub async fn dispatch(name: &str, input: &Value, ctx: &ToolCtx) -> Result<String
             let mut page = ctx.wiki(game).parse(title).await?;
             page.plain_text = truncate(&page.plain_text, 25_000);
             let value = serde_json::to_value(&page).context("serialize wiki page")?;
-            Ok(truncate(&serde_json::to_string(&value).unwrap_or_default(), 30_000))
+            Ok(truncate(
+                &serde_json::to_string(&value).unwrap_or_default(),
+                30_000,
+            ))
         }
         WIKI_CARGO => {
             let table = input
@@ -735,10 +734,7 @@ pub async fn dispatch(name: &str, input: &Value, ctx: &ToolCtx) -> Result<String
                 .get("fields")
                 .and_then(|v| v.as_array())
                 .ok_or_else(|| anyhow!("'fields' must be an array of strings"))?;
-            let fields: Vec<&str> = fields_json
-                .iter()
-                .filter_map(|v| v.as_str())
-                .collect();
+            let fields: Vec<&str> = fields_json.iter().filter_map(|v| v.as_str()).collect();
             if fields.is_empty() {
                 return Err(anyhow!("'fields' must contain at least one string"));
             }
@@ -754,7 +750,10 @@ pub async fn dispatch(name: &str, input: &Value, ctx: &ToolCtx) -> Result<String
                 .cargo(table, &fields, where_clause, limit)
                 .await?;
             let value = json!({"rows": rows, "count": rows.len()});
-            Ok(truncate(&serde_json::to_string(&value).unwrap_or_default(), 30_000))
+            Ok(truncate(
+                &serde_json::to_string(&value).unwrap_or_default(),
+                30_000,
+            ))
         }
         TRADE_RESOLVE_STATS => {
             let phrase = input
@@ -776,7 +775,10 @@ pub async fn dispatch(name: &str, input: &Value, ctx: &ToolCtx) -> Result<String
                 .resolve(phrase, prefer_pseudo, limit)
                 .await?;
             let value = serde_json::to_value(&hits).context("serialize stat refs")?;
-            Ok(truncate(&serde_json::to_string(&value).unwrap_or_default(), 8_000))
+            Ok(truncate(
+                &serde_json::to_string(&value).unwrap_or_default(),
+                8_000,
+            ))
         }
         TRADE_SEARCH_URL => {
             let league = input
@@ -790,7 +792,10 @@ pub async fn dispatch(name: &str, input: &Value, ctx: &ToolCtx) -> Result<String
             let game = input.get("game").and_then(|v| v.as_str()).unwrap_or("poe1");
             let resp = ctx.trade(game).search(league, query_body).await?;
             let value = serde_json::to_value(&resp).context("serialize trade resp")?;
-            Ok(truncate(&serde_json::to_string(&value).unwrap_or_default(), 8_000))
+            Ok(truncate(
+                &serde_json::to_string(&value).unwrap_or_default(),
+                8_000,
+            ))
         }
         WEB_FETCH => {
             let url = input
@@ -804,7 +809,10 @@ pub async fn dispatch(name: &str, input: &Value, ctx: &ToolCtx) -> Result<String
                 "url": url,
                 "content": truncate(&plaintext, 25_000),
             });
-            Ok(truncate(&serde_json::to_string(&value).unwrap_or_default(), 30_000))
+            Ok(truncate(
+                &serde_json::to_string(&value).unwrap_or_default(),
+                30_000,
+            ))
         }
         REPOE_LOOKUP => {
             let game = input
@@ -841,7 +849,10 @@ pub async fn dispatch(name: &str, input: &Value, ctx: &ToolCtx) -> Result<String
                 return Err(anyhow!("provide either 'id' or 'name'"));
             };
             let value = serde_json::to_value(&result).context("serialize repoe lookup")?;
-            Ok(truncate(&serde_json::to_string(&value).unwrap_or_default(), 30_000))
+            Ok(truncate(
+                &serde_json::to_string(&value).unwrap_or_default(),
+                30_000,
+            ))
         }
         REPOE_MODS_FOR_BASE => {
             let game = input
@@ -863,14 +874,19 @@ pub async fn dispatch(name: &str, input: &Value, ctx: &ToolCtx) -> Result<String
             let client = repoe::global();
             let result = client.mods_for_base(game, base_id, influence, limit)?;
             let value = serde_json::to_value(&result).context("serialize mods_for_base")?;
-            Ok(truncate(&serde_json::to_string(&value).unwrap_or_default(), 30_000))
+            Ok(truncate(
+                &serde_json::to_string(&value).unwrap_or_default(),
+                30_000,
+            ))
         }
         POEDB_LOOKUP => {
             let game = input.get("game").and_then(|v| v.as_str()).unwrap_or("poe1");
             let operation = input
                 .get("operation")
                 .and_then(|v| v.as_str())
-                .ok_or_else(|| anyhow!("'operation' is required (craft_bench|craft_bench_for_class|skill_gem)"))?;
+                .ok_or_else(|| {
+                    anyhow!("'operation' is required (craft_bench|craft_bench_for_class|skill_gem)")
+                })?;
             let client = ctx.poedb(game);
             let value = match operation {
                 "craft_bench" => {
@@ -899,7 +915,10 @@ pub async fn dispatch(name: &str, input: &Value, ctx: &ToolCtx) -> Result<String
                     ))
                 }
             };
-            Ok(truncate(&serde_json::to_string(&value).unwrap_or_default(), 30_000))
+            Ok(truncate(
+                &serde_json::to_string(&value).unwrap_or_default(),
+                30_000,
+            ))
         }
         READ_INTERNAL_REFERENCE => {
             let rel = input
@@ -911,16 +930,27 @@ pub async fn dispatch(name: &str, input: &Value, ctx: &ToolCtx) -> Result<String
                 "rel_path": rel,
                 "content": truncate(&content, 25_000),
             });
-            Ok(truncate(&serde_json::to_string(&value).unwrap_or_default(), 30_000))
+            Ok(truncate(
+                &serde_json::to_string(&value).unwrap_or_default(),
+                30_000,
+            ))
         }
         POB_CALC => dispatch_pob_calc(input, ctx).await,
         KB_SEARCH => dispatch_kb_search(input, ctx).await,
         LOAD_SKILL => dispatch_load_skill(input, ctx).await,
-        SHEET_PROPOSE_SECTION => sheet_tools::dispatch_sheet_propose_section(input, &ctx.deltas).await,
+        SHEET_PROPOSE_SECTION => {
+            sheet_tools::dispatch_sheet_propose_section(input, &ctx.deltas).await
+        }
         SHEET_ASK => sheet_tools::dispatch_sheet_ask(input, &ctx.deltas).await,
-        SHEET_OPEN_INTERVIEW => sheet_tools::dispatch_sheet_open_interview(input, &ctx.deltas).await,
-        SHEET_FINALIZE_REQUEST => sheet_tools::dispatch_sheet_finalize_request(input, &ctx.deltas).await,
-        GET_ACTIVE_BUILD_SHEET => sheet_tools::dispatch_get_active_build_sheet(input, &ctx.deltas).await,
+        SHEET_OPEN_INTERVIEW => {
+            sheet_tools::dispatch_sheet_open_interview(input, &ctx.deltas).await
+        }
+        SHEET_FINALIZE_REQUEST => {
+            sheet_tools::dispatch_sheet_finalize_request(input, &ctx.deltas).await
+        }
+        GET_ACTIVE_BUILD_SHEET => {
+            sheet_tools::dispatch_get_active_build_sheet(input, &ctx.deltas).await
+        }
         other => Err(anyhow!("unknown tool '{other}'")),
     }
 }
@@ -953,7 +983,10 @@ async fn dispatch_load_skill(input: &Value, ctx: &ToolCtx) -> Result<String> {
         "body": skill.body,
         "templates": skill.templates.keys().cloned().collect::<Vec<String>>(),
     });
-    Ok(truncate(&serde_json::to_string(&value).unwrap_or_default(), 30_000))
+    Ok(truncate(
+        &serde_json::to_string(&value).unwrap_or_default(),
+        30_000,
+    ))
 }
 
 /// Sprint E P7 / Sprint G P4 — wraps the Sprint D identity-card render with:
@@ -1176,9 +1209,7 @@ async fn dispatch_kb_search(input: &Value, ctx: &ToolCtx) -> Result<String> {
         .get("query")
         .and_then(|v| v.as_str())
         .ok_or_else(|| anyhow!("'query' is required and must be a string"))?;
-    let game = input
-        .get("game")
-        .and_then(|v| v.as_str());
+    let game = input.get("game").and_then(|v| v.as_str());
     let top_k = input
         .get("top_k")
         .and_then(|v| v.as_u64())
@@ -1213,12 +1244,15 @@ async fn dispatch_kb_search(input: &Value, ctx: &ToolCtx) -> Result<String> {
         "top_k": top_k,
         "hits": response_hits,
     });
-    Ok(truncate(&serde_json::to_string(&value).unwrap_or_default(), 30_000))
+    Ok(truncate(
+        &serde_json::to_string(&value).unwrap_or_default(),
+        30_000,
+    ))
 }
 
 async fn dispatch_pob_calc(input: &Value, ctx: &ToolCtx) -> Result<String> {
-    use bestel_pob_engine::{CalcRequest, Category as PobCategory, EngineCalcs};
     use bestel_pob_engine::lifecycle::Game as PobGame;
+    use bestel_pob_engine::{CalcRequest, Category as PobCategory, EngineCalcs};
 
     let engine = ctx
         .pob_engine
@@ -1278,7 +1312,11 @@ async fn dispatch_pob_calc(input: &Value, ctx: &ToolCtx) -> Result<String> {
             calcs.multiplier_impale_stacks = Some(n as i32);
         }
         for (i, key) in [
-            "useFlask1", "useFlask2", "useFlask3", "useFlask4", "useFlask5",
+            "useFlask1",
+            "useFlask2",
+            "useFlask3",
+            "useFlask4",
+            "useFlask5",
         ]
         .iter()
         .enumerate()
@@ -1321,10 +1359,7 @@ async fn dispatch_pob_calc(input: &Value, ctx: &ToolCtx) -> Result<String> {
 
     let xml = tokio::fs::read_to_string(&build.source_file)
         .await
-        .with_context(|| format!(
-            "read PoB XML at {}",
-            build.source_file.display()
-        ))?;
+        .with_context(|| format!("read PoB XML at {}", build.source_file.display()))?;
 
     let game = match build.game {
         PoeVersion::Poe2 => PobGame::Poe2,
@@ -1369,7 +1404,10 @@ async fn dispatch_pob_calc(input: &Value, ctx: &ToolCtx) -> Result<String> {
     // Sprint v5: 30 KB cap was too tight for `category=all` payloads
     // after Step 7's CATEGORY_KEYS expansion. 60 KB matches the
     // dispatch_get_active_build budget.
-    Ok(truncate(&serde_json::to_string(&payload).unwrap_or_default(), 60_000))
+    Ok(truncate(
+        &serde_json::to_string(&payload).unwrap_or_default(),
+        60_000,
+    ))
 }
 
 /// Returns `Some(tool_result_json)` when the engine returned numbers for a
@@ -1512,8 +1550,7 @@ fn available_indices_for(build: &PobBuild, expected: &str) -> Vec<u32> {
     }
     let mut out = Vec::new();
     for (i, group) in build.skill_groups.iter().enumerate() {
-        let label_match = !group.label.is_empty()
-            && skill_labels_match(&group.label, expected);
+        let label_match = !group.label.is_empty() && skill_labels_match(&group.label, expected);
         let gem_match = group
             .gems
             .iter()
@@ -1840,7 +1877,10 @@ fn render_build_for_llm(b: &PobBuild) -> String {
     }
     summary.insert(
         "identity_line".into(),
-        json!(format_identity_line(&identity, identity.conversion_chain.as_ref())),
+        json!(format_identity_line(
+            &identity,
+            identity.conversion_chain.as_ref()
+        )),
     );
 
     let value = serde_json::Value::Object(summary);
@@ -1911,9 +1951,7 @@ fn truncate(s: &str, max: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pob::semantic::{
-        ArchetypeTags, ConversionChain, DefiningUniqueMatch,
-    };
+    use crate::pob::semantic::{ArchetypeTags, ConversionChain, DefiningUniqueMatch};
 
     #[test]
     fn identity_line_full_grammar() {
@@ -2149,12 +2187,24 @@ Praetor Crown</Item>
 
         // Pantheon carries major / minor / bandit.
         let pantheon = obj.get("pantheon").expect("pantheon present");
-        assert_eq!(pantheon.get("major").and_then(|v| v.as_str()), Some("Solaris"));
-        assert_eq!(pantheon.get("minor").and_then(|v| v.as_str()), Some("Ralakesh"));
-        assert_eq!(pantheon.get("bandit").and_then(|v| v.as_str()), Some("Alira"));
+        assert_eq!(
+            pantheon.get("major").and_then(|v| v.as_str()),
+            Some("Solaris")
+        );
+        assert_eq!(
+            pantheon.get("minor").and_then(|v| v.as_str()),
+            Some("Ralakesh")
+        );
+        assert_eq!(
+            pantheon.get("bandit").and_then(|v| v.as_str()),
+            Some("Alira")
+        );
 
         // Tattoos with their node id and display name.
-        let tattoos = obj.get("tattoos").and_then(|v| v.as_array()).expect("tattoos array");
+        let tattoos = obj
+            .get("tattoos")
+            .and_then(|v| v.as_array())
+            .expect("tattoos array");
         assert_eq!(tattoos.len(), 1);
         assert_eq!(
             tattoos[0].get("display_name").and_then(|v| v.as_str()),
@@ -2162,13 +2212,19 @@ Praetor Crown</Item>
         );
 
         // Full allocated-node and mastery-pick lists.
-        let nodes = obj.get("allocated_nodes").and_then(|v| v.as_array()).unwrap();
+        let nodes = obj
+            .get("allocated_nodes")
+            .and_then(|v| v.as_array())
+            .unwrap();
         assert_eq!(nodes.len(), 3);
         let masteries = obj.get("mastery_picks").and_then(|v| v.as_array()).unwrap();
         assert_eq!(masteries.len(), 2);
 
         // Jewel placements from the Sockets block.
-        let jewels = obj.get("jewel_placements").and_then(|v| v.as_array()).unwrap();
+        let jewels = obj
+            .get("jewel_placements")
+            .and_then(|v| v.as_array())
+            .unwrap();
         assert_eq!(jewels.len(), 2);
 
         // Spectres list.

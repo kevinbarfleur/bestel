@@ -36,7 +36,10 @@ async fn main() -> anyhow::Result<()> {
             b.skill_groups.len(),
             b.skill_groups.iter().find(|g| g.is_main).map(|g| &g.label)
         );
-        println!("  notes  : {}", &b.notes.chars().take(80).collect::<String>());
+        println!(
+            "  notes  : {}",
+            &b.notes.chars().take(80).collect::<String>()
+        );
     } else {
         println!("(no build found)");
     }

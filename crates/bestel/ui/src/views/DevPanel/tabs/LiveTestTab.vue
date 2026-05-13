@@ -14,13 +14,14 @@ import {
   setActiveModel,
 } from '../../../api/tauri';
 import type {
+  LintFindingDto,
   LlmDeltaEvent,
   ModelProfileDto,
   PobBuildDto,
 } from '../../../api/types';
 import { renderMarkdown } from '../../../api/markdown';
 
-type RightPane = 'rendered' | 'raw' | 'stats';
+type RightPane = 'rendered' | 'raw' | 'stats' | 'lint';
 
 const models = ref<ModelProfileDto[]>([]);
 const activeModelId = ref<string>('');
@@ -54,6 +55,7 @@ const usage = ref<{
   output_tokens: number;
   cost_usd: number | null;
 } | null>(null);
+const lintFindings = ref<LintFindingDto[]>([]);
 const errorMsg = ref<string | null>(null);
 
 let unlisten: (() => void) | null = null;
@@ -122,6 +124,10 @@ function handleDelta(ev: LlmDeltaEvent) {
         cost_usd: ev.cost_usd,
       };
       break;
+    case 'lint_findings':
+      // Sprint v6 Phase 2 — warn-only collection in the dev panel.
+      lintFindings.value = ev.findings;
+      break;
     case 'error':
       errorMsg.value = ev.message;
       isRunning.value = false;
@@ -178,6 +184,7 @@ async function run() {
   toolEntries.value = [];
   rawEvents.value = [];
   usage.value = null;
+  lintFindings.value = [];
 
   try {
     await chatReset();
@@ -312,6 +319,15 @@ const stateLabel = computed(() => {
             :class="{ 'lt__vt--active': rightPane === 'stats' }"
             @click="rightPane = 'stats'"
           >Stats</button>
+          <button
+            type="button"
+            class="lt__vt"
+            :class="{ 'lt__vt--active': rightPane === 'lint' }"
+            @click="rightPane = 'lint'"
+          >
+            Lint
+            <span v-if="lintFindings.length" class="lt__vt-count">({{ lintFindings.length }})</span>
+          </button>
           <span class="lt__spacer" />
           <span class="lt__viewer-state">
             {{ hasResponse ? 'Response captured' : 'No response yet' }} · {{ stateLabel }}
@@ -383,6 +399,33 @@ const stateLabel = computed(() => {
             <div v-else class="lt__empty">
               <div class="lt__empty-title">No usage yet</div>
               <div class="lt__empty-hint">Run something to see token counts and cost.</div>
+            </div>
+          </div>
+
+          <div v-else-if="rightPane === 'lint'" class="lt__lint">
+            <div v-if="lintFindings.length" class="lt__lint-list">
+              <div
+                v-for="(f, i) in lintFindings"
+                :key="i"
+                class="lt__lint-row"
+                :data-severity="f.severity"
+              >
+                <div class="lt__lint-head">
+                  <span class="lt__lint-id">{{ f.id }}</span>
+                  <span class="lt__lint-sev">{{ f.severity }}</span>
+                </div>
+                <div class="lt__lint-msg">{{ f.message }}</div>
+                <pre v-if="f.evidence" class="lt__lint-evidence">{{ f.evidence }}</pre>
+              </div>
+            </div>
+            <div v-else class="lt__empty">
+              <div class="lt__empty-title">No lint findings</div>
+              <div class="lt__empty-hint">
+                Sprint v6 Phase 2 — the response-lint runs after every turn in
+                warn-only mode. A clean answer produces no event; anything
+                surfacing here is a draft that would be re-toured / stripped
+                / replaced once Phase 3 activates per-rule strategies.
+              </div>
             </div>
           </div>
         </div>
@@ -861,5 +904,69 @@ const stateLabel = computed(() => {
   color: var(--ink);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+}
+
+/* Sprint v6 Phase 2 — live response-lint findings pane. */
+.lt__lint {
+  display: flex;
+  flex-direction: column;
+  padding: 16px 22px;
+  overflow: auto;
+  min-height: 0;
+}
+.lt__lint-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.lt__lint-row {
+  border: 1px solid var(--paper-line);
+  border-left-width: 3px;
+  border-radius: 4px;
+  padding: 10px 12px;
+  background: var(--paper);
+}
+.lt__lint-row[data-severity='fail'] {
+  border-left-color: #c0392b;
+}
+.lt__lint-row[data-severity='warn'] {
+  border-left-color: #d4a017;
+}
+.lt__lint-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.lt__lint-id {
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+}
+.lt__lint-sev {
+  font-family: var(--label);
+  font-size: 10.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+.lt__lint-msg {
+  font-family: var(--hand);
+  font-size: 14px;
+  color: var(--ink);
+  margin-bottom: 6px;
+}
+.lt__lint-evidence {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-faint);
+  background: rgba(0, 0, 0, 0.03);
+  padding: 6px 8px;
+  border-radius: 3px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0;
 }
 </style>

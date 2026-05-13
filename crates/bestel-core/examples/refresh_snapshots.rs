@@ -32,13 +32,7 @@ const POE1_CATS: &[&str] = &[
     "stat_translations",
 ];
 
-const POE2_CATS: &[&str] = &[
-    "mods",
-    "base_items",
-    "gems",
-    "uniques",
-    "stat_translations",
-];
+const POE2_CATS: &[&str] = &["mods", "base_items", "gems", "uniques", "stat_translations"];
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -158,9 +152,7 @@ async fn main() -> Result<()> {
         total_compressed as f64 / 1_048_576.0
     );
     if total_compressed > 12 * 1_048_576 {
-        eprintln!(
-            "[warn] bundle exceeds 12 MB cap — consider dropping cluster_jewels or essences"
-        );
+        eprintln!("[warn] bundle exceeds 12 MB cap — consider dropping cluster_jewels or essences");
     }
     Ok(())
 }
@@ -170,11 +162,7 @@ struct FetchStats {
     compressed: usize,
 }
 
-async fn fetch_and_write(
-    client: &reqwest::Client,
-    url: &str,
-    dest: &Path,
-) -> Result<FetchStats> {
+async fn fetch_and_write(client: &reqwest::Client, url: &str, dest: &Path) -> Result<FetchStats> {
     let resp = client
         .get(url)
         .send()

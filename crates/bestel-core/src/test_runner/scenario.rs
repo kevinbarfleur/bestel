@@ -276,10 +276,10 @@ struct RawExpectation {
 }
 
 pub fn load_scenario(path: &Path) -> Result<Scenario> {
-    let bytes = std::fs::read_to_string(path)
-        .with_context(|| format!("read {}", path.display()))?;
-    let raw: RawScenario = toml::from_str(&bytes)
-        .with_context(|| format!("parse TOML in {}", path.display()))?;
+    let bytes =
+        std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
+    let raw: RawScenario =
+        toml::from_str(&bytes).with_context(|| format!("parse TOML in {}", path.display()))?;
 
     let name = raw.name.unwrap_or_else(|| {
         path.file_stem()
@@ -288,8 +288,8 @@ pub fn load_scenario(path: &Path) -> Result<Scenario> {
             .to_string()
     });
 
-    let provider = ProviderChoice::parse(raw.provider.as_deref().unwrap_or("any"))
-        .ok_or_else(|| {
+    let provider =
+        ProviderChoice::parse(raw.provider.as_deref().unwrap_or("any")).ok_or_else(|| {
             anyhow!(
                 "scenario {}: unknown provider '{}'",
                 name,

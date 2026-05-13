@@ -62,12 +62,7 @@ pub async fn detect_provider() -> Detection {
     let ollama_models = ollama::probe_models(Some(&ollama_host)).await;
     match &ollama_models {
         Some(list) if !list.is_empty() => {
-            let preview = list
-                .iter()
-                .take(3)
-                .cloned()
-                .collect::<Vec<_>>()
-                .join(", ");
+            let preview = list.iter().take(3).cloned().collect::<Vec<_>>().join(", ");
             let extra = if list.len() > 3 {
                 format!(" (+{} more)", list.len() - 3)
             } else {
@@ -100,7 +95,9 @@ pub async fn detect_provider() -> Detection {
                 name: "ollama",
                 installed: false,
                 version: None,
-                note: Some(format!("no daemon at {ollama_host} — install from https://ollama.com")),
+                note: Some(format!(
+                    "no daemon at {ollama_host} — install from https://ollama.com"
+                )),
             });
         }
     }
@@ -113,9 +110,7 @@ pub async fn detect_provider() -> Detection {
 
 /// Build a fresh `Provider` for the given profile. Used by the model
 /// picker to hot-swap providers without restarting Bestel.
-pub async fn build_provider_for_profile(
-    profile: &ModelProfile,
-) -> Result<Provider> {
+pub async fn build_provider_for_profile(profile: &ModelProfile) -> Result<Provider> {
     match profile.provider {
         ProviderKind::Anthropic => {
             // Always build via `from_endpoint` so the profile's `model_id`
@@ -186,4 +181,3 @@ pub fn render_probes(probes: &[Probe]) -> String {
     }
     out
 }
-

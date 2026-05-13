@@ -28,8 +28,7 @@ use crate::llm::recorder::{PersistedRun, PersistedSegment};
 /// Bundled rubric — the canonical scoring prompt. Editing the file at
 /// `tests/eval/judge_prompt.md` requires a recompile to take effect in
 /// release builds; the source-of-truth is `tests/eval/judge_prompt.md`.
-pub const JUDGE_SYSTEM_PROMPT: &str =
-    include_str!("../../../../tests/eval/judge_prompt.md");
+pub const JUDGE_SYSTEM_PROMPT: &str = include_str!("../../../../tests/eval/judge_prompt.md");
 
 const ANTHROPIC_API_URL: &str = "https://api.anthropic.com/v1/messages";
 const ANTHROPIC_API_VERSION: &str = "2023-06-01";
@@ -118,10 +117,9 @@ pub struct SkippedRun {
 /// Read `eval_set.toml` and index by `id`. Duplicate ids are
 /// rejected — the splitter assumes uniqueness.
 pub fn load_eval_set(path: &Path) -> Result<HashMap<String, EvalEntry>> {
-    let text = std::fs::read_to_string(path)
-        .with_context(|| format!("read {}", path.display()))?;
-    let raw: RawEvalSet = toml::from_str(&text)
-        .with_context(|| format!("parse TOML in {}", path.display()))?;
+    let text = std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
+    let raw: RawEvalSet =
+        toml::from_str(&text).with_context(|| format!("parse TOML in {}", path.display()))?;
     let mut map = HashMap::with_capacity(raw.entry.len());
     for e in raw.entry {
         if map.insert(e.id.clone(), e).is_some() {
@@ -138,9 +136,7 @@ pub fn load_persisted_runs(dir: &Path) -> Result<Vec<(String, PathBuf, Persisted
         return Err(anyhow!("runs dir not found: {}", dir.display()));
     }
     let mut out: Vec<(String, PathBuf, PersistedRun)> = Vec::new();
-    for entry in std::fs::read_dir(dir)
-        .with_context(|| format!("read_dir {}", dir.display()))?
-    {
+    for entry in std::fs::read_dir(dir).with_context(|| format!("read_dir {}", dir.display()))? {
         let path = entry?.path();
         let Some(name) = path.file_name().and_then(|s| s.to_str()) else {
             continue;
@@ -151,8 +147,7 @@ pub fn load_persisted_runs(dir: &Path) -> Result<Vec<(String, PathBuf, Persisted
         if name.ends_with(".lint.json") || name.ends_with(".judge.json") {
             continue;
         }
-        let bytes = std::fs::read(&path)
-            .with_context(|| format!("read {}", path.display()))?;
+        let bytes = std::fs::read(&path).with_context(|| format!("read {}", path.display()))?;
         let run: PersistedRun = serde_json::from_slice(&bytes)
             .with_context(|| format!("parse run {}", path.display()))?;
         let stem = path
@@ -235,7 +230,10 @@ pub async fn judge_one(
     let text = resp_json
         .get("content")
         .and_then(|c| c.as_array())
-        .and_then(|arr| arr.iter().find(|b| b.get("type").and_then(|t| t.as_str()) == Some("text")))
+        .and_then(|arr| {
+            arr.iter()
+                .find(|b| b.get("type").and_then(|t| t.as_str()) == Some("text"))
+        })
         .and_then(|first| first.get("text"))
         .and_then(|t| t.as_str())
         .ok_or_else(|| anyhow!("anthropic response missing content[].text"))?
@@ -243,8 +241,8 @@ pub async fn judge_one(
         .to_string();
 
     let raw_json = strip_code_fences(&text);
-    let judge_value: Value = serde_json::from_str(raw_json)
-        .with_context(|| format!("judge JSON parse: {raw_json}"))?;
+    let judge_value: Value =
+        serde_json::from_str(raw_json).with_context(|| format!("judge JSON parse: {raw_json}"))?;
 
     let score = judge_value
         .get("score")

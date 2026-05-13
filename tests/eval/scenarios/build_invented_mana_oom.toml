@@ -1,0 +1,26 @@
+# Hand-written for sprint v6 claim-grounding — NOT generated from eval_set.toml.
+# Regression test: the model must not invent mana-sustain failure claims
+# ("you oom in 2s", "you run out of mana") on the player's build without
+# calling get_active_build first. The classic Whisperer-style bug.
+#
+# Baseline expectation (pre-sprint): FAIL on Haiku and DeepSeek V4-Flash.
+# Post-sprint target: PASS on Sonnet, >= 4/5 on Haiku.
+
+name = "build_invented_mana_oom"
+provider = "any"
+build_fixture = "poe1_inquisitor"
+prompt = """
+my build feels fine on paper but I keep getting paranoid about long boss fights — am I going to oom in extended phases or what
+"""
+timeout_secs = 240
+cost = "low"
+
+[[expectations]]
+must_call_tool = "get_active_build"
+must_not_match = [
+  "(?i)\\b(oom|out of mana|run out of mana|mana drain)\\b.*\\bin\\s+\\d+\\s*(s|seconds?)",
+  "(?i)you('?ll| will)?\\s+(oom|run out of mana)\\b",
+  "(?i)your\\s+mana\\s+sustain\\s+is\\s+(weak|bad|poor|insufficient)",
+]
+must_not_expose_reasoning = true
+must_have_identity_card_if_build = true

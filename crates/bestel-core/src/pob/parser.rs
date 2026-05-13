@@ -12,8 +12,8 @@ use super::{
 };
 
 pub fn parse_file(path: &Path) -> Result<PobBuild> {
-    let bytes = std::fs::read(path)
-        .with_context(|| format!("reading PoB file {}", path.display()))?;
+    let bytes =
+        std::fs::read(path).with_context(|| format!("reading PoB file {}", path.display()))?;
     parse_bytes(&bytes, path.to_path_buf())
 }
 
@@ -275,14 +275,11 @@ pub fn parse_bytes(bytes: &[u8], source: PathBuf) -> Result<PobBuild> {
                         for a in e.attributes().flatten() {
                             match a.key.as_ref() {
                                 b"stat" => {
-                                    stat_key =
-                                        a.unescape_value().unwrap_or_default().to_string();
+                                    stat_key = a.unescape_value().unwrap_or_default().to_string();
                                 }
                                 b"value" => {
-                                    stat_val = a
-                                        .unescape_value()
-                                        .ok()
-                                        .and_then(|v| v.parse::<f64>().ok());
+                                    stat_val =
+                                        a.unescape_value().ok().and_then(|v| v.parse::<f64>().ok());
                                 }
                                 _ => {}
                             }
@@ -418,9 +415,8 @@ pub fn parse_bytes(bytes: &[u8], source: PathBuf) -> Result<PobBuild> {
                         for a in e.attributes().flatten() {
                             if a.key.as_ref() == b"nodes" {
                                 let v = a.unescape_value().unwrap_or_default();
-                                tree.weapon_set_1_node_count = Some(
-                                    v.split(',').filter(|s| !s.is_empty()).count() as u32,
-                                );
+                                tree.weapon_set_1_node_count =
+                                    Some(v.split(',').filter(|s| !s.is_empty()).count() as u32);
                             }
                         }
                     }
@@ -428,9 +424,8 @@ pub fn parse_bytes(bytes: &[u8], source: PathBuf) -> Result<PobBuild> {
                         for a in e.attributes().flatten() {
                             if a.key.as_ref() == b"nodes" {
                                 let v = a.unescape_value().unwrap_or_default();
-                                tree.weapon_set_2_node_count = Some(
-                                    v.split(',').filter(|s| !s.is_empty()).count() as u32,
-                                );
+                                tree.weapon_set_2_node_count =
+                                    Some(v.split(',').filter(|s| !s.is_empty()).count() as u32);
                             }
                         }
                     }
@@ -526,13 +521,11 @@ pub fn parse_bytes(bytes: &[u8], source: PathBuf) -> Result<PobBuild> {
                                 // wrappers. Old PoB builds without any
                                 // <SkillSet> element still flatten one
                                 // implicit set (both ids are None).
-                                let belongs_to_active = match (
-                                    &current_skill_set_id,
-                                    &active_skill_set_id,
-                                ) {
-                                    (Some(cur), Some(active)) => cur == active,
-                                    _ => true,
-                                };
+                                let belongs_to_active =
+                                    match (&current_skill_set_id, &active_skill_set_id) {
+                                        (Some(cur), Some(active)) => cur == active,
+                                        _ => true,
+                                    };
                                 if belongs_to_active {
                                     skill_groups.push(group);
                                 }
@@ -560,7 +553,13 @@ pub fn parse_bytes(bytes: &[u8], source: PathBuf) -> Result<PobBuild> {
                 }
             }
             Ok(Event::Eof) => break,
-            Err(e) => return Err(anyhow!("parse error at {}: {}", reader.buffer_position(), e)),
+            Err(e) => {
+                return Err(anyhow!(
+                    "parse error at {}: {}",
+                    reader.buffer_position(),
+                    e
+                ))
+            }
             _ => {}
         }
         buf.clear();
@@ -574,9 +573,7 @@ pub fn parse_bytes(bytes: &[u8], source: PathBuf) -> Result<PobBuild> {
         .cloned()
         .unwrap_or_else(|| "Unknown".to_string());
     let ascendancy = build_attrs.get("ascendClassName").cloned();
-    let level = build_attrs
-        .get("level")
-        .and_then(|v| v.parse::<u32>().ok());
+    let level = build_attrs.get("level").and_then(|v| v.parse::<u32>().ok());
     let target_version = build_attrs.get("targetVersion").cloned();
     let main_socket_group = build_attrs
         .get("mainSocketGroup")
@@ -706,8 +703,7 @@ pub fn parse_bytes(bytes: &[u8], source: PathBuf) -> Result<PobBuild> {
 /// — picks up className, ascendClassName, level, mainSocketGroup index — so we
 /// can populate the build picker without parsing every item, gem, and stat.
 pub fn parse_summary(path: &Path) -> Result<PobBuildSummary> {
-    let bytes = std::fs::read(path)
-        .with_context(|| format!("summary read {}", path.display()))?;
+    let bytes = std::fs::read(path).with_context(|| format!("summary read {}", path.display()))?;
     let xml = String::from_utf8_lossy(&bytes);
     let mut reader = Reader::from_str(&xml);
     reader.config_mut().trim_text(true);
@@ -721,22 +717,20 @@ pub fn parse_summary(path: &Path) -> Result<PobBuildSummary> {
     let mut buf = Vec::new();
     loop {
         match reader.read_event_into(&mut buf) {
-            Ok(Event::Start(e)) => {
-                match std::str::from_utf8(e.name().as_ref())? {
-                    "PathOfBuilding" if game.is_none() => game = Some(PoeVersion::Poe1),
-                    "PathOfBuilding2" => game = Some(PoeVersion::Poe2),
-                    "Build" => {
-                        for a in e.attributes().flatten() {
-                            let k = std::str::from_utf8(a.key.as_ref())?.to_string();
-                            let v = a.unescape_value().unwrap_or_default().to_string();
-                            build_attrs.insert(k, v);
-                        }
+            Ok(Event::Start(e)) => match std::str::from_utf8(e.name().as_ref())? {
+                "PathOfBuilding" if game.is_none() => game = Some(PoeVersion::Poe1),
+                "PathOfBuilding2" => game = Some(PoeVersion::Poe2),
+                "Build" => {
+                    for a in e.attributes().flatten() {
+                        let k = std::str::from_utf8(a.key.as_ref())?.to_string();
+                        let v = a.unescape_value().unwrap_or_default().to_string();
+                        build_attrs.insert(k, v);
                     }
-                    "Skills" => in_skills = true,
-                    "Skill" if in_skills => in_skill_block = true,
-                    _ => {}
                 }
-            }
+                "Skills" => in_skills = true,
+                "Skill" if in_skills => in_skill_block = true,
+                _ => {}
+            },
             Ok(Event::Empty(e)) => {
                 if std::str::from_utf8(e.name().as_ref())? == "Gem"
                     && in_skill_block
@@ -923,10 +917,7 @@ pub fn strip_pob_color_codes(s: &str) -> String {
     out
 }
 
-fn pick_main_skill(
-    groups: &[PobSkillGroup],
-    main_socket_group: Option<usize>,
-) -> Option<String> {
+fn pick_main_skill(groups: &[PobSkillGroup], main_socket_group: Option<usize>) -> Option<String> {
     let candidate: Option<&PobSkillGroup> = main_socket_group
         .and_then(|idx| groups.get(idx.saturating_sub(1)))
         .or_else(|| groups.iter().find(|g| g.is_main))
@@ -1004,9 +995,8 @@ fn split_notes_sections(notes: &str) -> Vec<NotesSection> {
     let mut current = NotesSection::default();
     for line in notes.lines() {
         let trimmed = line.trim();
-        let is_heading = trimmed.starts_with("==")
-            || trimmed.starts_with("# ")
-            || trimmed.starts_with("## ");
+        let is_heading =
+            trimmed.starts_with("==") || trimmed.starts_with("# ") || trimmed.starts_with("## ");
         if is_heading {
             let body = current.body.trim().to_string();
             if !current.heading.is_empty() || !body.is_empty() {
@@ -1342,10 +1332,25 @@ mod tests {
         assert_eq!(b.buffs.buffs, vec!["Herald of Ash", "Rage"]);
         assert!(b.buffs.curses.is_empty());
         assert_eq!(b.config.active_set_id.as_deref(), Some("1"));
-        assert_eq!(b.config.inputs.get("conditionIgnited").map(String::as_str), Some("true"));
-        assert_eq!(b.config.inputs.get("enemyDistance").map(String::as_str), Some("10"));
-        assert_eq!(b.config.placeholders.get("enemyFireResist").map(String::as_str), Some("50"));
-        assert_eq!(b.config.placeholders.get("enemyLevel").map(String::as_str), Some("82"));
+        assert_eq!(
+            b.config.inputs.get("conditionIgnited").map(String::as_str),
+            Some("true")
+        );
+        assert_eq!(
+            b.config.inputs.get("enemyDistance").map(String::as_str),
+            Some("10")
+        );
+        assert_eq!(
+            b.config
+                .placeholders
+                .get("enemyFireResist")
+                .map(String::as_str),
+            Some("50")
+        );
+        assert_eq!(
+            b.config.placeholders.get("enemyLevel").map(String::as_str),
+            Some("82")
+        );
         assert_eq!(b.config.custom_mods, vec!["+5 to Strength", "+10 to Dex"]);
         assert_eq!(b.tree.version.as_deref(), Some("0_4"));
         assert_eq!(b.tree.class_id, Some(4));
@@ -1355,7 +1360,10 @@ mod tests {
         assert_eq!(b.defenses.fire_resist, Some(77.0));
         assert_eq!(b.allocated_nodes, vec![1, 2, 3, 4, 5]);
         assert_eq!(b.mastery_picks.len(), 2);
-        assert!(matches!(b.mastery_picks[0], MasteryPick::Poe2 { effect_id: 10 }));
+        assert!(matches!(
+            b.mastery_picks[0],
+            MasteryPick::Poe2 { effect_id: 10 }
+        ));
     }
 
     #[test]
@@ -1379,7 +1387,10 @@ mod tests {
         assert_eq!(g.gems.len(), 2);
         assert_eq!(g.gems[0].skill_id.as_deref(), Some("FuriousSlamPlayer"));
         assert_eq!(g.gems[0].variant_id.as_deref(), Some("FuriousSlam"));
-        assert_eq!(g.gems[0].gem_id.as_deref().unwrap(), "Metadata/Items/Gems/SkillGemFuriousSlam");
+        assert_eq!(
+            g.gems[0].gem_id.as_deref().unwrap(),
+            "Metadata/Items/Gems/SkillGemFuriousSlam"
+        );
         assert!(!g.gems[0].is_minion);
         assert!(g.gems[1].is_minion);
     }

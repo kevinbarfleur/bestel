@@ -246,6 +246,16 @@ export interface VerifiedClaimDto {
   correction: string | null;
 }
 
+/** Sprint v6 Phase 2 — one finding from the live response-lint pass.
+ * Mirrors `LintFinding` in `crates/bestel-core/src/test_runner/response_lint.rs`.
+ * Severity is lowercase from the Rust `FindingSeverity` enum. */
+export interface LintFindingDto {
+  id: string;
+  severity: 'warn' | 'fail';
+  message: string;
+  evidence: string | null;
+}
+
 export type LlmDeltaEvent =
   | { kind: 'text'; session_id: number; text: string }
   | { kind: 'reasoning_begin'; session_id: number }
@@ -333,6 +343,14 @@ export type LlmDeltaEvent =
        * is suppressed at the source so the frontend only sees values that
        * surface as a ModeChip. */
       mode: string;
+    }
+  | {
+      kind: 'lint_findings';
+      session_id: number;
+      /** Sprint v6 Phase 2 — live response-lint findings (warn-only). Only
+       * delivered when at least one rule fired. Phase 3 will turn these
+       * into a gating signal; for now the dev panel surfaces them. */
+      findings: LintFindingDto[];
     };
 
 // ─── Sprint v3 — Build Registry DTOs ─────────────────────────────────────

@@ -318,7 +318,10 @@ fn humanize_family(family: &str) -> String {
         let mut rebuilt = String::with_capacity(out.len() + 1);
         rebuilt.push_str(head.trim_end());
         rebuilt.push(' ');
-        let first = out[head.len()..head.len() + 1].chars().next().unwrap_or(' ');
+        let first = out[head.len()..head.len() + 1]
+            .chars()
+            .next()
+            .unwrap_or(' ');
         rebuilt.push(first);
         rebuilt.push_str(tail);
         rebuilt
@@ -372,9 +375,7 @@ fn classify_ollama_speed(info: &OllamaModelInfo) -> SpeedTier {
 /// profiles are returned (no fictional Ollama entries).
 pub async fn list_profiles_with_local() -> Vec<ModelProfile> {
     let mut out = cloud_profiles();
-    let host = std::env::var("OLLAMA_HOST")
-        .ok()
-        .filter(|s| !s.is_empty());
+    let host = std::env::var("OLLAMA_HOST").ok().filter(|s| !s.is_empty());
     if let Some(infos) = super::ollama::probe_models_detailed(host.as_deref()).await {
         for info in infos {
             out.push(build_ollama_profile(&info));
@@ -419,8 +420,8 @@ pub fn active_profile() -> ModelProfile {
 /// the picker is the source of truth for what's installed; offline
 /// re-launch should still recover the user's last choice.
 pub fn save_active_profile(id: &str) -> Result<()> {
-    let known = id.starts_with(DYNAMIC_OLLAMA_PREFIX)
-        || cloud_profiles().iter().any(|p| p.id == id);
+    let known =
+        id.starts_with(DYNAMIC_OLLAMA_PREFIX) || cloud_profiles().iter().any(|p| p.id == id);
     if !known {
         return Err(anyhow!("unknown profile id '{id}'"));
     }

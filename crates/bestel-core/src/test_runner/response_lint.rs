@@ -14,6 +14,7 @@
 //!   visualise but not gate on yet.
 //! - `Pass` is implicit (rules that did not fire produce no finding).
 
+use regex::Regex;
 use serde::{Deserialize, Serialize};
 
 use crate::llm::recorder::{PersistedRun, PersistedSegment};
@@ -58,7 +59,7 @@ impl LintReport {
     }
 }
 
-/// Run all 11 lints against a [`PersistedRun`].
+/// Run all 12 lints against a [`PersistedRun`].
 pub fn lint_run(run: &PersistedRun) -> LintReport {
     let mut findings = Vec::new();
     let final_text = &run.final_text;
@@ -70,6 +71,9 @@ pub fn lint_run(run: &PersistedRun) -> LintReport {
         findings.push(f);
     }
     if let Some(f) = check_build_identity_required(run, final_text) {
+        findings.push(f);
+    }
+    if let Some(f) = check_build_claim_requires_tool(run, final_text) {
         findings.push(f);
     }
     if let Some(f) = check_pob_calc_failure_no_real_number(run, final_text) {
@@ -226,11 +230,11 @@ fn tool_failed(run: &PersistedRun, name: &str) -> bool {
 /// `BUILD_IDENTITY_REQUIRED` rule must skip.
 fn tool_returned_no_build(run: &PersistedRun) -> bool {
     run.assistant_segments.iter().any(|s| match s {
-        PersistedSegment::Tool {
-            name, outputs, ..
-        } if name == "get_active_build" => outputs
-            .iter()
-            .any(|o| o.contains("\"status\":\"no_build\"") || o.contains("\"status\": \"no_build\"")),
+        PersistedSegment::Tool { name, outputs, .. } if name == "get_active_build" => {
+            outputs.iter().any(|o| {
+                o.contains("\"status\":\"no_build\"") || o.contains("\"status\": \"no_build\"")
+            })
+        }
         _ => false,
     })
 }
@@ -321,7 +325,106 @@ fn answer_is_build_specific(text: &str) -> bool {
 }
 
 // ---------------------------------------------------------------------------
-// 4. POB_CALC_FAILURE_NO_REAL_NUMBER
+// 4. BUILD_CLAIM_REQUIRES_TOOL (Sprint v6 — Reco 2)
+//
+// Fires when the assistant asserts a build-specific claim (mana/life/sustain
+// state, oneshot risk, resist cap, etc.) but `get_active_build` was not
+// successfully called this turn — meaning the claim is a fabrication
+// recalled from training data rather than verified against the loaded PoB.
+//
+// English-only patterns. Translation extensions ship as plug-in packages
+// later (no in-tree FR/DE/PT-BR keyword sets).
+// ---------------------------------------------------------------------------
+
+const BUILD_CLAIM_PATTERNS: &[&str] = &[
+    // 1. "you (will|risk|are going to|gonna) + bad-outcome" — the outcome
+    // verb is specific enough to qualify as a build claim on its own.
+    r"\byou\s+(?:will|are\s+going\s+to|risk|might|gonna)\s+(?:oom|run\s+out\s+of\s+mana|run\s+out\s+of\s+life|die|get\s+one[- ]?shot|get\s+stun[- ]?locked|get\s+frozen)\b",
+    // 2. Direct conjugated "you/you'll oom" / "run out of mana".
+    r"\byou(?:'ll|\s+will)?\s+(?:oom|run\s+out\s+of\s+mana)\b",
+    // 3. "your build is + adjective" — restricted to the "your build" subject
+    // so a generic "you're fine" outside build context is not flagged.
+    r"\byour\s+build\s+is\s+(?:squishy|fragile|fine|safe|tanky|glass[- ]?cannon|capped|over[- ]?capped|under[- ]?capped)\b",
+    // 4. "your X is/are + assessment" — restricted to PoB-surface stat names.
+    r"\byour\s+(?:life\s+)?(?:sustain|leech|regen|recovery|mana\s+pool|mana\s+regen|max\s+hit|ehp)\s+(?:is|are|looks?)\s+(?:fine|ok|okay|good|bad|weak|insufficient|adequate|too\s+low|too\s+high)\b",
+    // 5. "your resists are/look + assessment".
+    r"\byour\s+resists?\s+(?:are|look)\s+(?:fine|ok|okay|capped|over[- ]?capped|under[- ]?capped|insufficient|too\s+low|fully\s+capped)\b",
+    // 6. "you (will|gonna) take + one-shot" — common phrasing.
+    r"\byou(?:'ll)?\s+(?:get|take|are\s+going\s+to\s+take|will\s+take)\s+(?:a\s+)?one[- ]?shot",
+    // 7. "you can't survive + pinnacle-tier content".
+    r"\byou\s+can'?t\s+survive\s+(?:sirus|pinnacle|ubers?|maven|uber\s+\w+|t1[6-7])\b",
+    // 8. "in N seconds/s + bad outcome" — time-pressure invented claim. Bound
+    // the window so the pattern doesn't bridge unrelated sentences.
+    r"\bin\s+\d+\s*(?:seconds?|s)\b[^.]{0,40}\b(?:oom|drain|die|stun(?:ned)?|frozen|chilled|killed)\b",
+];
+
+/// Substrings that, when found in a 40-char window preceding a matched build
+/// claim, demote the match to "conditional / meta phrasing" and skip the
+/// finding. The model is allowed to say "if your build is squishy, …" without
+/// having called `get_active_build` first.
+const BUILD_CLAIM_META_MARKERS: &[&str] = &[
+    "if ",
+    "when ",
+    "to check ",
+    "to assess ",
+    "to test ",
+    "depending on ",
+    "in case ",
+    "should ",
+    "would ",
+    "assuming ",
+];
+
+fn check_build_claim_requires_tool(run: &PersistedRun, final_text: &str) -> Option<LintFinding> {
+    // Skip whenever the agent called `get_active_build` — successfully or
+    // with a `no_build` payload. The rule's contract is *"if you're going
+    // to make a build claim, you must call this tool"*; the model met that
+    // precondition. If it then mishandles the `no_build` result, a separate
+    // rule (BUILD_IDENTITY_REQUIRED + future Reco-4 promotion) catches it.
+    // Mirrors how BUILD_IDENTITY_REQUIRED skips when the tool ran.
+    if tool_succeeded(run, "get_active_build") {
+        return None;
+    }
+    let lower = final_text.to_ascii_lowercase();
+    for pat in BUILD_CLAIM_PATTERNS {
+        let re = match Regex::new(pat) {
+            Ok(r) => r,
+            Err(_) => continue,
+        };
+        let Some(m) = re.find(&lower) else {
+            continue;
+        };
+        let lookback_start = m.start().saturating_sub(40);
+        let lookback = &lower[lookback_start..m.start()];
+        if BUILD_CLAIM_META_MARKERS
+            .iter()
+            .any(|marker| lookback.contains(marker))
+        {
+            continue;
+        }
+        let span_end = (m.end() + 60).min(final_text.len());
+        let span = &final_text[m.start()..span_end];
+        let evidence_start = lookback_start;
+        let evidence_end = (m.end() + 120).min(final_text.len());
+        return Some(finding(
+            "BUILD_CLAIM_REQUIRES_TOOL",
+            FindingSeverity::Fail,
+            format!(
+                "Build-specific claim '{}' made but `get_active_build` was \
+                 not successfully called this turn.",
+                first_n_chars(span, 60)
+            ),
+            Some(first_n_chars(
+                &final_text[evidence_start..evidence_end],
+                240,
+            )),
+        ));
+    }
+    None
+}
+
+// ---------------------------------------------------------------------------
+// 5. POB_CALC_FAILURE_NO_REAL_NUMBER
 // ---------------------------------------------------------------------------
 
 fn check_pob_calc_failure_no_real_number(
@@ -332,7 +435,13 @@ fn check_pob_calc_failure_no_real_number(
         return None;
     }
     let lower = final_text.to_ascii_lowercase();
-    let claims: &[&str] = &["real dps", "true dps", "actual dps", "live dps", "current dps"];
+    let claims: &[&str] = &[
+        "real dps",
+        "true dps",
+        "actual dps",
+        "live dps",
+        "current dps",
+    ];
     let disclaimers: &[&str] = &[
         "cache",
         "cached",
@@ -399,7 +508,8 @@ fn check_panel_data_first(final_text: &str) -> Option<LintFinding> {
     Some(finding(
         "PANEL_DATA_FIRST",
         FindingSeverity::Fail,
-        "Message uses ⟦panel:…⟧ markers but does not begin with the ⟦panel-data⟧ sidecar.".to_string(),
+        "Message uses ⟦panel:…⟧ markers but does not begin with the ⟦panel-data⟧ sidecar."
+            .to_string(),
         Some(first_n_chars(trimmed, 160)),
     ))
 }
@@ -525,7 +635,8 @@ fn extract_sources_urls(final_text: &str) -> Vec<String> {
                 j += 1;
             }
             if let Ok(s) = std::str::from_utf8(&bytes[i..j]) {
-                let trimmed = s.trim_end_matches(|c: char| c == '.' || c == ',' || c == ')' || c == ']');
+                let trimmed =
+                    s.trim_end_matches(|c: char| c == '.' || c == ',' || c == ')' || c == ']');
                 urls.push(trimmed.to_string());
             }
             i = j;
@@ -614,7 +725,9 @@ fn check_sources_fetched_only(run: &PersistedRun, final_text: &str) -> Option<Li
         // Match by host: the model often reformats the path, so we accept
         // any URL whose host is part of the same domain that was actually
         // fetched in this turn.
-        let host_seen = fetched_hosts.iter().any(|fh| fh == &host || fh.ends_with(&format!(".{host}")) || host.ends_with(&format!(".{fh}")));
+        let host_seen = fetched_hosts.iter().any(|fh| {
+            fh == &host || fh.ends_with(&format!(".{host}")) || host.ends_with(&format!(".{fh}"))
+        });
         if !host_seen {
             fabricated.push(c.clone());
         }
@@ -629,9 +742,7 @@ fn check_sources_fetched_only(run: &PersistedRun, final_text: &str) -> Option<Li
             "Sources cite URL(s) whose host was never fetched this turn: {}",
             fabricated.join(", ")
         ),
-        Some(format!(
-            "fetched_hosts={fetched_hosts:?} cited={cited:?}"
-        )),
+        Some(format!("fetched_hosts={fetched_hosts:?} cited={cited:?}")),
     ))
 }
 
@@ -982,6 +1093,132 @@ mod tests {
             .any(|f| f.id == "BUILD_IDENTITY_REQUIRED" && f.severity == FindingSeverity::Fail));
     }
 
+    // -----------------------------------------------------------------------
+    // BUILD_CLAIM_REQUIRES_TOOL — Sprint v6 Reco 2.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn build_claim_patterns_all_compile() {
+        // Catch malformed patterns at test time so production stays silent
+        // on compile failures (rule degrades gracefully but tests fail loud).
+        for pat in BUILD_CLAIM_PATTERNS {
+            assert!(
+                Regex::new(pat).is_ok(),
+                "BUILD_CLAIM_REQUIRES_TOOL pattern failed to compile: {pat}"
+            );
+        }
+    }
+
+    #[test]
+    fn build_claim_requires_tool_fires_on_oom_without_tool() {
+        let run = run_with("You'll oom in 2 seconds during phase 3 of Sirus.", vec![]);
+        let report = lint_run(&run);
+        assert!(report
+            .findings
+            .iter()
+            .any(|f| f.id == "BUILD_CLAIM_REQUIRES_TOOL" && f.severity == FindingSeverity::Fail));
+    }
+
+    #[test]
+    fn build_claim_requires_tool_silent_when_tool_called() {
+        let run = run_with(
+            "You'll oom in 2 seconds during phase 3 of Sirus.",
+            vec![tool_seg("get_active_build", "done")],
+        );
+        let report = lint_run(&run);
+        assert!(!report
+            .findings
+            .iter()
+            .any(|f| f.id == "BUILD_CLAIM_REQUIRES_TOOL"));
+    }
+
+    #[test]
+    fn build_claim_requires_tool_silent_when_no_build_loaded() {
+        // get_active_build was called but reported {"status":"no_build"} —
+        // the agent verified that nothing is attached. Subsequent
+        // "your sustain is fine" would still be wrong but is treated as
+        // a separate failure mode (we don't double-gate here).
+        let run = run_with(
+            "Your sustain is fine, swap to Mageblood next.",
+            vec![tool_seg_with_outputs(
+                "get_active_build",
+                "done",
+                vec!["{\"status\":\"no_build\"}".into()],
+            )],
+        );
+        let report = lint_run(&run);
+        assert!(!report
+            .findings
+            .iter()
+            .any(|f| f.id == "BUILD_CLAIM_REQUIRES_TOOL"));
+    }
+
+    #[test]
+    fn build_claim_requires_tool_silent_on_meta_conditional() {
+        // Conditional phrasing — the assistant is giving guidance, not
+        // making a claim. Must not fire.
+        let run = run_with(
+            "If your sustain is fine, you can skip Watcher's Eye.",
+            vec![],
+        );
+        let report = lint_run(&run);
+        assert!(!report
+            .findings
+            .iter()
+            .any(|f| f.id == "BUILD_CLAIM_REQUIRES_TOOL"));
+    }
+
+    #[test]
+    fn build_claim_requires_tool_fires_on_one_shot_claim() {
+        let run = run_with(
+            "You'll take a one-shot from Sirus pizza without divine flesh.",
+            vec![],
+        );
+        let report = lint_run(&run);
+        assert!(report
+            .findings
+            .iter()
+            .any(|f| f.id == "BUILD_CLAIM_REQUIRES_TOOL"));
+    }
+
+    #[test]
+    fn build_claim_requires_tool_fires_on_resist_capped_claim() {
+        let run = run_with(
+            "Your resists are fully capped for ubers — push T17 today.",
+            vec![],
+        );
+        let report = lint_run(&run);
+        assert!(report
+            .findings
+            .iter()
+            .any(|f| f.id == "BUILD_CLAIM_REQUIRES_TOOL"));
+    }
+
+    #[test]
+    fn build_claim_requires_tool_fires_on_build_is_squishy() {
+        let run = run_with("Your build is squishy and won't survive pinnacle.", vec![]);
+        let report = lint_run(&run);
+        assert!(report
+            .findings
+            .iter()
+            .any(|f| f.id == "BUILD_CLAIM_REQUIRES_TOOL"));
+    }
+
+    #[test]
+    fn build_claim_requires_tool_silent_on_neutral_mechanics_answer() {
+        // Pure mechanics — no build claim. Must not fire even with zero
+        // tool calls.
+        let run = run_with(
+            "Spell suppression caps at 100% prevented; tree alone gets you there.",
+            vec![],
+        );
+        let report = lint_run(&run);
+        assert!(!report
+            .findings
+            .iter()
+            .any(|f| f.id == "BUILD_CLAIM_REQUIRES_TOOL"));
+    }
+
     #[test]
     fn pob_calc_failure_real_dps_claim_fails() {
         let run = run_with(
@@ -1089,15 +1326,13 @@ mod tests {
         let body = "Check https://pathofexile.fandom.com/wiki/Divine_Flesh for details.";
         let run = run_with(body, vec![]);
         let report = lint_run(&run);
-        assert!(report
-            .findings
-            .iter()
-            .any(|f| f.id == "NO_BLOCKED_SOURCE"));
+        assert!(report.findings.iter().any(|f| f.id == "NO_BLOCKED_SOURCE"));
     }
 
     #[test]
     fn failed_raw_data_no_table_flags_fabricated_table() {
-        let body = "| Mod | Tier | ilvl |\n|---|---|---|\n| Life | T1 | ilvl 86 |\n| ES | T1 | ilvl 86 |";
+        let body =
+            "| Mod | Tier | ilvl |\n|---|---|---|\n| Life | T1 | ilvl 86 |\n| ES | T1 | ilvl 86 |";
         let run = run_with(body, vec![tool_seg("repoe_lookup", "failed")]);
         let report = lint_run(&run);
         assert!(report

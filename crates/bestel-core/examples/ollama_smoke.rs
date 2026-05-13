@@ -39,7 +39,10 @@ async fn main() -> anyhow::Result<()> {
             p.id, p.speed, p.model_id, p.display_name
         );
     }
-    let count_ollama = profiles.iter().filter(|p| p.id.starts_with("ollama:")).count();
+    let count_ollama = profiles
+        .iter()
+        .filter(|p| p.id.starts_with("ollama:"))
+        .count();
     println!("  → {count_ollama} Ollama profile(s) shown to picker");
     println!();
 
@@ -123,20 +126,32 @@ async fn main() -> anyhow::Result<()> {
             LlmDelta::ToolOutput { id, chunk } => {
                 writeln!(log, "TOOL_OUTPUT id={id} chunk={chunk:?}").ok();
             }
-            LlmDelta::ToolEnd { id, status, summary } => {
+            LlmDelta::ToolEnd {
+                id,
+                status,
+                summary,
+            } => {
                 match status {
                     ToolStatus::Done => tool_done += 1,
                     ToolStatus::Failed => tool_failed += 1,
                     _ => {}
                 }
                 println!("\n[tool← id={id} status={status:?} summary={summary:?}]");
-                writeln!(log, "TOOL_END id={id} status={status:?} summary={summary:?}").ok();
+                writeln!(
+                    log,
+                    "TOOL_END id={id} status={status:?} summary={summary:?}"
+                )
+                .ok();
             }
             LlmDelta::Usage(u) => {
                 writeln!(
                     log,
                     "USAGE in={} cache_read={} cache_write={} out={} cost={:?}",
-                    u.input_tokens, u.cached_input_tokens, u.cache_creation_tokens, u.output_tokens, u.cost_usd
+                    u.input_tokens,
+                    u.cached_input_tokens,
+                    u.cache_creation_tokens,
+                    u.output_tokens,
+                    u.cost_usd
                 )
                 .ok();
             }
@@ -164,11 +179,23 @@ async fn main() -> anyhow::Result<()> {
             LlmDelta::SheetFinalized { sheet_id, name } => {
                 writeln!(log, "SHEET_FINALIZED sheet_id={sheet_id} name={name}").ok();
             }
-            LlmDelta::SheetLoaded { sheet_id, name, stale, .. } => {
-                writeln!(log, "SHEET_LOADED sheet_id={sheet_id} name={name} stale={stale}").ok();
+            LlmDelta::SheetLoaded {
+                sheet_id,
+                name,
+                stale,
+                ..
+            } => {
+                writeln!(
+                    log,
+                    "SHEET_LOADED sheet_id={sheet_id} name={name} stale={stale}"
+                )
+                .ok();
             }
             LlmDelta::ModeAssigned { mode } => {
                 writeln!(log, "MODE_ASSIGNED {mode}").ok();
+            }
+            LlmDelta::LintFindings { findings } => {
+                writeln!(log, "LINT_FINDINGS count={}", findings.len()).ok();
             }
             LlmDelta::Error(msg) => {
                 error = Some(msg.clone());

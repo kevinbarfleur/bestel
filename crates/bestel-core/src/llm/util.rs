@@ -34,9 +34,7 @@ pub fn summarize_tool_args(name: &str, args: &Value) -> Option<String> {
         }
         "kb_search" => {
             let q = s_owned("query")?;
-            let k = obj
-                .get("top_k")
-                .and_then(|v| v.as_u64());
+            let k = obj.get("top_k").and_then(|v| v.as_u64());
             Some(match k {
                 Some(k) => format!("{} (top_k={k})", quote_truncate(&q, MAX_QUERY_LEN)),
                 None => quote_truncate(&q, MAX_QUERY_LEN),
@@ -138,7 +136,9 @@ pub fn summarize_tool_args(name: &str, args: &Value) -> Option<String> {
         "web_fetch" => s_owned("url").map(|u| hostname_or_url(&u)),
         "get_active_build" => None,
         "sheet_propose_section" => s_owned("section_id"),
-        "sheet_ask" => s_owned("question_id").or_else(|| s_owned("title").map(|t| truncate(&t, 60))),
+        "sheet_ask" => {
+            s_owned("question_id").or_else(|| s_owned("title").map(|t| truncate(&t, 60)))
+        }
         "sheet_finalize_request" => s_owned("name"),
         "get_active_build_sheet" => s_owned("fingerprint").map(|f| truncate(&f, 60)),
         _ => generic_join(args),
@@ -168,11 +168,11 @@ fn truncate(s: &str, max: usize) -> String {
 }
 
 fn hostname_or_url(url: &str) -> String {
-    let after_scheme = url
-        .find("://")
-        .map(|i| &url[i + 3..])
-        .unwrap_or(url);
-    let host = after_scheme.split(['/', '?', '#']).next().unwrap_or(after_scheme);
+    let after_scheme = url.find("://").map(|i| &url[i + 3..]).unwrap_or(url);
+    let host = after_scheme
+        .split(['/', '?', '#'])
+        .next()
+        .unwrap_or(after_scheme);
     let host = host.split('@').next_back().unwrap_or(host);
     let host = host.split(':').next().unwrap_or(host);
     if host.is_empty() {
@@ -211,13 +211,19 @@ mod tests {
 
     #[test]
     fn wiki_parse_returns_title() {
-        let s = summarize_tool_args("wiki_parse", &json!({"title": "Resolute Technique", "game": "poe2"}));
+        let s = summarize_tool_args(
+            "wiki_parse",
+            &json!({"title": "Resolute Technique", "game": "poe2"}),
+        );
         assert_eq!(s.as_deref(), Some("Resolute Technique"));
     }
 
     #[test]
     fn kb_search_includes_top_k() {
-        let s = summarize_tool_args("kb_search", &json!({"query": "spell suppression cap", "top_k": 5}));
+        let s = summarize_tool_args(
+            "kb_search",
+            &json!({"query": "spell suppression cap", "top_k": 5}),
+        );
         assert_eq!(s.as_deref(), Some("\"spell suppression cap\" (top_k=5)"));
     }
 
@@ -256,10 +262,7 @@ mod tests {
 
     #[test]
     fn unknown_tool_falls_back_to_generic() {
-        let s = summarize_tool_args(
-            "mystery_tool",
-            &json!({"foo": "bar", "n": 42}),
-        );
+        let s = summarize_tool_args("mystery_tool", &json!({"foo": "bar", "n": 42}));
         let s = s.unwrap();
         assert!(s.contains("foo=\"bar\""));
         assert!(s.contains("n=42"));

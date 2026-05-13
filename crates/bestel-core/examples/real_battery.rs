@@ -138,8 +138,7 @@ fn prompts_path() -> PathBuf {
 
 fn load_prompts() -> Result<Vec<Prompt>> {
     let path = prompts_path();
-    let raw = std::fs::read_to_string(&path)
-        .with_context(|| format!("read {}", path.display()))?;
+    let raw = std::fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
     let parsed: PromptFile = toml::from_str(&raw).context("parse real_user_prompts.toml")?;
     Ok(parsed.prompt)
 }
@@ -278,7 +277,10 @@ async fn main() -> Result<()> {
         total_text,
         total_errors,
     );
-    println!("Open the in-app Debug view (Ctrl+Shift+D) and filter by source `battery:{}` to browse.", args.model_id);
+    println!(
+        "Open the in-app Debug view (Ctrl+Shift+D) and filter by source `battery:{}` to browse.",
+        args.model_id
+    );
     Ok(())
 }
 
@@ -314,7 +316,8 @@ async fn run_one(
         Vec::new(),
     );
 
-    let provider_handle = tokio::spawn(async move { run_provider(provider, history, ctx, tx).await });
+    let provider_handle =
+        tokio::spawn(async move { run_provider(provider, history, ctx, tx).await });
 
     let mut text_bytes = 0usize;
     let mut tool_calls = 0usize;

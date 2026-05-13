@@ -127,14 +127,12 @@ pub fn write_notes(session_id: &str, notes: &SessionNotes) -> Result<()> {
 
 pub fn write_notes_at(dir: &Path, session_id: &str, notes: &SessionNotes) -> Result<()> {
     let filename = safe_session_filename(session_id)?;
-    fs::create_dir_all(dir)
-        .with_context(|| format!("create session notes dir {dir:?}"))?;
+    fs::create_dir_all(dir).with_context(|| format!("create session notes dir {dir:?}"))?;
     let path = dir.join(filename);
     let mut snapshot = notes.clone();
     snapshot.session_id = session_id.to_string();
     snapshot.last_updated = Some(Utc::now());
-    let json =
-        serde_json::to_string_pretty(&snapshot).context("serialize SessionNotes")?;
+    let json = serde_json::to_string_pretty(&snapshot).context("serialize SessionNotes")?;
     fs::write(&path, json).with_context(|| format!("write session notes {path:?}"))?;
     if let Some(db) = crate::persistence::global_db() {
         if let Err(e) = crate::persistence::upsert_session(&db, &snapshot) {
@@ -188,7 +186,8 @@ mod tests {
     #[test]
     fn invalid_session_id_rejected_on_write() {
         let tmp = TempDir::new().unwrap();
-        let err = write_notes_at(tmp.path(), "../etc/passwd", &SessionNotes::default()).unwrap_err();
+        let err =
+            write_notes_at(tmp.path(), "../etc/passwd", &SessionNotes::default()).unwrap_err();
         assert!(err.to_string().contains("invalid session_id"));
     }
 

@@ -129,9 +129,7 @@ pub fn ascendancy_in(game: PoeVersion, ids: &[u32]) -> Vec<&'static NodeInfo> {
     filter_kind(game, ids, |k| {
         matches!(
             k,
-            NodeKind::AscendancyKeystone
-                | NodeKind::AscendancyNotable
-                | NodeKind::AscendancySmall
+            NodeKind::AscendancyKeystone | NodeKind::AscendancyNotable | NodeKind::AscendancySmall
         )
     })
 }

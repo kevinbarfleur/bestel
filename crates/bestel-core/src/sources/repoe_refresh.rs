@@ -73,13 +73,16 @@ async fn refresh_one(
     let parsed: Value = serde_json::from_slice(&bytes)
         .with_context(|| format!("parse {} {} payload", game.as_str(), category.as_str()))?;
     if !parsed.is_object() {
-        anyhow::bail!("expected object at top level for {} {}", game.as_str(), category.as_str());
+        anyhow::bail!(
+            "expected object at top level for {} {}",
+            game.as_str(),
+            category.as_str()
+        );
     }
 
     let compressed = zstd::encode_all(&bytes[..], 19).context("zstd compress refreshed payload")?;
     let path = cache_path(client, game, category);
-    atomic_write(&path, &compressed)
-        .with_context(|| format!("atomic-write {}", path.display()))?;
+    atomic_write(&path, &compressed).with_context(|| format!("atomic-write {}", path.display()))?;
 
     let entries = match parsed {
         Value::Object(map) => map.into_iter().collect::<HashMap<_, _>>(),
@@ -141,4 +144,3 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
     std::fs::rename(&tmp, path)?;
     Ok(())
 }
-

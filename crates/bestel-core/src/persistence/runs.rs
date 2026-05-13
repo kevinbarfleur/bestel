@@ -33,15 +33,11 @@ pub struct RunsFilter {
 
 pub fn insert_run(db: &Db, run: &PersistedRun) -> Result<()> {
     let raw = serde_json::to_vec(run).context("serialize run for raw_json")?;
-    let verifier_status = run
-        .stats
-        .verifier_verdict
-        .as_ref()
-        .map(|v| match v.status {
-            crate::llm::verifier::VerdictStatus::Pass => "pass",
-            crate::llm::verifier::VerdictStatus::Revise => "revise",
-            crate::llm::verifier::VerdictStatus::Fail => "fail",
-        });
+    let verifier_status = run.stats.verifier_verdict.as_ref().map(|v| match v.status {
+        crate::llm::verifier::VerdictStatus::Pass => "pass",
+        crate::llm::verifier::VerdictStatus::Revise => "revise",
+        crate::llm::verifier::VerdictStatus::Fail => "fail",
+    });
     let verifier_count = run
         .stats
         .verifier_verdict
@@ -87,8 +83,8 @@ pub fn insert_run(db: &Db, run: &PersistedRun) -> Result<()> {
         Ok(())
     })?;
     if let Some(verdict) = run.stats.verifier_verdict.as_ref() {
-        let findings_json = serde_json::to_string(&verdict.findings)
-            .context("serialize verifier findings")?;
+        let findings_json =
+            serde_json::to_string(&verdict.findings).context("serialize verifier findings")?;
         super::verifier_results::upsert_verifier_result(
             db,
             &super::verifier_results::VerifierResultRow {
@@ -180,13 +176,17 @@ pub fn query_runs_failing_identity(db: &Db) -> Result<Vec<RunRow>> {
 #[allow(dead_code)]
 pub fn get_run_raw(db: &Db, id: &str) -> Result<Option<PersistedRun>> {
     let raw: Option<Vec<u8>> = db.with_conn_rusqlite(|c| {
-        c.query_row("SELECT raw_json FROM runs WHERE id = ?1", params![id], |r| {
-            r.get::<_, Vec<u8>>(0)
-        })
+        c.query_row(
+            "SELECT raw_json FROM runs WHERE id = ?1",
+            params![id],
+            |r| r.get::<_, Vec<u8>>(0),
+        )
         .optional()
     })?;
     match raw {
-        Some(bytes) => Ok(Some(serde_json::from_slice(&bytes).context("decode raw_json")?)),
+        Some(bytes) => Ok(Some(
+            serde_json::from_slice(&bytes).context("decode raw_json")?,
+        )),
         None => Ok(None),
     }
 }

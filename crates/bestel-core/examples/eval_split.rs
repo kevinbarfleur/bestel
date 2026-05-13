@@ -61,8 +61,7 @@ fn main() -> Result<()> {
         .map(PathBuf::from)
         .ok_or_else(|| anyhow!("usage: eval_split <eval_set.toml> <out_dir>"))?;
 
-    let raw = std::fs::read_to_string(&src)
-        .with_context(|| format!("read {}", src.display()))?;
+    let raw = std::fs::read_to_string(&src).with_context(|| format!("read {}", src.display()))?;
     let set: EvalSet = toml::from_str(&raw).context("parse eval_set.toml")?;
     if set.entry.len() != 60 {
         eprintln!(
@@ -71,14 +70,12 @@ fn main() -> Result<()> {
         );
     }
 
-    std::fs::create_dir_all(&out_dir)
-        .with_context(|| format!("mkdir {}", out_dir.display()))?;
+    std::fs::create_dir_all(&out_dir).with_context(|| format!("mkdir {}", out_dir.display()))?;
 
     for e in &set.entry {
         let path = out_dir.join(format!("{}.toml", e.id));
         let body = render_scenario(e);
-        std::fs::write(&path, body)
-            .with_context(|| format!("write {}", path.display()))?;
+        std::fs::write(&path, body).with_context(|| format!("write {}", path.display()))?;
         println!("  wrote {}", path.display());
     }
 
@@ -92,7 +89,9 @@ fn main() -> Result<()> {
 
 fn render_scenario(e: &EvalEntry) -> String {
     let mut out = String::new();
-    out.push_str(&format!("# Generated from tests/eval/eval_set.toml — do not hand-edit.\n"));
+    out.push_str(&format!(
+        "# Generated from tests/eval/eval_set.toml — do not hand-edit.\n"
+    ));
     out.push_str(&format!("# Category: {}\n", e.category));
     out.push_str("\n");
     out.push_str(&format!("name = \"{}\"\n", e.id));

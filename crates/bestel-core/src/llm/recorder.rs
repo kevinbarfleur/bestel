@@ -66,6 +66,11 @@ pub struct ChatStats {
     /// refusal). Persisted runs from before Sprint G deserialize as `None`.
     #[serde(default)]
     pub verifier_verdict: Option<crate::llm::verifier::VerifierVerdict>,
+    /// Sprint v6 Phase 2 — live response-lint findings collected during this
+    /// turn (warn-only). Empty when no rule fired. Persisted runs from before
+    /// Phase 2 deserialize as an empty vec.
+    #[serde(default)]
+    pub lint_findings: Vec<crate::test_runner::response_lint::LintFinding>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -142,13 +147,15 @@ impl Recorder {
                         return;
                     }
                 }
-                self.segments.push(PersistedSegment::Text { text: t.clone() });
+                self.segments
+                    .push(PersistedSegment::Text { text: t.clone() });
                 self.open_text = Some(self.segments.len() - 1);
             }
             LlmDelta::ReasoningBegin => {
                 self.open_text = None;
-                self.segments
-                    .push(PersistedSegment::Reasoning { text: String::new() });
+                self.segments.push(PersistedSegment::Reasoning {
+                    text: String::new(),
+                });
                 self.open_reasoning = Some(self.segments.len() - 1);
             }
             LlmDelta::ReasoningDelta(t) => {
@@ -231,6 +238,9 @@ impl Recorder {
             }
             LlmDelta::Verifier(v) => {
                 self.stats.verifier_verdict = Some(v.clone());
+            }
+            LlmDelta::LintFindings { findings } => {
+                self.stats.lint_findings = findings.clone();
             }
             LlmDelta::SheetDraftUpdate { .. }
             | LlmDelta::SheetAskUser { .. }
@@ -368,10 +378,7 @@ pub fn save_run(run: &PersistedRun) -> Result<PathBuf> {
 /// sidecar JSON's optional `evidence` is dropped — if needed it can be
 /// re-derived by re-linting. Pre-existing rows for the same `run_id` are
 /// replaced atomically so re-runs stay idempotent.
-pub fn mirror_lint_findings(
-    run_id: &str,
-    rows: Vec<crate::persistence::LintFindingRow>,
-) {
+pub fn mirror_lint_findings(run_id: &str, rows: Vec<crate::persistence::LintFindingRow>) {
     if let Some(db) = crate::persistence::global_db() {
         if let Err(e) = crate::persistence::replace_lint_findings(&db, run_id, &rows) {
             tracing::warn!(error = ?e, run_id, "failed to mirror lint findings to SQLite");
@@ -463,6 +470,27 @@ mod tests {
     }
 
     #[test]
+    fn lint_findings_delta_persists_into_stats() {
+        // Sprint v6 Phase 2 — `LlmDelta::LintFindings` populates
+        // `ChatStats::lint_findings` so the persisted run carries the
+        // warn-only signal forward.
+        use crate::test_runner::response_lint::{FindingSeverity, LintFinding};
+        let mut r = rec();
+        let findings = vec![LintFinding {
+            id: "BUILD_CLAIM_REQUIRES_TOOL".into(),
+            severity: FindingSeverity::Fail,
+            message: "Build claim made without get_active_build".into(),
+            evidence: Some("you oom in 2s".into()),
+        }];
+        r.apply(&LlmDelta::LintFindings {
+            findings: findings.clone(),
+        });
+        let run = r.finish("you oom in 2s".into());
+        assert_eq!(run.stats.lint_findings.len(), 1);
+        assert_eq!(run.stats.lint_findings[0].id, "BUILD_CLAIM_REQUIRES_TOOL");
+    }
+
+    #[test]
     fn text_deltas_concatenate_into_one_segment() {
         let mut r = rec();
         r.apply(&LlmDelta::TextDelta("Hello ".into()));
@@ -546,7 +574,9 @@ mod tests {
     #[test]
     fn finish_strips_leaked_thinking_from_final_text() {
         let mut r = rec();
-        r.apply(&LlmDelta::TextDelta("<thinking>\nplanning\n</thinking>\nThe cap is 100%.".into()));
+        r.apply(&LlmDelta::TextDelta(
+            "<thinking>\nplanning\n</thinking>\nThe cap is 100%.".into(),
+        ));
         let run = r.finish("<thinking>\nplanning\n</thinking>\nThe cap is 100%.".into());
         assert_eq!(run.final_text, "The cap is 100%.");
         if let PersistedSegment::Text { text } = &run.assistant_segments[0] {

@@ -40,10 +40,10 @@ struct RawFile {
 }
 
 pub fn load(path: &Path) -> Result<Vec<RealPrompt>> {
-    let bytes = std::fs::read_to_string(path)
-        .with_context(|| format!("read {}", path.display()))?;
-    let raw: RawFile = toml::from_str(&bytes)
-        .with_context(|| format!("parse TOML in {}", path.display()))?;
+    let bytes =
+        std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
+    let raw: RawFile =
+        toml::from_str(&bytes).with_context(|| format!("parse TOML in {}", path.display()))?;
     Ok(raw.prompt)
 }
 

@@ -17,7 +17,7 @@ pub mod store;
 pub mod types;
 
 pub use store::{
-    delete_entry, get_entry, get_pob_path, insert_entry, list_entries,
-    suggestion_check, suggestion_dismiss, touch_last_seen, update_entry_signatures,
+    delete_entry, get_entry, get_pob_path, insert_entry, list_entries, suggestion_check,
+    suggestion_dismiss, touch_last_seen, update_entry_signatures,
 };
 pub use types::{RegistryEntry, RegistrySummary};

@@ -454,8 +454,7 @@ impl AnthropicClient {
             // = no engine ground truth) OR when the question matches the
             // mechanic heuristic. Build-loaded turns without mechanic intent
             // are already covered by the [Build data directive] above.
-            let mechanic_coded =
-                !has_active_build || is_mechanic_question(&last_user_lower);
+            let mechanic_coded = !has_active_build || is_mechanic_question(&last_user_lower);
             if mechanic_coded {
                 state_block.push_str(
                     "\n[Mechanics directive: any numerical claim in this turn's answer \
@@ -540,10 +539,8 @@ impl AnthropicClient {
                         &messages,
                         super::sheet_tools::GET_ACTIVE_BUILD_SHEET,
                     );
-                    let build_already_fetched = messages_contain_tool_use(
-                        &messages,
-                        super::tools::GET_ACTIVE_BUILD,
-                    );
+                    let build_already_fetched =
+                        messages_contain_tool_use(&messages, super::tools::GET_ACTIVE_BUILD);
                     if sheet_already_fetched {
                         tag.push_str(
                             "\n[Sheet directive: a validated, fresh Build Sheet exists for this \
@@ -671,6 +668,33 @@ impl AnthropicClient {
                 && has_active_build
                 && last_user_was_interview_submission
                 && !sheet_finalize_emitted_already;
+            // Sprint v6 Reco 6 — force `pob_calc` on iter 2 when the user
+            // asks an explicit quantitative mechanic question about their
+            // build ("how much fire res", "what's my EHP", "am i capped").
+            // Iter 1 already forces `get_active_build`, so by iter 2 the
+            // model has the full build payload in scope; this second force
+            // guarantees an authoritative numeric source (computed stats
+            // + Calcs config) before the model commits to a number in
+            // user-visible prose. The classifier sub-flag is the only
+            // gate — non-quantitative BriefMechanic falls through to the
+            // legacy free-choice path.
+            //
+            // Priority chain (top wins, all checked in the if/else below):
+            //   force_build_context              (iter 1, foundational)
+            //   force_finalize_after_submission  (iter 2 post-submission)
+            //   force_mechanic_fetch             (iter 2 quantitative)
+            //   force_pivot_to_sheet             (iter >8, deep audit)
+            let pob_calc_emitted_already =
+                messages_contain_tool_use(&messages, super::tools::POB_CALC);
+            let force_mechanic_fetch = iterations == 2
+                && !force_finalize
+                && has_active_build
+                && matches!(
+                    turn_mode,
+                    super::turn_classifier::TurnMode::BriefMechanic { quantitative: true }
+                )
+                && !pob_calc_emitted_already
+                && !last_user_was_interview_submission;
             // 16384 leaves headroom for both Anthropic extended-thinking
             // and DeepSeek-reasoner, which can burn 2-3K tokens before
             // the user-visible draft starts. Whisperer audit (2026-05-09)
@@ -703,6 +727,12 @@ impl AnthropicClient {
                         "type": "tool",
                         "name": crate::llm::sheet_tools::SHEET_FINALIZE_REQUEST,
                     });
+                } else if force_mechanic_fetch {
+                    // Sprint v6 Reco 6 — see priority chain above.
+                    body["tool_choice"] = json!({
+                        "type": "tool",
+                        "name": super::tools::POB_CALC,
+                    });
                 } else if force_pivot_to_sheet {
                     body["tool_choice"] = json!({
                         "type": "tool",
@@ -711,9 +741,7 @@ impl AnthropicClient {
                 }
             }
 
-            let resp = self
-                .post_with_retry(&body, &deltas)
-                .await?;
+            let resp = self.post_with_retry(&body, &deltas).await?;
 
             if !resp.status().is_success() {
                 let status = resp.status();
@@ -736,10 +764,8 @@ impl AnthropicClient {
             // next iteration if the prior assistant turn's thinking content
             // isn't passed back verbatim. We capture text + signature here
             // so the replay block is byte-for-byte identical.
-            let mut current_thinking_index: std::collections::BTreeMap<
-                usize,
-                ThinkingCapture,
-            > = std::collections::BTreeMap::new();
+            let mut current_thinking_index: std::collections::BTreeMap<usize, ThinkingCapture> =
+                std::collections::BTreeMap::new();
             let mut thinking_open: bool = false;
             let mut stop_reason: Option<String> = None;
 
@@ -785,11 +811,7 @@ impl AnthropicClient {
                             if data_line.is_none() {
                                 data_line = Some(d.to_string());
                             } else {
-                                data_line = Some(format!(
-                                    "{}{}",
-                                    data_line.unwrap_or_default(),
-                                    d
-                                ));
+                                data_line = Some(format!("{}{}", data_line.unwrap_or_default(), d));
                             }
                         }
                     }
@@ -809,15 +831,9 @@ impl AnthropicClient {
 
                     match event_type {
                         "content_block_start" => {
-                            let idx = v
-                                .get("index")
-                                .and_then(|i| i.as_u64())
-                                .unwrap_or(0) as usize;
+                            let idx = v.get("index").and_then(|i| i.as_u64()).unwrap_or(0) as usize;
                             let block = v.get("content_block").cloned().unwrap_or(Value::Null);
-                            let btype = block
-                                .get("type")
-                                .and_then(|t| t.as_str())
-                                .unwrap_or("");
+                            let btype = block.get("type").and_then(|t| t.as_str()).unwrap_or("");
                             if btype == "tool_use" {
                                 let name = block
                                     .get("name")
@@ -870,24 +886,18 @@ impl AnthropicClient {
                             }
                         }
                         "content_block_delta" => {
-                            let idx = v
-                                .get("index")
-                                .and_then(|i| i.as_u64())
-                                .unwrap_or(0) as usize;
+                            let idx = v.get("index").and_then(|i| i.as_u64()).unwrap_or(0) as usize;
                             if let Some(d) = v.get("delta") {
-                                let dtype =
-                                    d.get("type").and_then(|t| t.as_str()).unwrap_or("");
+                                let dtype = d.get("type").and_then(|t| t.as_str()).unwrap_or("");
                                 match dtype {
                                     "text_delta" => {
-                                        if let Some(text) =
-                                            d.get("text").and_then(|t| t.as_str())
-                                        {
+                                        if let Some(text) = d.get("text").and_then(|t| t.as_str()) {
                                             current_text_index_text
                                                 .entry(idx)
                                                 .or_default()
                                                 .push_str(text);
-                                            let _ = deltas
-                                                .send(LlmDelta::TextDelta(text.to_string()));
+                                            let _ =
+                                                deltas.send(LlmDelta::TextDelta(text.to_string()));
                                         }
                                     }
                                     "thinking_delta" => {
@@ -899,8 +909,7 @@ impl AnthropicClient {
                                                 thinking_open = true;
                                             }
                                             if let Some(ThinkingCapture::Open {
-                                                text: buf,
-                                                ..
+                                                text: buf, ..
                                             }) = current_thinking_index.get_mut(&idx)
                                             {
                                                 buf.push_str(text);
@@ -914,8 +923,7 @@ impl AnthropicClient {
                                             d.get("signature").and_then(|s| s.as_str())
                                         {
                                             if let Some(ThinkingCapture::Open {
-                                                signature,
-                                                ..
+                                                signature, ..
                                             }) = current_thinking_index.get_mut(&idx)
                                             {
                                                 signature.push_str(sig);
@@ -923,13 +931,10 @@ impl AnthropicClient {
                                         }
                                     }
                                     "input_json_delta" => {
-                                        if let Some(part) = d
-                                            .get("partial_json")
-                                            .and_then(|p| p.as_str())
+                                        if let Some(part) =
+                                            d.get("partial_json").and_then(|p| p.as_str())
                                         {
-                                            if let Some(t) =
-                                                current_tool_index.get_mut(&idx)
-                                            {
+                                            if let Some(t) = current_tool_index.get_mut(&idx) {
                                                 t.input_json.push_str(part);
                                                 // TODO (live tool input streaming):
                                                 // every few chunks, attempt a
@@ -952,10 +957,7 @@ impl AnthropicClient {
                             }
                         }
                         "content_block_stop" => {
-                            let idx = v
-                                .get("index")
-                                .and_then(|i| i.as_u64())
-                                .unwrap_or(0) as usize;
+                            let idx = v.get("index").and_then(|i| i.as_u64()).unwrap_or(0) as usize;
                             if let Some(t) = current_tool_index.remove(&idx) {
                                 if let Ok(input_value) =
                                     serde_json::from_str::<Value>(&t.input_json)
@@ -1096,7 +1098,8 @@ impl AnthropicClient {
                     } else {
                         serde_json::from_str(&tu.input_json).unwrap_or(json!({}))
                     };
-                    let (result, status) = match dispatch(&tu.name, &parsed_input, &tool_ctx).await {
+                    let (result, status) = match dispatch(&tu.name, &parsed_input, &tool_ctx).await
+                    {
                         Ok(s) => (s, ToolStatus::Done),
                         Err(e) => (
                             // `{:#}` walks the anyhow context chain (outermost
@@ -1162,29 +1165,44 @@ impl AnthropicClient {
             let _ = deltas.send(LlmDelta::Usage(total_usage));
         }
 
+        // Sprint v6 Phase 6 — provider-agnostic post-stream pipeline.
+        // Counts fetch tool calls (for the verifier gate), runs the live
+        // response-lint and emits `LintFindings`, parses the tool
+        // transcript for the verifier. Centralised in `post_stream.rs` so
+        // `ollama.rs` can reuse it without duplicating the logic.
+        let outcome = super::post_stream::run_shared_post_stream(
+            &messages,
+            &full_assistant,
+            &deltas,
+            "anthropic",
+        );
+
         // Sprint G — conditional verifier. Runs only if `should_verify` matches
         // (numbers / sources / cached / banned phrases / identity / patch /
         // tier). Latency budget: ~2s typical; never propagates errors back to
         // the user (a failing verifier is a `pass_with_note`, not a failure).
-        //
-        // Sprint value-purge — count fetch tool calls this turn so the
-        // verifier gate can fire on unsourced numeric claims. A draft
-        // citing a number without any wiki/repoe/pob_calc/web_fetch this
-        // turn is recalled from training data (the references no longer
-        // carry values), which is precisely what we need to catch.
-        let fetch_tool_calls = count_fetch_tool_calls(&messages);
         let verified_text = self
-            .run_verifier_pass(&history, &full_assistant, fetch_tool_calls, &deltas)
+            .run_verifier_pass(
+                &history,
+                &full_assistant,
+                outcome.fetch_tool_calls,
+                &outcome.transcript,
+                &deltas,
+            )
             .await;
         let _ = deltas.send(LlmDelta::MessageEnd);
         Ok(verified_text)
     }
 
-    async fn run_verifier_pass(
+    /// Sprint v6 Phase 6 — promoted from `async fn` private to `pub(crate)
+    /// async fn` so `ollama.rs` can re-use the Anthropic-backed CoVe
+    /// verifier when `ANTHROPIC_API_KEY` is set in the environment.
+    pub(crate) async fn run_verifier_pass(
         &self,
         history: &[ChatMessage],
         draft: &str,
         fetch_tool_calls: usize,
+        transcript: &super::verifier::ToolTranscript,
         deltas: &mpsc::UnboundedSender<LlmDelta>,
     ) -> String {
         // Cheap heuristic gate first — most drafts skip the API call entirely.
@@ -1216,6 +1234,7 @@ impl AnthropicClient {
             last_user,
             draft,
             fetch_tool_calls,
+            Some(transcript),
         )
         .await;
         let result = match verdict.status {
@@ -1306,8 +1325,8 @@ impl AnthropicClient {
                 .send()
                 .await?;
             let status = resp.status();
-            let retryable = status == reqwest::StatusCode::TOO_MANY_REQUESTS
-                || status.is_server_error();
+            let retryable =
+                status == reqwest::StatusCode::TOO_MANY_REQUESTS || status.is_server_error();
             if !retryable || attempt >= MAX_ATTEMPTS {
                 return Ok(resp);
             }
@@ -1369,48 +1388,10 @@ fn accumulate_usage(total: &mut super::UsageStats, usage: &Value) {
     }
 }
 
-/// Sprint `value-purge` — count fetch-tool calls across the entire
-/// assembled `messages` array. Used by the verifier gate to decide whether
-/// numeric claims in the draft are sourced (≥1 fetch this turn) or recalled
-/// from training data (0 fetches). Counts every assistant `tool_use` block
-/// whose `name` is one of the value-source tools — `wiki_parse`,
-/// `wiki_cargo`, `wiki_search`, `wiki_synergies`, `repoe_lookup`,
-/// `pob_calc`, or `web_fetch`. Tools that DON'T ground a numeric claim
-/// (`get_active_build`, `read_internal_reference`, `kb_search`, sheet
-/// tools) are excluded — citing the build payload is already covered by
-/// the dedicated [Build data directive] in the system prompt.
-fn count_fetch_tool_calls(messages: &[Value]) -> usize {
-    const FETCH_TOOLS: &[&str] = &[
-        "wiki_parse",
-        "wiki_cargo",
-        "wiki_search",
-        "wiki_synergies",
-        "repoe_lookup",
-        "pob_calc",
-        "web_fetch",
-    ];
-    let mut count = 0usize;
-    for m in messages {
-        if m.get("role").and_then(|v| v.as_str()) != Some("assistant") {
-            continue;
-        }
-        let Some(content) = m.get("content").and_then(|c| c.as_array()) else {
-            continue;
-        };
-        for block in content {
-            if block.get("type").and_then(|t| t.as_str()) != Some("tool_use") {
-                continue;
-            }
-            let Some(name) = block.get("name").and_then(|n| n.as_str()) else {
-                continue;
-            };
-            if FETCH_TOOLS.contains(&name) {
-                count += 1;
-            }
-        }
-    }
-    count
-}
+// Sprint v6 Phase 6 — `count_fetch_tool_calls`, `segments_from_messages`,
+// and `build_partial_lint_run` were moved to `crates/bestel-core/src/llm/
+// post_stream.rs` so `ollama.rs` can reuse the live response-lint and
+// `ToolTranscript` construction without duplicating logic.
 
 /// Walk the assembled `messages` array and return true when ANY assistant
 /// message has already produced a `tool_use` block whose `name` equals the
@@ -1587,21 +1568,15 @@ mod tests {
     #[test]
     fn mechanic_question_ignores_pure_narrative() {
         assert!(!is_mechanic_question("my build feels bad"));
-        assert!(!is_mechanic_question(
-            "should i go pathfinder or trickster"
-        ));
+        assert!(!is_mechanic_question("should i go pathfinder or trickster"));
         assert!(!is_mechanic_question("how was your day exile"));
         assert!(!is_mechanic_question(""));
     }
 
     #[test]
     fn mechanic_question_detects_value_entities() {
-        assert!(is_mechanic_question(
-            "tell me about bone helmet"
-        ));
+        assert!(is_mechanic_question("tell me about bone helmet"));
         assert!(is_mechanic_question("voices unique jewel"));
-        assert!(is_mechanic_question(
-            "i'm running righteous fire chieftain"
-        ));
+        assert!(is_mechanic_question("i'm running righteous fire chieftain"));
     }
 }

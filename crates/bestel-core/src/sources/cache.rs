@@ -50,10 +50,7 @@ impl FileCache {
         let path = self.path_for(key);
         let raw = fs::read(&path).await.ok()?;
         let entry: CacheEntry<T> = serde_json::from_slice(&raw).ok()?;
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .ok()?
-            .as_secs();
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).ok()?.as_secs();
         if now.saturating_sub(entry.stamp) >= ttl.as_secs() {
             return None;
         }
@@ -108,8 +105,14 @@ mod tests {
     #[tokio::test]
     async fn miss_then_hit() {
         let cache = FileCache::new(tmpdir());
-        assert!(cache.get::<Probe>("k1", Duration::from_secs(60)).await.is_none());
-        let v = Probe { n: 7, s: "wraeclast".into() };
+        assert!(cache
+            .get::<Probe>("k1", Duration::from_secs(60))
+            .await
+            .is_none());
+        let v = Probe {
+            n: 7,
+            s: "wraeclast".into(),
+        };
         cache.put("k1", &v).await.unwrap();
         let hit: Probe = cache.get("k1", Duration::from_secs(60)).await.unwrap();
         assert_eq!(hit, v);
@@ -118,8 +121,14 @@ mod tests {
     #[tokio::test]
     async fn expired_returns_none() {
         let cache = FileCache::new(tmpdir());
-        let v = Probe { n: 1, s: "x".into() };
+        let v = Probe {
+            n: 1,
+            s: "x".into(),
+        };
         cache.put("k2", &v).await.unwrap();
-        assert!(cache.get::<Probe>("k2", Duration::from_secs(0)).await.is_none());
+        assert!(cache
+            .get::<Probe>("k2", Duration::from_secs(0))
+            .await
+            .is_none());
     }
 }

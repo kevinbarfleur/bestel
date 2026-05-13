@@ -49,8 +49,8 @@ struct RuleState {
 impl PoeHttpClient {
     pub fn new() -> Result<Self> {
         let version = env!("CARGO_PKG_VERSION");
-        let contact = std::env::var("BESTEL_CONTACT_EMAIL")
-            .unwrap_or_else(|_| DEFAULT_CONTACT.to_string());
+        let contact =
+            std::env::var("BESTEL_CONTACT_EMAIL").unwrap_or_else(|_| DEFAULT_CONTACT.to_string());
         let ua = format!("OAuth {CLIENT_ID}/{version} (contact: {contact})");
         let inner = reqwest::Client::builder()
             .timeout(Duration::from_secs(20))
@@ -87,7 +87,9 @@ impl PoeHttpClient {
         body: &serde_json::Value,
         rule: &str,
     ) -> Result<T> {
-        let resp = self.send(Method::POST, url, Some(body.clone()), rule).await?;
+        let resp = self
+            .send(Method::POST, url, Some(body.clone()), rule)
+            .await?;
         let status = resp.status();
         let text = resp
             .text()

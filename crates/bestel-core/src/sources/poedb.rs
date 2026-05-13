@@ -121,8 +121,7 @@ impl PoedbClient {
 
     pub async fn craft_bench(&self) -> Result<CraftBenchTable> {
         let (url, html) = self.fetch_cached("Crafting_Bench").await?;
-        let rows = parse_craft_bench_table(&html)
-            .with_context(|| "parse Crafting_Bench page")?;
+        let rows = parse_craft_bench_table(&html).with_context(|| "parse Crafting_Bench page")?;
         Ok(CraftBenchTable {
             source_url: url,
             rows,
@@ -249,9 +248,7 @@ fn parse_gem_progression(doc: &Html) -> Result<Vec<SkillGemLevel>> {
             continue;
         }
         let col_idx = |needle: &str| -> Option<usize> {
-            headers
-                .iter()
-                .position(|h| h.eq_ignore_ascii_case(needle))
+            headers.iter().position(|h| h.eq_ignore_ascii_case(needle))
         };
         let i_str = col_idx("Str");
         let i_dex = col_idx("Dex");
@@ -278,9 +275,15 @@ fn parse_gem_progression(doc: &Html) -> Result<Vec<SkillGemLevel>> {
             out.push(SkillGemLevel {
                 level,
                 requires_level,
-                str_req: i_str.and_then(|i| cells.get(i)).and_then(|s| s.parse().ok()),
-                dex_req: i_dex.and_then(|i| cells.get(i)).and_then(|s| s.parse().ok()),
-                int_req: i_int.and_then(|i| cells.get(i)).and_then(|s| s.parse().ok()),
+                str_req: i_str
+                    .and_then(|i| cells.get(i))
+                    .and_then(|s| s.parse().ok()),
+                dex_req: i_dex
+                    .and_then(|i| cells.get(i))
+                    .and_then(|s| s.parse().ok()),
+                int_req: i_int
+                    .and_then(|i| cells.get(i))
+                    .and_then(|s| s.parse().ok()),
                 mana_cost: i_mana
                     .and_then(|i| cells.get(i))
                     .map(|s| s.to_string())
@@ -342,7 +345,8 @@ fn parse_gem_version_history(doc: &Html) -> Vec<VersionEntry> {
         return table
             .select(&body_row_sel)
             .filter_map(|tr| {
-                let cells: Vec<String> = tr.select(&cell_sel).map(|td| normalize_text(&td)).collect();
+                let cells: Vec<String> =
+                    tr.select(&cell_sel).map(|td| normalize_text(&td)).collect();
                 if cells.len() < 2 {
                     return None;
                 }
@@ -406,7 +410,10 @@ mod tests {
         let rows = parse_craft_bench_table(html).unwrap();
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].mod_text, "Two Sockets");
-        assert_eq!(rows[0].item_classes, vec!["One Hand Melee", "Two Hand Melee", "Body Armour"]);
+        assert_eq!(
+            rows[0].item_classes,
+            vec!["One Hand Melee", "Two Hand Melee", "Body Armour"]
+        );
         assert_eq!(rows[0].unlock, "The Grand Arena");
         assert_eq!(rows[1].mod_text, "+10 to Strength");
         assert_eq!(rows[1].item_classes, vec!["Rings"]);
@@ -435,7 +442,8 @@ mod tests {
 
     #[test]
     fn parse_craft_bench_returns_err_when_no_matching_table() {
-        let html = r#"<html><body><table><thead><tr><th>foo</th></tr></thead></table></body></html>"#;
+        let html =
+            r#"<html><body><table><thead><tr><th>foo</th></tr></thead></table></body></html>"#;
         assert!(parse_craft_bench_table(html).is_err());
     }
 
@@ -482,10 +490,10 @@ mod tests {
         "#;
         let doc = Html::parse_document(html);
         let im = parse_gem_implicits(&doc);
-        assert_eq!(im, vec![
-            "Deals 120% of Base Attack Damage",
-            "30% less Attack Speed",
-        ]);
+        assert_eq!(
+            im,
+            vec!["Deals 120% of Base Attack Damage", "30% less Attack Speed",]
+        );
     }
 
     #[test]

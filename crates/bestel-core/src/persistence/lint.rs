@@ -29,11 +29,7 @@ pub fn insert_lint_finding(db: &Db, row: &LintFindingRow) -> Result<()> {
 /// Replace all lint findings for `run_id` and re-insert from the report.
 /// Idempotent — re-running the linter on the same run leaves the SQLite
 /// table in sync with the latest sidecar JSON.
-pub fn replace_lint_findings(
-    db: &Db,
-    run_id: &str,
-    rows: &[LintFindingRow],
-) -> Result<()> {
+pub fn replace_lint_findings(db: &Db, run_id: &str, rows: &[LintFindingRow]) -> Result<()> {
     db.with_conn_rusqlite(|c| {
         let tx = c.unchecked_transaction()?;
         tx.execute(

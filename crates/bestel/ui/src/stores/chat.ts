@@ -184,6 +184,10 @@ export interface ChatMessageVm {
    * provider so anything pinned here surfaces as a `ModeChip` above the
    * message. Persisted via the chat-history autosave watch. */
   mode?: AssistantTurnMode | null;
+  /** Sprint v6 Phase 2 — live response-lint findings for this turn (warn-only).
+   * Populated when the backend emits `LlmDelta::LintFindings`. Surfaced in
+   * the dev panel for data collection; Phase 3 will use them to gate. */
+  lintFindings?: import('../api/types').LintFindingDto[];
 }
 
 const segId = () => `s_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -662,6 +666,20 @@ export const useChatStore = defineStore('chat', () => {
     });
   }
 
+  /** Sprint v6 Phase 2 — pin the response-lint findings onto the current
+   * assistant message. Warn-only: no segment is appended, no banner is
+   * shown; the dev panel and tracking telemetry consume the field. Called
+   * exactly once per turn (the linter runs after the draft and emits a
+   * single `lint_findings` delta). */
+  function setLintFindings(
+    findings: import('../api/types').LintFindingDto[],
+  ) {
+    const a = currentAssistant.value;
+    if (!a) return;
+    a.lastDeltaAt = Date.now();
+    a.lintFindings = findings;
+  }
+
   /** Anchor the `✓ Build Sheet saved` banner on the current assistant
    *  message after `sheet_finalize_request` reports success. Idempotent —
    *  if the agent somehow emits two finalize events in one turn, the
@@ -1017,6 +1035,7 @@ export const useChatStore = defineStore('chat', () => {
     sheetInterviewOpen,
     sheetFinalized,
     verifierResult,
+    setLintFindings,
     setAssistantMode,
     updateSheetInterviewState,
     findLatestSheetInterviewSegment,

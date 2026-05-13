@@ -227,6 +227,7 @@ pub fn has_unsourced_numeric_claim(text: &str, fetch_tool_calls: usize) -> bool 
     // draft with zero fetches this turn, the number is almost certainly
     // recalled from training data.
     const MECHANIC_KEYWORDS: &[&str] = &[
+        // Sprint G baseline keywords.
         "suppression",
         "mitigate",
         "mitigation",
@@ -251,6 +252,45 @@ pub fn has_unsourced_numeric_claim(text: &str, fetch_tool_calls: usize) -> bool 
         "crit chance",
         "crit multi",
         "crit multiplier",
+        // Sprint v6 (Reco 3) — build-behavioral magnitude claims. English-only;
+        // translation extensions ship as plug-in packages later.
+        // Mana axis.
+        "mana sustain",
+        "out of mana",
+        "oom",
+        "mana drain",
+        "drain",
+        // Survival axis.
+        "sustain",
+        "survive",
+        "tank",
+        "tankiness",
+        "squishy",
+        "fragile",
+        // Burst / one-shot.
+        "oneshot",
+        "one-shot",
+        "one shot",
+        // Death predicates.
+        "gets killed",
+        "dies to",
+        "killed by",
+        "gets deleted",
+        // Crowd control.
+        "frozen",
+        "stunned",
+        "chilled",
+        "shocked",
+        "freeze threshold",
+        "stun threshold",
+        // Recovery verbs (`recovery` is above; these are conjugations).
+        "recovers",
+        "recover from",
+        "recoup",
+        // Resist caps.
+        "capped",
+        "uncapped",
+        "over-capped",
     ];
     if MECHANIC_KEYWORDS.iter().any(|kw| lower.contains(kw)) {
         return true;
@@ -305,11 +345,7 @@ fn has_magnitude_pattern(lower: &str) -> bool {
             }
             if j < len {
                 let unit = bytes[j];
-                if unit == b'%'
-                    || unit == b's'
-                    || unit == b'm'
-                    || unit == b'x'
-                {
+                if unit == b'%' || unit == b's' || unit == b'm' || unit == b'x' {
                     return true;
                 }
             }
@@ -323,10 +359,29 @@ fn has_magnitude_pattern(lower: &str) -> bool {
 
 fn has_numerical_claim(lower: &str) -> bool {
     let units = [
-        "dps", "ehp", "max-hit", "max hit", "armour", "evasion", "ms ttk",
-        " k life", " k es", " hp", " life pool", " ehp pool", "pinnacle",
-        "uber", " divines", " divine", " chaos ", " div ", " divines/h",
-        " divines per hour", "per hour", " divs", " mirror",
+        "dps",
+        "ehp",
+        "max-hit",
+        "max hit",
+        "armour",
+        "evasion",
+        "ms ttk",
+        " k life",
+        " k es",
+        " hp",
+        " life pool",
+        " ehp pool",
+        "pinnacle",
+        "uber",
+        " divines",
+        " divine",
+        " chaos ",
+        " div ",
+        " divines/h",
+        " divines per hour",
+        "per hour",
+        " divs",
+        " mirror",
     ];
     let has_unit = units.iter().any(|u| lower.contains(u));
     if !has_unit {
@@ -477,6 +532,543 @@ struct RawVerdictList {
 }
 
 // ============================================================================
+// Sprint v6 Phase 4 — turn tool transcript.
+// ============================================================================
+//
+// The CoVe verifier previously only saw the local KB (a static snapshot of
+// conceptual mechanics). Build-specific claims like "you oom in 2s" or
+// "your max hit is 4k" can't be checked against the KB — the authoritative
+// source for those claims is the live `get_active_build` payload and any
+// `pob_calc` echo from the same turn. Without that signal the judge had
+// no choice but to mark them `unverified`, which the reviser then ignored.
+//
+// `ToolTranscript` parses the in-flight `messages` array (the same struct
+// passed to the Anthropic API) and groups successful tool_result blocks
+// by tool name. The judge prompt receives a topic-scoped slice via
+// [`ToolTranscript::extract_relevant_fields`], and the pipeline can
+// promote an `unverified` claim to `wrong` when the topic is build-
+// specific AND the transcript carried a build payload AND the judge
+// couldn't ground the claim. Backward-compat: passing `None` everywhere
+// collapses to the Sprint G + value-purge behavior.
+
+/// Maximum bytes of tool-output text included per claim in the judge
+/// prompt. Keeps the batched judge call under ~8K tokens even with 7
+/// claims × tool slices + KB evidence.
+const MAX_TOOL_EVIDENCE_PER_CLAIM_CHARS: usize = 1500;
+
+/// Maximum bytes stored per wiki / kb tool excerpt in the transcript.
+/// Anthropic returns long text blobs; we cap at parse time to avoid the
+/// promotion step ballooning the prompt regardless of relevance.
+const MAX_TEXT_EXCERPT_CHARS: usize = 2000;
+
+#[derive(Debug, Default, Clone)]
+pub struct ToolTranscript {
+    /// Most recent successful `get_active_build` payload (overwritten on
+    /// repeat calls). `None` when no build is loaded or the call failed.
+    pub active_build: Option<Value>,
+    /// All `pob_calc` returns from the turn, in call order. Each entry is
+    /// the parsed JSON response (or a fallback `Value::String` of the raw
+    /// text when JSON parse fails).
+    pub pob_calcs: Vec<Value>,
+    /// `wiki_parse` + `wiki_cargo` + `wiki_search` + `wiki_synergies`
+    /// excerpts, each capped at [`MAX_TEXT_EXCERPT_CHARS`].
+    pub wiki_excerpts: Vec<String>,
+    /// `repoe_lookup` + `repoe_mods_for_base` parsed rows.
+    pub repoe_rows: Vec<Value>,
+    /// `kb_search` text hits in retrieval order, each capped.
+    pub kb_hits: Vec<String>,
+}
+
+impl ToolTranscript {
+    /// Parse a turn's tool transcript from the Anthropic-shaped messages
+    /// array. Walks every assistant `tool_use` and pairs it with the
+    /// matching user `tool_result` by `id`. Failed or in-flight tool calls
+    /// are skipped silently so a transcript built mid-turn never contains
+    /// partial data.
+    pub fn from_messages(messages: &[Value]) -> Self {
+        let mut by_id: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        for m in messages {
+            let role = m.get("role").and_then(|v| v.as_str()).unwrap_or("");
+            let Some(content) = m.get("content").and_then(|c| c.as_array()) else {
+                continue;
+            };
+            if role == "assistant" {
+                for block in content {
+                    if block.get("type").and_then(|t| t.as_str()) != Some("tool_use") {
+                        continue;
+                    }
+                    let id = block
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    let name = block
+                        .get("name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    if !id.is_empty() && !name.is_empty() {
+                        by_id.insert(id, name);
+                    }
+                }
+            }
+        }
+
+        let mut out = ToolTranscript::default();
+        for m in messages {
+            let role = m.get("role").and_then(|v| v.as_str()).unwrap_or("");
+            if role != "user" {
+                continue;
+            }
+            let Some(content) = m.get("content").and_then(|c| c.as_array()) else {
+                continue;
+            };
+            for block in content {
+                if block.get("type").and_then(|t| t.as_str()) != Some("tool_result") {
+                    continue;
+                }
+                let is_error = block
+                    .get("is_error")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                if is_error {
+                    continue;
+                }
+                let id = block
+                    .get("tool_use_id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                let Some(name) = by_id.get(id) else {
+                    continue;
+                };
+                let text = tool_result_text(block);
+                if text.trim().is_empty() {
+                    continue;
+                }
+                out.absorb(name, &text);
+            }
+        }
+        out
+    }
+
+    /// Returns true when ANY tool data is present. Cheap pre-check used
+    /// by the pipeline to decide whether to bother including a
+    /// `TURN TOOL OUTPUTS:` block in the composed evidence.
+    pub fn has_any_data(&self) -> bool {
+        self.active_build.is_some()
+            || !self.pob_calcs.is_empty()
+            || !self.wiki_excerpts.is_empty()
+            || !self.repoe_rows.is_empty()
+            || !self.kb_hits.is_empty()
+    }
+
+    /// Topic-scoped field extractor. Returns a compact string the judge
+    /// prompt can ingest verbatim. Mapping by topic keyword:
+    ///   - mana / oom / drain / out of mana → mana stats + reservations
+    ///   - life / hp / sustain / regen / leech → life stats + recovery
+    ///   - es / energy shield / shield → ES stats
+    ///   - resist / res / capped / uncapped → resists block
+    ///   - one-shot / oneshot / max hit / squishy → max-hit + EHP
+    ///   - damage / dps / crit / hit → average_damage + crit_chance
+    ///   - tree / cluster / jewel / passive / keystone → tree + jewels
+    ///   - skill / gem / link → main_skill + skill_groups
+    ///   - item / unique / gear → defining items
+    ///   - (fallback) → head dump of key_stats + defences (capped)
+    ///
+    /// The returned string is empty when no relevant slice could be
+    /// extracted. Cap: [`MAX_TOOL_EVIDENCE_PER_CLAIM_CHARS`] bytes.
+    pub fn extract_relevant_fields(&self, claim_topic: &str) -> String {
+        if !self.has_any_data() {
+            return String::new();
+        }
+        let topic = claim_topic.to_lowercase();
+        let mut buf = String::new();
+        if let Some(build) = self.active_build.as_ref() {
+            extract_build_slice(build, &topic, &mut buf);
+        }
+        for calc in &self.pob_calcs {
+            extract_pob_calc_slice(calc, &topic, &mut buf);
+        }
+        for row in &self.repoe_rows {
+            if topic_matches_any(
+                &topic,
+                &[
+                    "mod", "tier", "implicit", "explicit", "affix", "prefix", "suffix",
+                ],
+            ) {
+                push_with_label(&mut buf, "REPOE", row);
+            }
+        }
+        for excerpt in &self.wiki_excerpts {
+            if buf.len() >= MAX_TOOL_EVIDENCE_PER_CLAIM_CHARS {
+                break;
+            }
+            // Wiki excerpts are off-topic noise unless the topic is generic
+            // enough — skip when we already have build-side data. The
+            // judge's KB-evidence block carries wiki sources separately.
+            let _ = excerpt;
+        }
+        for hit in &self.kb_hits {
+            if buf.len() >= MAX_TOOL_EVIDENCE_PER_CLAIM_CHARS {
+                break;
+            }
+            let _ = hit;
+        }
+        truncate_inplace(&mut buf, MAX_TOOL_EVIDENCE_PER_CLAIM_CHARS);
+        buf
+    }
+
+    fn absorb(&mut self, tool_name: &str, raw_content: &str) {
+        match tool_name {
+            "get_active_build" => {
+                if let Ok(v) = serde_json::from_str::<Value>(raw_content) {
+                    self.active_build = Some(v);
+                }
+            }
+            "pob_calc" => {
+                let v = serde_json::from_str::<Value>(raw_content).unwrap_or_else(|_| {
+                    Value::String(truncate(raw_content, MAX_TEXT_EXCERPT_CHARS))
+                });
+                self.pob_calcs.push(v);
+            }
+            "wiki_parse" | "wiki_cargo" | "wiki_search" | "wiki_synergies" => {
+                self.wiki_excerpts
+                    .push(truncate(raw_content, MAX_TEXT_EXCERPT_CHARS));
+            }
+            "repoe_lookup" | "repoe_mods_for_base" | "poedb_lookup" => {
+                if let Ok(v) = serde_json::from_str::<Value>(raw_content) {
+                    self.repoe_rows.push(v);
+                }
+            }
+            "kb_search" => {
+                self.kb_hits
+                    .push(truncate(raw_content, MAX_TEXT_EXCERPT_CHARS));
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Returns true when a claim's topic refers to a build-specific quantity
+/// that, in principle, can be checked against `get_active_build` and / or
+/// `pob_calc`. Used by the promotion step: an `unverified` verdict on a
+/// build-specific topic, when a build payload WAS available this turn,
+/// indicates the model invented a number despite having the means to
+/// verify — promote to `wrong`.
+pub fn is_build_specific_topic(topic: &str) -> bool {
+    let lower = topic.to_lowercase();
+    const BUILD_KEYWORDS: &[&str] = &[
+        // Player-stat keywords.
+        "mana",
+        "oom",
+        "drain",
+        "life",
+        "hp",
+        "energy shield",
+        "spirit",
+        "resist",
+        " res ",
+        "fire res",
+        "cold res",
+        "lightning res",
+        "chaos res",
+        "capped",
+        "uncapped",
+        "overcapped",
+        "evasion",
+        "armour",
+        "armor",
+        "max hit",
+        "ehp",
+        "one-shot",
+        "oneshot",
+        "one shot",
+        "sustain",
+        "leech",
+        "regen",
+        "recovery",
+        "block",
+        "spell suppression",
+        "phys reduction",
+        "physical reduction",
+        // DPS-ish.
+        "dps",
+        "damage",
+        "crit chance",
+        "crit multi",
+        "attack speed",
+        "cast speed",
+        "movement speed",
+        // Build identity.
+        "passive tree",
+        "ascendancy",
+        "keystone",
+        "cluster jewel",
+        "your build",
+        "your character",
+        "this build",
+    ];
+    BUILD_KEYWORDS.iter().any(|k| lower.contains(k))
+}
+
+fn tool_result_text(block: &Value) -> String {
+    block
+        .get("content")
+        .map(|v| {
+            if let Some(s) = v.as_str() {
+                s.to_string()
+            } else if let Some(arr) = v.as_array() {
+                arr.iter()
+                    .filter_map(|b| {
+                        b.get("type")
+                            .and_then(|t| t.as_str())
+                            .filter(|t| *t == "text")
+                            .and_then(|_| b.get("text").and_then(|t| t.as_str()))
+                            .map(|s| s.to_string())
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            } else {
+                v.to_string()
+            }
+        })
+        .unwrap_or_default()
+}
+
+fn extract_build_slice(build: &Value, topic: &str, buf: &mut String) {
+    // The `get_active_build` payload is a structured JSON: top-level
+    // {identity, key_stats, defences, tree, jewels, skill_groups, items,
+    // …}. We slice by topic keyword. Each slice path is best-effort —
+    // missing keys produce no output rather than failing.
+    let want_mana = topic_matches_any(
+        topic,
+        &["mana", "oom", "drain", "out of mana", "reservation"],
+    );
+    let want_life = topic_matches_any(
+        topic,
+        &[
+            "life", "hp", "sustain", "leech", "regen", "recovery", "recoup",
+        ],
+    );
+    let want_es = topic_matches_any(topic, &["energy shield", " es ", "shield"]);
+    let want_resists = topic_matches_any(
+        topic,
+        &["resist", " res ", "capped", "uncapped", "overcapped"],
+    );
+    let want_maxhit = topic_matches_any(
+        topic,
+        &[
+            "one-shot", "oneshot", "one shot", "max hit", "ehp", "squishy", "fragile",
+        ],
+    );
+    let want_damage = topic_matches_any(
+        topic,
+        &[
+            "dps",
+            "damage",
+            "crit",
+            "hit chance",
+            "attack speed",
+            "cast speed",
+        ],
+    );
+    let want_tree = topic_matches_any(
+        topic,
+        &[
+            "tree",
+            "passive",
+            "ascendancy",
+            "keystone",
+            "notable",
+            "cluster",
+            "jewel",
+        ],
+    );
+    let want_skill = topic_matches_any(topic, &["skill", "gem", "link", "support"]);
+    let want_items = topic_matches_any(
+        topic,
+        &["item", "unique", "gear", "weapon", "armour", "armor"],
+    );
+
+    let any_specific = want_mana
+        || want_life
+        || want_es
+        || want_resists
+        || want_maxhit
+        || want_damage
+        || want_tree
+        || want_skill
+        || want_items;
+
+    let key_stats = build.get("key_stats");
+    let defences = build.get("defences");
+
+    if want_mana {
+        if let Some(ks) = key_stats {
+            push_filtered_fields(buf, "MANA", ks, &["mana", "reservation"]);
+        }
+    }
+    if want_life {
+        if let Some(d) = defences {
+            push_filtered_fields(
+                buf,
+                "LIFE",
+                d,
+                &["life", "leech", "regen", "recoup", "recovery"],
+            );
+        }
+    }
+    if want_es {
+        if let Some(d) = defences {
+            push_filtered_fields(buf, "ENERGY_SHIELD", d, &["energy_shield", "es_"]);
+        }
+    }
+    if want_resists {
+        if let Some(d) = defences {
+            push_filtered_fields(
+                buf,
+                "RESISTS",
+                d,
+                &["fire", "cold", "lightning", "chaos", "res", "cap"],
+            );
+        }
+    }
+    if want_maxhit {
+        if let Some(d) = defences {
+            push_filtered_fields(
+                buf,
+                "DEFENCE",
+                d,
+                &["max_hit", "ehp", "armour", "evasion", "block"],
+            );
+        }
+    }
+    if want_damage {
+        if let Some(ks) = key_stats {
+            push_filtered_fields(
+                buf,
+                "DAMAGE",
+                ks,
+                &["damage", "dps", "crit", "speed", "hit", "average"],
+            );
+        }
+    }
+    if want_tree {
+        if let Some(t) = build.get("tree") {
+            push_with_label(buf, "TREE", t);
+        }
+        if let Some(j) = build.get("jewels") {
+            push_with_label(buf, "JEWELS", j);
+        }
+        if let Some(ks) = build.get("allocated_keystones") {
+            push_with_label(buf, "KEYSTONES", ks);
+        }
+        if let Some(n) = build.get("allocated_notables") {
+            push_with_label(buf, "NOTABLES", n);
+        }
+    }
+    if want_skill {
+        if let Some(g) = build.get("skill_groups") {
+            push_with_label(buf, "SKILL_GROUPS", g);
+        }
+        if let Some(ms) = build.get("main_skill") {
+            push_with_label(buf, "MAIN_SKILL", ms);
+        }
+    }
+    if want_items {
+        if let Some(i) = build.get("items") {
+            push_with_label(buf, "ITEMS", i);
+        }
+    }
+
+    // Fallback head-dump when no slice matched: hand the judge a compact
+    // identity + key_stats + defences view so it can at least sanity-check
+    // simple claims. Capped tight so generic topics don't dominate the
+    // prompt. Skipped entirely when at least one specific slice fired.
+    if !any_specific {
+        if let Some(id) = build.get("identity") {
+            push_with_label(buf, "IDENTITY", id);
+        }
+        if let Some(ks) = key_stats {
+            push_with_label(buf, "KEY_STATS", ks);
+        }
+        if let Some(d) = defences {
+            push_with_label(buf, "DEFENCES", d);
+        }
+    }
+}
+
+fn extract_pob_calc_slice(calc: &Value, topic: &str, buf: &mut String) {
+    // pob_calc returns the same key_stats / defences shape (echo of
+    // PathOfBuilding's StatsTable). Reuse the same slicer for symmetry —
+    // any matching topic pulls the same field set as get_active_build.
+    extract_build_slice(calc, topic, buf);
+}
+
+fn topic_matches_any(topic: &str, needles: &[&str]) -> bool {
+    needles.iter().any(|n| topic.contains(n))
+}
+
+fn push_filtered_fields(buf: &mut String, label: &str, obj: &Value, key_substrings: &[&str]) {
+    let Some(map) = obj.as_object() else {
+        return;
+    };
+    let mut found: Vec<(String, &Value)> = Vec::new();
+    for (k, v) in map {
+        let kl = k.to_lowercase();
+        if key_substrings.iter().any(|s| kl.contains(s)) {
+            found.push((k.clone(), v));
+        }
+    }
+    if found.is_empty() {
+        return;
+    }
+    if !buf.is_empty() {
+        buf.push('\n');
+    }
+    buf.push_str(label);
+    buf.push_str(": ");
+    let mut first = true;
+    for (k, v) in found {
+        if !first {
+            buf.push_str(", ");
+        }
+        first = false;
+        buf.push_str(&k);
+        buf.push('=');
+        buf.push_str(&v.to_string());
+    }
+}
+
+fn push_with_label(buf: &mut String, label: &str, v: &Value) {
+    if !buf.is_empty() {
+        buf.push('\n');
+    }
+    buf.push_str(label);
+    buf.push_str(": ");
+    let s = v.to_string();
+    // Cap aggressively to avoid one section dominating the budget.
+    if s.len() > 600 {
+        buf.push_str(&s[..600]);
+        buf.push('…');
+    } else {
+        buf.push_str(&s);
+    }
+}
+
+fn truncate_inplace(s: &mut String, max: usize) {
+    if s.len() <= max {
+        return;
+    }
+    let mut end = max;
+    while !s.is_char_boundary(end) && end > 0 {
+        end -= 1;
+    }
+    s.truncate(end);
+    s.push('…');
+}
+
+// ============================================================================
 // Helpers.
 // ============================================================================
 
@@ -555,9 +1147,8 @@ async fn post_one(
 }
 
 fn build_extract_body(model: &str, draft: &str) -> Value {
-    let user_payload = format!(
-        "DRAFT:\n{draft}\n\n---\n\nReturn ONLY the JSON object {{\"claims\": [...]}}."
-    );
+    let user_payload =
+        format!("DRAFT:\n{draft}\n\n---\n\nReturn ONLY the JSON object {{\"claims\": [...]}}.");
     json!({
         "model": model,
         "max_tokens": 1024,
@@ -628,15 +1219,30 @@ async fn extract_claims(
     Ok(claims)
 }
 
-/// Pulls per-claim evidence from the local KB. KB hits are concatenated
-/// (best score first) then truncated to [`MAX_EVIDENCE_PER_CLAIM_CHARS`].
-/// If the KB is unavailable (not bootstrapped, ungetheable), every claim
-/// returns empty evidence — they'll be classified `unverified` downstream.
-async fn gather_evidence(claims: Vec<RawClaim>) -> Vec<ClaimWithEvidence> {
+/// Pulls per-claim evidence from the local KB AND (Sprint v6 Phase 4) the
+/// turn's tool transcript. KB hits give conceptual context; the transcript
+/// gives build-specific ground truth. When `transcript` is `Some`, the
+/// composed evidence string is:
+///
+/// ```text
+/// TURN TOOL OUTPUTS:
+/// {topic-scoped slice of active_build + pob_calcs + repoe rows}
+///
+/// KB EVIDENCE (background):
+/// {kb hits, best score first}
+/// ```
+///
+/// Either block is omitted when its source produced nothing. When
+/// `transcript` is `None`, the behavior is bit-for-bit identical to the
+/// Sprint G pipeline — only the KB block ships.
+async fn gather_evidence(
+    claims: Vec<RawClaim>,
+    transcript: Option<&ToolTranscript>,
+) -> Vec<ClaimWithEvidence> {
     let kb = crate::llm::kb::global();
     let mut out: Vec<ClaimWithEvidence> = Vec::with_capacity(claims.len());
     for c in claims {
-        let evidence = if let Some(kb) = kb.as_ref() {
+        let kb_text = if let Some(kb) = kb.as_ref() {
             match kb.search(&c.topic, KB_TOP_K_PER_CLAIM, None, &[]).await {
                 Ok(hits) if !hits.is_empty() => {
                     let mut acc = String::new();
@@ -658,9 +1264,28 @@ async fn gather_evidence(claims: Vec<RawClaim>) -> Vec<ClaimWithEvidence> {
         } else {
             String::new()
         };
+        let tool_text = transcript
+            .map(|t| t.extract_relevant_fields(&c.topic))
+            .unwrap_or_default();
+        let evidence = compose_evidence(&tool_text, &kb_text);
         out.push(ClaimWithEvidence { claim: c, evidence });
     }
     out
+}
+
+/// Combine tool transcript slice + KB hits into a single evidence string
+/// the judge prompt formats verbatim. The order matters: tool outputs
+/// come first because they're authoritative for build-specific topics;
+/// KB sits as background.
+fn compose_evidence(tool_text: &str, kb_text: &str) -> String {
+    match (tool_text.trim().is_empty(), kb_text.trim().is_empty()) {
+        (true, true) => String::new(),
+        (false, true) => format!("TURN TOOL OUTPUTS:\n{tool_text}"),
+        (true, false) => kb_text.to_string(),
+        (false, false) => {
+            format!("TURN TOOL OUTPUTS:\n{tool_text}\n\nKB EVIDENCE (background):\n{kb_text}")
+        }
+    }
 }
 
 async fn judge_batch(
@@ -726,6 +1351,7 @@ pub async fn verify_factored(
     user_question: &str,
     draft: &str,
     fetch_tool_calls: usize,
+    transcript: Option<&ToolTranscript>,
 ) -> VerifierVerdict {
     if draft.trim().is_empty() {
         return VerifierVerdict::pass_with_note("draft was empty; nothing to verify");
@@ -741,12 +1367,13 @@ pub async fn verify_factored(
         api_version,
         model,
         draft,
+        transcript,
     );
     match tokio::time::timeout(Duration::from_secs(HARD_TIMEOUT_SECS), pipeline).await {
         Ok(verdict) => verdict,
-        Err(_) => VerifierVerdict::pass_with_note(format!(
-            "verifier hard timeout > {HARD_TIMEOUT_SECS}s"
-        )),
+        Err(_) => {
+            VerifierVerdict::pass_with_note(format!("verifier hard timeout > {HARD_TIMEOUT_SECS}s"))
+        }
     }
 }
 
@@ -757,6 +1384,7 @@ async fn run_pipeline(
     api_version: &str,
     model: &str,
     draft: &str,
+    transcript: Option<&ToolTranscript>,
 ) -> VerifierVerdict {
     let started = std::time::Instant::now();
 
@@ -795,8 +1423,11 @@ async fn run_pipeline(
 
     // Phase 2 — gather evidence (deterministic, no LLM call, infallible).
     let evidence_started = std::time::Instant::now();
-    let with_evidence = gather_evidence(claims).await;
-    let with_evidence_count = with_evidence.iter().filter(|c| !c.evidence.is_empty()).count();
+    let with_evidence = gather_evidence(claims, transcript).await;
+    let with_evidence_count = with_evidence
+        .iter()
+        .filter(|c| !c.evidence.is_empty())
+        .count();
     tracing::info!(
         target: "bestel.verifier",
         phase = "evidence",
@@ -808,36 +1439,28 @@ async fn run_pipeline(
 
     // Phase 3 — judge batch.
     let judge_started = std::time::Instant::now();
-    let raw_verdicts = match judge_batch(
-        http,
-        endpoint,
-        api_key,
-        api_version,
-        model,
-        &with_evidence,
-    )
-    .await
-    {
-        Ok(v) => {
-            tracing::info!(
-                target: "bestel.verifier",
-                phase = "judge",
-                verdicts = v.len(),
-                latency_ms = judge_started.elapsed().as_millis() as u64,
-                "judge completed"
-            );
-            v
-        }
-        Err(e) => {
-            tracing::warn!(
-                target: "bestel.verifier",
-                phase = "judge",
-                error = %e,
-                "judge failed"
-            );
-            return VerifierVerdict::pass_with_note(format!("judge failed: {e}"));
-        }
-    };
+    let raw_verdicts =
+        match judge_batch(http, endpoint, api_key, api_version, model, &with_evidence).await {
+            Ok(v) => {
+                tracing::info!(
+                    target: "bestel.verifier",
+                    phase = "judge",
+                    verdicts = v.len(),
+                    latency_ms = judge_started.elapsed().as_millis() as u64,
+                    "judge completed"
+                );
+                v
+            }
+            Err(e) => {
+                tracing::warn!(
+                    target: "bestel.verifier",
+                    phase = "judge",
+                    error = %e,
+                    "judge failed"
+                );
+                return VerifierVerdict::pass_with_note(format!("judge failed: {e}"));
+            }
+        };
 
     // Compose the audit list. Pad / truncate verdicts to match claims —
     // the judge sometimes drops or duplicates entries; default missing
@@ -863,6 +1486,43 @@ async fn run_pipeline(
             evidence_excerpt: ce.evidence.clone(),
             correction,
         });
+    }
+
+    // Sprint v6 Phase 4 — promotion of `unverified` to `wrong`.
+    //
+    // When a claim's topic is build-specific (mana / life / max hit / etc.),
+    // AND the turn carried a successful `get_active_build` payload, AND the
+    // judge couldn't find evidence (status=unverified), then the model
+    // either invented the claim despite having the means to verify it, or
+    // misread its own tool output. Either way it's a `wrong` for the
+    // reviser to clean up. We synthesize a redacting correction so the
+    // revise step has a fix to splice in. KB-only topics (skill mechanics,
+    // game rules) keep their `unverified` status because the absence of
+    // KB evidence is normal for niche queries.
+    let transcript_has_build = transcript
+        .map(|t| t.active_build.is_some())
+        .unwrap_or(false);
+    if transcript_has_build {
+        let mut promoted = 0usize;
+        for c in claims_checked.iter_mut() {
+            if matches!(c.status, ClaimStatus::Unverified) && is_build_specific_topic(&c.topic) {
+                c.status = ClaimStatus::Wrong;
+                if c.correction.is_none() {
+                    c.correction = Some(
+                        "I should not make this specific claim without grounding it in your build's actual numbers — drop the claim or hedge it explicitly.".to_string(),
+                    );
+                }
+                promoted += 1;
+            }
+        }
+        if promoted > 0 {
+            tracing::info!(
+                target: "bestel.verifier",
+                phase = "promote",
+                promoted,
+                "promoted unverified build-specific claims to wrong"
+            );
+        }
     }
 
     let wrongs: Vec<(usize, &VerifiedClaim)> = claims_checked
@@ -892,49 +1552,40 @@ async fn run_pipeline(
 
     // Phase 4 — revise (only when ≥ 1 wrong).
     let revise_started = std::time::Instant::now();
-    let rewrite = match revise_draft(
-        http,
-        endpoint,
-        api_key,
-        api_version,
-        model,
-        draft,
-        &wrongs,
-    )
-    .await
-    {
-        Ok(r) => {
-            tracing::info!(
-                target: "bestel.verifier",
-                phase = "revise",
-                corrections = corrections_count,
-                rewrite_chars = r.len(),
-                latency_ms = revise_started.elapsed().as_millis() as u64,
-                "revise completed"
-            );
-            r
-        }
-        Err(e) => {
-            tracing::warn!(
-                target: "bestel.verifier",
-                phase = "revise",
-                corrections = corrections_count,
-                error = %e,
-                "revise failed, falling back to pass"
-            );
-            return VerifierVerdict {
-                status: VerdictStatus::Pass,
-                findings: vec![VerifierFinding {
-                    category: "revise_failed".into(),
-                    issue: e.to_string(),
-                    evidence: String::new(),
-                }],
-                minimal_rewrite: String::new(),
-                claims_checked,
-                corrections_count,
-            };
-        }
-    };
+    let rewrite =
+        match revise_draft(http, endpoint, api_key, api_version, model, draft, &wrongs).await {
+            Ok(r) => {
+                tracing::info!(
+                    target: "bestel.verifier",
+                    phase = "revise",
+                    corrections = corrections_count,
+                    rewrite_chars = r.len(),
+                    latency_ms = revise_started.elapsed().as_millis() as u64,
+                    "revise completed"
+                );
+                r
+            }
+            Err(e) => {
+                tracing::warn!(
+                    target: "bestel.verifier",
+                    phase = "revise",
+                    corrections = corrections_count,
+                    error = %e,
+                    "revise failed, falling back to pass"
+                );
+                return VerifierVerdict {
+                    status: VerdictStatus::Pass,
+                    findings: vec![VerifierFinding {
+                        category: "revise_failed".into(),
+                        issue: e.to_string(),
+                        evidence: String::new(),
+                    }],
+                    minimal_rewrite: String::new(),
+                    claims_checked,
+                    corrections_count,
+                };
+            }
+        };
 
     let findings: Vec<VerifierFinding> = claims_checked
         .iter()
@@ -998,7 +1649,12 @@ mod tests {
 
     #[test]
     fn should_verify_fires_on_banned_phrases() {
-        for s in ["your real DPS is", "actual DPS", "live engine result", "verified DPS"] {
+        for s in [
+            "your real DPS is",
+            "actual DPS",
+            "live engine result",
+            "verified DPS",
+        ] {
             assert!(should_verify(s), "expected trigger on: {s}");
         }
     }
@@ -1017,7 +1673,9 @@ mod tests {
 
     #[test]
     fn should_verify_fires_on_patch_version() {
-        assert!(should_verify("This was changed in PoE2 0.5 — atlas towers replace scarabs."));
+        assert!(should_verify(
+            "This was changed in PoE2 0.5 — atlas towers replace scarabs."
+        ));
         assert!(should_verify("Settlers 3.25 patch added recombinators."));
     }
 
@@ -1075,6 +1733,83 @@ mod tests {
         ));
     }
 
+    // Sprint v6 (Reco 3) — broadened mechanic keyword coverage. Each test
+    // pairs a build-behavioral keyword from the new groups with a magnitude
+    // (`%`, `s`, `m`, `x`) that the existing `has_magnitude_pattern` accepts.
+
+    #[test]
+    fn unsourced_numeric_claim_fires_on_oom_keyword() {
+        assert!(has_unsourced_numeric_claim(
+            "You oom in 2 seconds during long boss fights.",
+            0,
+        ));
+    }
+
+    #[test]
+    fn unsourced_numeric_claim_fires_on_drain_keyword() {
+        assert!(has_unsourced_numeric_claim(
+            "Mana drain hits 80% of your pool every 3s.",
+            0,
+        ));
+    }
+
+    #[test]
+    fn unsourced_numeric_claim_fires_on_survival_keywords() {
+        assert!(has_unsourced_numeric_claim(
+            "You survive 5s of sustained DoT before going down.",
+            0,
+        ));
+        assert!(has_unsourced_numeric_claim(
+            "Squishy with under 4000 max hit — you die in 1s.",
+            0,
+        ));
+    }
+
+    #[test]
+    fn unsourced_numeric_claim_fires_on_one_shot_keyword() {
+        assert!(has_unsourced_numeric_claim(
+            "Sirus pizza one-shots you at 30s downtime.",
+            0,
+        ));
+    }
+
+    #[test]
+    fn unsourced_numeric_claim_fires_on_cc_keyword() {
+        assert!(has_unsourced_numeric_claim(
+            "You get frozen for 4s on hit without freeze threshold.",
+            0,
+        ));
+    }
+
+    #[test]
+    fn unsourced_numeric_claim_fires_on_capped_keyword() {
+        assert!(has_unsourced_numeric_claim(
+            "Your resists capped at 75% across the board.",
+            0,
+        ));
+    }
+
+    #[test]
+    fn unsourced_numeric_claim_fires_on_death_predicate() {
+        assert!(has_unsourced_numeric_claim(
+            "You die in 2s — gets killed by every map boss.",
+            0,
+        ));
+    }
+
+    #[test]
+    fn unsourced_numeric_claim_silent_on_new_keywords_with_fetch() {
+        // Same broadened triggers — should NOT fire when a fetch happened.
+        assert!(!has_unsourced_numeric_claim(
+            "You oom in 2 seconds during long boss fights.",
+            1,
+        ));
+        assert!(!has_unsourced_numeric_claim(
+            "Your resists capped at 75%.",
+            2,
+        ));
+    }
+
     #[test]
     fn should_verify_with_context_or_logic() {
         // Existing trigger still fires regardless of fetch count.
@@ -1121,7 +1856,10 @@ mod tests {
     #[test]
     fn claim_status_lowercase_serde() {
         assert_eq!(serde_json::to_string(&ClaimStatus::Ok).unwrap(), "\"ok\"");
-        assert_eq!(serde_json::to_string(&ClaimStatus::Wrong).unwrap(), "\"wrong\"");
+        assert_eq!(
+            serde_json::to_string(&ClaimStatus::Wrong).unwrap(),
+            "\"wrong\""
+        );
         assert_eq!(
             serde_json::to_string(&ClaimStatus::Unverified).unwrap(),
             "\"unverified\""
@@ -1178,5 +1916,205 @@ mod tests {
     fn strip_code_fences_handles_plain_block() {
         let s = "```\n{\"a\":1}\n```";
         assert_eq!(strip_code_fences(s), "{\"a\":1}");
+    }
+
+    // ============================================================================
+    // Sprint v6 Phase 4 — ToolTranscript / promotion tests.
+    // ============================================================================
+
+    fn build_msgs_with_active_build(payload: &Value) -> Vec<Value> {
+        // Anthropic-shaped messages: one assistant turn requesting
+        // `get_active_build`, one user turn returning the tool_result.
+        vec![
+            json!({
+                "role": "assistant",
+                "content": [{
+                    "type": "tool_use",
+                    "id": "toolu_1",
+                    "name": "get_active_build",
+                    "input": {}
+                }]
+            }),
+            json!({
+                "role": "user",
+                "content": [{
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_1",
+                    "content": payload.to_string()
+                }]
+            }),
+        ]
+    }
+
+    #[test]
+    fn tool_transcript_parses_get_active_build_payload() {
+        let payload = json!({
+            "identity": {"class": "Inquisitor", "level": 92},
+            "key_stats": {"mana": 1234, "mana_unreserved": 234, "average_damage": 50000},
+            "defences": {"life": 4500, "fire_res": 75, "fire_res_cap": 75, "max_hit_fire": 4200}
+        });
+        let msgs = build_msgs_with_active_build(&payload);
+        let t = ToolTranscript::from_messages(&msgs);
+        assert!(t.active_build.is_some());
+        assert!(t.pob_calcs.is_empty());
+        assert!(t.has_any_data());
+    }
+
+    #[test]
+    fn tool_transcript_skips_error_results() {
+        let msgs = vec![
+            json!({
+                "role": "assistant",
+                "content": [{
+                    "type": "tool_use",
+                    "id": "toolu_err",
+                    "name": "get_active_build",
+                    "input": {}
+                }]
+            }),
+            json!({
+                "role": "user",
+                "content": [{
+                    "type": "tool_result",
+                    "tool_use_id": "toolu_err",
+                    "is_error": true,
+                    "content": "build not loaded"
+                }]
+            }),
+        ];
+        let t = ToolTranscript::from_messages(&msgs);
+        assert!(t.active_build.is_none());
+        assert!(!t.has_any_data());
+    }
+
+    #[test]
+    fn tool_transcript_collects_multiple_pob_calcs() {
+        let msgs = vec![
+            json!({"role":"assistant","content":[{"type":"tool_use","id":"a","name":"pob_calc","input":{}}]}),
+            json!({"role":"user","content":[{"type":"tool_result","tool_use_id":"a","content": "{\"key_stats\":{\"average_damage\":1000}}"}]}),
+            json!({"role":"assistant","content":[{"type":"tool_use","id":"b","name":"pob_calc","input":{}}]}),
+            json!({"role":"user","content":[{"type":"tool_result","tool_use_id":"b","content": "{\"key_stats\":{\"average_damage\":2000}}"}]}),
+        ];
+        let t = ToolTranscript::from_messages(&msgs);
+        assert_eq!(t.pob_calcs.len(), 2);
+    }
+
+    #[test]
+    fn extract_relevant_fields_mana_topic_pulls_mana_only() {
+        let payload = json!({
+            "identity": {"class": "X"},
+            "key_stats": {
+                "mana": 1234,
+                "mana_unreserved": 234,
+                "mana_reservation_total_percent": 60,
+                "average_damage": 50000,
+                "crit_chance": 95.0
+            },
+            "defences": {"life": 4500, "fire_res": 75}
+        });
+        let t = ToolTranscript::from_messages(&build_msgs_with_active_build(&payload));
+        let s = t.extract_relevant_fields("mana sustain");
+        assert!(s.contains("MANA"), "expected MANA section in: {s}");
+        assert!(s.contains("mana"), "expected mana key in: {s}");
+        assert!(
+            !s.contains("crit_chance"),
+            "should NOT include unrelated key crit_chance: {s}"
+        );
+    }
+
+    #[test]
+    fn extract_relevant_fields_resist_topic_pulls_resists_only() {
+        let payload = json!({
+            "key_stats": {"mana": 100},
+            "defences": {
+                "fire_res": 75,
+                "fire_res_cap": 75,
+                "cold_res": 75,
+                "chaos_res": -42,
+                "max_hit_fire": 4200,
+                "life": 4500
+            }
+        });
+        let t = ToolTranscript::from_messages(&build_msgs_with_active_build(&payload));
+        let s = t.extract_relevant_fields("fire resistance capped");
+        assert!(s.contains("RESISTS"));
+        assert!(s.contains("fire_res"));
+        // life is not a resist key — should not appear.
+        assert!(!s.contains("life"));
+    }
+
+    #[test]
+    fn extract_relevant_fields_unknown_topic_uses_fallback_head_dump() {
+        let payload = json!({
+            "identity": {"class": "Templar"},
+            "key_stats": {"mana": 100},
+            "defences": {"life": 5000}
+        });
+        let t = ToolTranscript::from_messages(&build_msgs_with_active_build(&payload));
+        let s = t.extract_relevant_fields("some niche claim");
+        assert!(s.contains("IDENTITY") || s.contains("KEY_STATS") || s.contains("DEFENCES"));
+    }
+
+    #[test]
+    fn extract_relevant_fields_empty_transcript_returns_empty() {
+        let t = ToolTranscript::default();
+        assert!(t.extract_relevant_fields("mana").is_empty());
+    }
+
+    #[test]
+    fn is_build_specific_topic_fires_on_player_stats() {
+        for topic in [
+            "mana sustain in long fights",
+            "fire resistance",
+            "max hit on fire damage",
+            "life leech rate",
+            "your build dps",
+            "passive tree options",
+            "spell suppression cap",
+        ] {
+            assert!(
+                is_build_specific_topic(topic),
+                "expected build-specific for: {topic}"
+            );
+        }
+    }
+
+    #[test]
+    fn is_build_specific_topic_skips_game_mechanics() {
+        for topic in [
+            "Brutality support gem behavior",
+            "Spectres list",
+            "Maven mechanic explanation",
+            "Awakened Cast on Crit support",
+        ] {
+            assert!(
+                !is_build_specific_topic(topic),
+                "expected game-mechanic for: {topic}"
+            );
+        }
+    }
+
+    #[test]
+    fn compose_evidence_keeps_old_shape_when_no_tool_data() {
+        // Backward-compat: when transcript is empty the evidence is just
+        // the KB text — no `TURN TOOL OUTPUTS:` wrapper.
+        let s = compose_evidence("", "Brutality grants 53% more phys.");
+        assert_eq!(s, "Brutality grants 53% more phys.");
+    }
+
+    #[test]
+    fn compose_evidence_wraps_when_both_present() {
+        let s = compose_evidence("MANA: mana=1234", "Brutality grants 53%.");
+        assert!(s.contains("TURN TOOL OUTPUTS:"));
+        assert!(s.contains("MANA: mana=1234"));
+        assert!(s.contains("KB EVIDENCE (background):"));
+        assert!(s.contains("Brutality grants 53%."));
+    }
+
+    #[test]
+    fn compose_evidence_tool_only_drops_kb_header() {
+        let s = compose_evidence("MANA: mana=1234", "");
+        assert!(s.starts_with("TURN TOOL OUTPUTS:"));
+        assert!(!s.contains("KB EVIDENCE"));
     }
 }

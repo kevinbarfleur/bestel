@@ -146,6 +146,14 @@ export function useStreaming() {
           chat.setAssistantMode(ev.mode);
           break;
         }
+        case 'lint_findings': {
+          // Sprint v6 Phase 2 — live response-lint findings (warn-only).
+          // Stored on the assistant message for the dev panel. Phase 3
+          // will turn these into a gating action; today they just feed
+          // visibility + telemetry.
+          chat.setLintFindings(ev.findings);
+          break;
+        }
       }
     });
   });

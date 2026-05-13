@@ -15,8 +15,8 @@
 //! because callers may have already parsed and lost trailing whitespace
 //! differences that don't actually change the build.
 
-use sha2::{Digest, Sha256};
 use serde_json::Value;
+use sha2::{Digest, Sha256};
 
 /// Canonicalize the inputs that constitute a build's identity and return a
 /// fingerprint string of the form `<ascendancy>:<main_skill>:<defining_uniques>`
@@ -61,7 +61,12 @@ pub fn compute_fingerprint_from_pob(pob: &crate::pob::PobBuild) -> Option<String
     let uniques: Vec<String> = pob
         .items
         .iter()
-        .filter(|i| i.rarity.as_deref().map(|r| r.eq_ignore_ascii_case("UNIQUE")).unwrap_or(false))
+        .filter(|i| {
+            i.rarity
+                .as_deref()
+                .map(|r| r.eq_ignore_ascii_case("UNIQUE"))
+                .unwrap_or(false)
+        })
         .filter_map(|i| i.name.clone())
         .collect();
     Some(compute_fingerprint(asc, skill, &uniques))
@@ -145,18 +150,12 @@ mod tests {
         let a = compute_fingerprint(
             "Inquisitor",
             "Ice Nova of Frostbolts",
-            &[
-                "Brass Dome".to_string(),
-                "Cospri's Will".to_string(),
-            ],
+            &["Brass Dome".to_string(), "Cospri's Will".to_string()],
         );
         let b = compute_fingerprint(
             "Inquisitor",
             "Ice Nova of Frostbolts",
-            &[
-                "Cospri's Will".to_string(),
-                "Brass Dome".to_string(),
-            ],
+            &["Cospri's Will".to_string(), "Brass Dome".to_string()],
         );
         assert_eq!(a, b);
     }
@@ -181,10 +180,7 @@ mod tests {
         let f = compute_fingerprint(
             "Inquisitor",
             "Ice Nova of Frostbolts",
-            &[
-                "Brass Dome".to_string(),
-                "Brass Dome".to_string(),
-            ],
+            &["Brass Dome".to_string(), "Brass Dome".to_string()],
         );
         assert!(f.ends_with(":brass dome"));
     }
@@ -200,7 +196,10 @@ mod tests {
     #[test]
     fn normalize_whitespace_collapses_runs() {
         assert_eq!(normalize_whitespace("a  b\nc\t\td"), "a b c d");
-        assert_eq!(normalize_whitespace("  leading   middle trailing  "), "leading middle trailing");
+        assert_eq!(
+            normalize_whitespace("  leading   middle trailing  "),
+            "leading middle trailing"
+        );
         assert_eq!(normalize_whitespace(""), "");
     }
 
@@ -236,8 +235,10 @@ Heavy Belt</Item>
     <ItemSet id="1"><Slot name="Belt" itemId="1"/></ItemSet>
   </Items>
 </PathOfBuilding>"#;
-        let a = crate::pob::parser::parse_bytes(xml_a, std::path::PathBuf::from("same.xml")).unwrap();
-        let b = crate::pob::parser::parse_bytes(xml_b, std::path::PathBuf::from("same.xml")).unwrap();
+        let a =
+            crate::pob::parser::parse_bytes(xml_a, std::path::PathBuf::from("same.xml")).unwrap();
+        let b =
+            crate::pob::parser::parse_bytes(xml_b, std::path::PathBuf::from("same.xml")).unwrap();
         // Direct serialization differs because Vec<PobItem> order differs.
         assert_ne!(
             serde_json::to_string(&a).unwrap(),
@@ -273,8 +274,10 @@ Praetor Crown
 +120 to maximum Life</Item>
   </Items>
 </PathOfBuilding>"#;
-        let a = crate::pob::parser::parse_bytes(xml_a, std::path::PathBuf::from("same.xml")).unwrap();
-        let b = crate::pob::parser::parse_bytes(xml_b, std::path::PathBuf::from("same.xml")).unwrap();
+        let a =
+            crate::pob::parser::parse_bytes(xml_a, std::path::PathBuf::from("same.xml")).unwrap();
+        let b =
+            crate::pob::parser::parse_bytes(xml_b, std::path::PathBuf::from("same.xml")).unwrap();
         assert_ne!(
             compute_pob_hash_from_build(&a),
             compute_pob_hash_from_build(&b)

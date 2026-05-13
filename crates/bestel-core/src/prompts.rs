@@ -40,82 +40,289 @@ const FILE_LOCAL_ADDENDUM: &str = "local_addendum.md";
 /// into the system prompt.
 pub const BUNDLED_REFERENCES: &[(&str, &str)] = &[
     // Core numbered conceptual docs.
-    ("00_README.md", include_str!("../../../prompts/references/00_README.md")),
-    ("01_source_policy.md", include_str!("../../../prompts/references/01_source_policy.md")),
-    ("02_arpg_foundations.md", include_str!("../../../prompts/references/02_arpg_foundations.md")),
-    ("03_ggg_design_philosophy.md", include_str!("../../../prompts/references/03_ggg_design_philosophy.md")),
-    ("04_game_model_poe1_poe2.md", include_str!("../../../prompts/references/04_game_model_poe1_poe2.md")),
-    ("05_build_reasoning_framework.md", include_str!("../../../prompts/references/05_build_reasoning_framework.md")),
-    ("06_character_stats_and_mechanics.md", include_str!("../../../prompts/references/06_character_stats_and_mechanics.md")),
-    ("07_offence_damage_scaling.md", include_str!("../../../prompts/references/07_offence_damage_scaling.md")),
-    ("08_defence_recovery_survivability.md", include_str!("../../../prompts/references/08_defence_recovery_survivability.md")),
-    ("09_itemisation_crafting.md", include_str!("../../../prompts/references/09_itemisation_crafting.md")),
-    ("10_skills_gems_passives_ascendancies.md", include_str!("../../../prompts/references/10_skills_gems_passives_ascendancies.md")),
-    ("11_endgame_economy_trade_leagues.md", include_str!("../../../prompts/references/11_endgame_economy_trade_leagues.md")),
-    ("12_vocabulary_glossary.md", include_str!("../../../prompts/references/12_vocabulary_glossary.md")),
-    ("13_retrieval_playbooks.md", include_str!("../../../prompts/references/13_retrieval_playbooks.md")),
-    ("14_validation_and_failure_modes.md", include_str!("../../../prompts/references/14_validation_and_failure_modes.md")),
-    ("15_source_registry.md", include_str!("../../../prompts/references/15_source_registry.md")),
-    ("16_build_methodology_and_creators.md", include_str!("../../../prompts/references/16_build_methodology_and_creators.md")),
-    ("17_build_archetype_taxonomy.md", include_str!("../../../prompts/references/17_build_archetype_taxonomy.md")),
-    ("18_atlas_and_endgame_mechanics.md", include_str!("../../../prompts/references/18_atlas_and_endgame_mechanics.md")),
-    ("19_combat_movement_animation.md", include_str!("../../../prompts/references/19_combat_movement_animation.md")),
-    ("20_item_basetype_identity.md", include_str!("../../../prompts/references/20_item_basetype_identity.md")),
-    ("21_currency_and_barter_taxonomy.md", include_str!("../../../prompts/references/21_currency_and_barter_taxonomy.md")),
-    ("22_trade_etiquette_and_scams.md", include_str!("../../../prompts/references/22_trade_etiquette_and_scams.md")),
-    ("23_hardcore_softcore_ssf_mode_differences.md", include_str!("../../../prompts/references/23_hardcore_softcore_ssf_mode_differences.md")),
-    ("24_patch_history_meta.md", include_str!("../../../prompts/references/24_patch_history_meta.md")),
-    ("25_pob_engine_integration.md", include_str!("../../../prompts/references/25_pob_engine_integration.md")),
-    ("26_validation_and_self_correction.md", include_str!("../../../prompts/references/26_validation_and_self_correction.md")),
+    (
+        "00_README.md",
+        include_str!("../../../prompts/references/00_README.md"),
+    ),
+    (
+        "01_source_policy.md",
+        include_str!("../../../prompts/references/01_source_policy.md"),
+    ),
+    (
+        "02_arpg_foundations.md",
+        include_str!("../../../prompts/references/02_arpg_foundations.md"),
+    ),
+    (
+        "03_ggg_design_philosophy.md",
+        include_str!("../../../prompts/references/03_ggg_design_philosophy.md"),
+    ),
+    (
+        "04_game_model_poe1_poe2.md",
+        include_str!("../../../prompts/references/04_game_model_poe1_poe2.md"),
+    ),
+    (
+        "05_build_reasoning_framework.md",
+        include_str!("../../../prompts/references/05_build_reasoning_framework.md"),
+    ),
+    (
+        "06_character_stats_and_mechanics.md",
+        include_str!("../../../prompts/references/06_character_stats_and_mechanics.md"),
+    ),
+    (
+        "07_offence_damage_scaling.md",
+        include_str!("../../../prompts/references/07_offence_damage_scaling.md"),
+    ),
+    (
+        "08_defence_recovery_survivability.md",
+        include_str!("../../../prompts/references/08_defence_recovery_survivability.md"),
+    ),
+    (
+        "09_itemisation_crafting.md",
+        include_str!("../../../prompts/references/09_itemisation_crafting.md"),
+    ),
+    (
+        "10_skills_gems_passives_ascendancies.md",
+        include_str!("../../../prompts/references/10_skills_gems_passives_ascendancies.md"),
+    ),
+    (
+        "11_endgame_economy_trade_leagues.md",
+        include_str!("../../../prompts/references/11_endgame_economy_trade_leagues.md"),
+    ),
+    (
+        "12_vocabulary_glossary.md",
+        include_str!("../../../prompts/references/12_vocabulary_glossary.md"),
+    ),
+    (
+        "13_retrieval_playbooks.md",
+        include_str!("../../../prompts/references/13_retrieval_playbooks.md"),
+    ),
+    (
+        "14_validation_and_failure_modes.md",
+        include_str!("../../../prompts/references/14_validation_and_failure_modes.md"),
+    ),
+    (
+        "15_source_registry.md",
+        include_str!("../../../prompts/references/15_source_registry.md"),
+    ),
+    (
+        "16_build_methodology_and_creators.md",
+        include_str!("../../../prompts/references/16_build_methodology_and_creators.md"),
+    ),
+    (
+        "17_build_archetype_taxonomy.md",
+        include_str!("../../../prompts/references/17_build_archetype_taxonomy.md"),
+    ),
+    (
+        "18_atlas_and_endgame_mechanics.md",
+        include_str!("../../../prompts/references/18_atlas_and_endgame_mechanics.md"),
+    ),
+    (
+        "19_combat_movement_animation.md",
+        include_str!("../../../prompts/references/19_combat_movement_animation.md"),
+    ),
+    (
+        "20_item_basetype_identity.md",
+        include_str!("../../../prompts/references/20_item_basetype_identity.md"),
+    ),
+    (
+        "21_currency_and_barter_taxonomy.md",
+        include_str!("../../../prompts/references/21_currency_and_barter_taxonomy.md"),
+    ),
+    (
+        "22_trade_etiquette_and_scams.md",
+        include_str!("../../../prompts/references/22_trade_etiquette_and_scams.md"),
+    ),
+    (
+        "23_hardcore_softcore_ssf_mode_differences.md",
+        include_str!("../../../prompts/references/23_hardcore_softcore_ssf_mode_differences.md"),
+    ),
+    (
+        "24_patch_history_meta.md",
+        include_str!("../../../prompts/references/24_patch_history_meta.md"),
+    ),
+    (
+        "25_pob_engine_integration.md",
+        include_str!("../../../prompts/references/25_pob_engine_integration.md"),
+    ),
+    (
+        "26_validation_and_self_correction.md",
+        include_str!("../../../prompts/references/26_validation_and_self_correction.md"),
+    ),
     // Sprint B runtime extension — output contracts, failure policy, tripwires, panel grammar, mode examples.
-    ("27_response_contracts.md", include_str!("../../../prompts/references/27_response_contracts.md")),
-    ("28_tool_failure_policy.md", include_str!("../../../prompts/references/28_tool_failure_policy.md")),
-    ("29_known_mechanics_tripwires.md", include_str!("../../../prompts/references/29_known_mechanics_tripwires.md")),
-    ("30_panel_marker_grammar.md", include_str!("../../../prompts/references/30_panel_marker_grammar.md")),
-    ("31_answer_mode_examples.md", include_str!("../../../prompts/references/31_answer_mode_examples.md")),
+    (
+        "27_response_contracts.md",
+        include_str!("../../../prompts/references/27_response_contracts.md"),
+    ),
+    (
+        "28_tool_failure_policy.md",
+        include_str!("../../../prompts/references/28_tool_failure_policy.md"),
+    ),
+    (
+        "29_known_mechanics_tripwires.md",
+        include_str!("../../../prompts/references/29_known_mechanics_tripwires.md"),
+    ),
+    (
+        "30_panel_marker_grammar.md",
+        include_str!("../../../prompts/references/30_panel_marker_grammar.md"),
+    ),
+    (
+        "31_answer_mode_examples.md",
+        include_str!("../../../prompts/references/31_answer_mode_examples.md"),
+    ),
     // Build Sheets feature — when to enter the interview, the 6 fixed sections,
     // leverage-based purpose questions, finalize criteria.
-    ("32_build_sheets.md", include_str!("../../../prompts/references/32_build_sheets.md")),
+    (
+        "32_build_sheets.md",
+        include_str!("../../../prompts/references/32_build_sheets.md"),
+    ),
     // Creators registry — per-creator profiles, indexed by 00_README.
-    ("creators_registry/00_README.md", include_str!("../../../prompts/references/creators_registry/00_README.md")),
-    ("creators_registry/ben_.md", include_str!("../../../prompts/references/creators_registry/ben_.md")),
-    ("creators_registry/coconutmage.md", include_str!("../../../prompts/references/creators_registry/coconutmage.md")),
-    ("creators_registry/darthmicrotransaction.md", include_str!("../../../prompts/references/creators_registry/darthmicrotransaction.md")),
-    ("creators_registry/dslily.md", include_str!("../../../prompts/references/creators_registry/dslily.md")),
-    ("creators_registry/fubgun.md", include_str!("../../../prompts/references/creators_registry/fubgun.md")),
-    ("creators_registry/furty.md", include_str!("../../../prompts/references/creators_registry/furty.md")),
-    ("creators_registry/ghazzy.md", include_str!("../../../prompts/references/creators_registry/ghazzy.md")),
-    ("creators_registry/goratha.md", include_str!("../../../prompts/references/creators_registry/goratha.md")),
-    ("creators_registry/kobeblaubeere.md", include_str!("../../../prompts/references/creators_registry/kobeblaubeere.md")),
-    ("creators_registry/kripparrian.md", include_str!("../../../prompts/references/creators_registry/kripparrian.md")),
-    ("creators_registry/mathil.md", include_str!("../../../prompts/references/creators_registry/mathil.md")),
-    ("creators_registry/octoxy.md", include_str!("../../../prompts/references/creators_registry/octoxy.md")),
-    ("creators_registry/palsteron.md", include_str!("../../../prompts/references/creators_registry/palsteron.md")),
-    ("creators_registry/pohx.md", include_str!("../../../prompts/references/creators_registry/pohx.md")),
-    ("creators_registry/quin69.md", include_str!("../../../prompts/references/creators_registry/quin69.md")),
-    ("creators_registry/ruetoo.md", include_str!("../../../prompts/references/creators_registry/ruetoo.md")),
-    ("creators_registry/subtractem.md", include_str!("../../../prompts/references/creators_registry/subtractem.md")),
-    ("creators_registry/tripolarbear.md", include_str!("../../../prompts/references/creators_registry/tripolarbear.md")),
-    ("creators_registry/zizaran.md", include_str!("../../../prompts/references/creators_registry/zizaran.md")),
-    ("creators_registry/ziggyd.md", include_str!("../../../prompts/references/creators_registry/ziggyd.md")),
+    (
+        "creators_registry/00_README.md",
+        include_str!("../../../prompts/references/creators_registry/00_README.md"),
+    ),
+    (
+        "creators_registry/ben_.md",
+        include_str!("../../../prompts/references/creators_registry/ben_.md"),
+    ),
+    (
+        "creators_registry/coconutmage.md",
+        include_str!("../../../prompts/references/creators_registry/coconutmage.md"),
+    ),
+    (
+        "creators_registry/darthmicrotransaction.md",
+        include_str!("../../../prompts/references/creators_registry/darthmicrotransaction.md"),
+    ),
+    (
+        "creators_registry/dslily.md",
+        include_str!("../../../prompts/references/creators_registry/dslily.md"),
+    ),
+    (
+        "creators_registry/fubgun.md",
+        include_str!("../../../prompts/references/creators_registry/fubgun.md"),
+    ),
+    (
+        "creators_registry/furty.md",
+        include_str!("../../../prompts/references/creators_registry/furty.md"),
+    ),
+    (
+        "creators_registry/ghazzy.md",
+        include_str!("../../../prompts/references/creators_registry/ghazzy.md"),
+    ),
+    (
+        "creators_registry/goratha.md",
+        include_str!("../../../prompts/references/creators_registry/goratha.md"),
+    ),
+    (
+        "creators_registry/kobeblaubeere.md",
+        include_str!("../../../prompts/references/creators_registry/kobeblaubeere.md"),
+    ),
+    (
+        "creators_registry/kripparrian.md",
+        include_str!("../../../prompts/references/creators_registry/kripparrian.md"),
+    ),
+    (
+        "creators_registry/mathil.md",
+        include_str!("../../../prompts/references/creators_registry/mathil.md"),
+    ),
+    (
+        "creators_registry/octoxy.md",
+        include_str!("../../../prompts/references/creators_registry/octoxy.md"),
+    ),
+    (
+        "creators_registry/palsteron.md",
+        include_str!("../../../prompts/references/creators_registry/palsteron.md"),
+    ),
+    (
+        "creators_registry/pohx.md",
+        include_str!("../../../prompts/references/creators_registry/pohx.md"),
+    ),
+    (
+        "creators_registry/quin69.md",
+        include_str!("../../../prompts/references/creators_registry/quin69.md"),
+    ),
+    (
+        "creators_registry/ruetoo.md",
+        include_str!("../../../prompts/references/creators_registry/ruetoo.md"),
+    ),
+    (
+        "creators_registry/subtractem.md",
+        include_str!("../../../prompts/references/creators_registry/subtractem.md"),
+    ),
+    (
+        "creators_registry/tripolarbear.md",
+        include_str!("../../../prompts/references/creators_registry/tripolarbear.md"),
+    ),
+    (
+        "creators_registry/zizaran.md",
+        include_str!("../../../prompts/references/creators_registry/zizaran.md"),
+    ),
+    (
+        "creators_registry/ziggyd.md",
+        include_str!("../../../prompts/references/creators_registry/ziggyd.md"),
+    ),
     // PoE2 scaffolds — version-pinned mechanics. 0.5 stubs filled at launch.
-    ("poe2/00_version_pinning.md", include_str!("../../../prompts/references/poe2/00_version_pinning.md")),
-    ("poe2/01_spirit_economy.md", include_str!("../../../prompts/references/poe2/01_spirit_economy.md")),
-    ("poe2/02_weapon_sets.md", include_str!("../../../prompts/references/poe2/02_weapon_sets.md")),
-    ("poe2/03_trials_sekhemas_chaos.md", include_str!("../../../prompts/references/poe2/03_trials_sekhemas_chaos.md")),
-    ("poe2/04_runes_soul_cores_talismans.md", include_str!("../../../prompts/references/poe2/04_runes_soul_cores_talismans.md")),
-    ("poe2/05_atlas_mechanics_05.md", include_str!("../../../prompts/references/poe2/05_atlas_mechanics_05.md")),
-    ("poe2/06_runes_of_aldur.md", include_str!("../../../prompts/references/poe2/06_runes_of_aldur.md")),
+    (
+        "poe2/00_version_pinning.md",
+        include_str!("../../../prompts/references/poe2/00_version_pinning.md"),
+    ),
+    (
+        "poe2/01_spirit_economy.md",
+        include_str!("../../../prompts/references/poe2/01_spirit_economy.md"),
+    ),
+    (
+        "poe2/02_weapon_sets.md",
+        include_str!("../../../prompts/references/poe2/02_weapon_sets.md"),
+    ),
+    (
+        "poe2/03_trials_sekhemas_chaos.md",
+        include_str!("../../../prompts/references/poe2/03_trials_sekhemas_chaos.md"),
+    ),
+    (
+        "poe2/04_runes_soul_cores_talismans.md",
+        include_str!("../../../prompts/references/poe2/04_runes_soul_cores_talismans.md"),
+    ),
+    (
+        "poe2/05_atlas_mechanics_05.md",
+        include_str!("../../../prompts/references/poe2/05_atlas_mechanics_05.md"),
+    ),
+    (
+        "poe2/06_runes_of_aldur.md",
+        include_str!("../../../prompts/references/poe2/06_runes_of_aldur.md"),
+    ),
     // Thresholds — version-pinned numerical bars by content tier.
-    ("thresholds/red_maps.md", include_str!("../../../prompts/references/thresholds/red_maps.md")),
-    ("thresholds/pinnacle.md", include_str!("../../../prompts/references/thresholds/pinnacle.md")),
-    ("thresholds/uber_pinnacle.md", include_str!("../../../prompts/references/thresholds/uber_pinnacle.md")),
+    (
+        "thresholds/red_maps.md",
+        include_str!("../../../prompts/references/thresholds/red_maps.md"),
+    ),
+    (
+        "thresholds/pinnacle.md",
+        include_str!("../../../prompts/references/thresholds/pinnacle.md"),
+    ),
+    (
+        "thresholds/uber_pinnacle.md",
+        include_str!("../../../prompts/references/thresholds/uber_pinnacle.md"),
+    ),
     // Maxroll catalogues — author-curated article index.
-    ("maxroll/00_README.md", include_str!("../../../prompts/references/maxroll/00_README.md")),
-    ("maxroll/poe1_bosses.md", include_str!("../../../prompts/references/maxroll/poe1_bosses.md")),
-    ("maxroll/poe1_crafting.md", include_str!("../../../prompts/references/maxroll/poe1_crafting.md")),
-    ("maxroll/poe1_currency.md", include_str!("../../../prompts/references/maxroll/poe1_currency.md")),
-    ("maxroll/poe1_getting_started.md", include_str!("../../../prompts/references/maxroll/poe1_getting_started.md")),
+    (
+        "maxroll/00_README.md",
+        include_str!("../../../prompts/references/maxroll/00_README.md"),
+    ),
+    (
+        "maxroll/poe1_bosses.md",
+        include_str!("../../../prompts/references/maxroll/poe1_bosses.md"),
+    ),
+    (
+        "maxroll/poe1_crafting.md",
+        include_str!("../../../prompts/references/maxroll/poe1_crafting.md"),
+    ),
+    (
+        "maxroll/poe1_currency.md",
+        include_str!("../../../prompts/references/maxroll/poe1_currency.md"),
+    ),
+    (
+        "maxroll/poe1_getting_started.md",
+        include_str!("../../../prompts/references/maxroll/poe1_getting_started.md"),
+    ),
 ];
 
 /// Per-path mutex so concurrent `prompts_write` calls (autosave races, etc.)
@@ -283,10 +490,7 @@ fn suggest_close_paths(needle: &str, limit: usize) -> Vec<String> {
     let mut scored: Vec<(usize, &'static str)> = Vec::new();
     for (k, _) in BUNDLED_REFERENCES {
         let hay = path_tokens(k);
-        let overlap = needle_tokens
-            .iter()
-            .filter(|t| hay.contains(t))
-            .count();
+        let overlap = needle_tokens.iter().filter(|t| hay.contains(t)).count();
         if overlap > 0 {
             scored.push((overlap, *k));
         }
@@ -311,7 +515,9 @@ fn path_tokens(s: &str) -> Vec<String> {
 /// markdown file's leading `---` block. Returns `None` if the file has no
 /// frontmatter or the keys are absent.
 pub fn parse_frontmatter(content: &str) -> Option<(String, String)> {
-    let body = content.strip_prefix("---\n").or_else(|| content.strip_prefix("---\r\n"))?;
+    let body = content
+        .strip_prefix("---\n")
+        .or_else(|| content.strip_prefix("---\r\n"))?;
     let end = body
         .find("\n---\n")
         .or_else(|| body.find("\r\n---\r\n"))
@@ -670,7 +876,8 @@ pub fn list_files() -> Result<PromptTree> {
     if !always_loaded.is_empty() {
         groups.push(PromptGroup {
             label: "Always loaded".to_string(),
-            description: "Sent to the agent on every turn — voice, hard rules, tool inventory.".to_string(),
+            description: "Sent to the agent on every turn — voice, hard rules, tool inventory."
+                .to_string(),
             items: always_loaded,
         });
     }
@@ -726,7 +933,9 @@ pub fn list_files() -> Result<PromptTree> {
     if !custom.is_empty() {
         groups.push(PromptGroup {
             label: "Custom".to_string(),
-            description: "User-added .md files at the prompts root. Not loaded automatically by the agent.".to_string(),
+            description:
+                "User-added .md files at the prompts root. Not loaded automatically by the agent."
+                    .to_string(),
             items: custom,
         });
     }
@@ -806,10 +1015,7 @@ mod tests {
             sanitize_model_id("anthropic/Claude-Haiku-4-5"),
             "anthropic-claude-haiku-4-5"
         );
-        assert_eq!(
-            sanitize_model_id("openai:gpt-5"),
-            "openai-gpt-5"
-        );
+        assert_eq!(sanitize_model_id("openai:gpt-5"), "openai-gpt-5");
     }
 
     #[test]

@@ -88,8 +88,7 @@ fn load_refreshed(game: Game) -> Result<Option<StatsCatalogue>> {
     }
     let bytes = std::fs::read(&path)
         .with_context(|| format!("read refreshed trade stats {}", path.display()))?;
-    let raw_bytes = zstd::decode_all(&bytes[..])
-        .context("zstd decode refreshed trade stats")?;
+    let raw_bytes = zstd::decode_all(&bytes[..]).context("zstd decode refreshed trade stats")?;
     let raw: Value = serde_json::from_slice(&raw_bytes).context("parse refreshed trade stats")?;
     let fetched_at = std::fs::metadata(&path)
         .and_then(|m| m.modified())
@@ -177,7 +176,8 @@ async fn refresh_one(http: &PoeHttpClient, game: Game) -> Result<()> {
     };
     let body = http.get_text(url, "trade_catalogue").await?;
     let raw: Value = serde_json::from_str(&body).context("parse live trade stats")?;
-    let compressed = zstd::encode_all(body.as_bytes(), 19).context("zstd compress live trade stats")?;
+    let compressed =
+        zstd::encode_all(body.as_bytes(), 19).context("zstd compress live trade stats")?;
     let path = refreshed_path(game);
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;

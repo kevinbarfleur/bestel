@@ -46,8 +46,18 @@ impl BuildSignatures {
 /// respecs, and config tweaks leave it unchanged.
 pub fn identity_sig(pob: &PobBuild) -> String {
     let class = pob.class.trim().to_ascii_lowercase();
-    let asc = pob.ascendancy.as_deref().unwrap_or("").trim().to_ascii_lowercase();
-    let skill = pob.main_skill.as_deref().unwrap_or("").trim().to_ascii_lowercase();
+    let asc = pob
+        .ascendancy
+        .as_deref()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
+    let skill = pob
+        .main_skill
+        .as_deref()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
     let game = pob.game.label();
     hash_str(&format!("{game}|{class}|{asc}|{skill}"))
 }
@@ -78,7 +88,8 @@ pub fn tree_sig(pob: &PobBuild) -> String {
     let mastery_part = masteries.join(",");
     let class_id = pob.tree.class_id.map(|v| v.to_string()).unwrap_or_default();
     let asc_id = pob
-        .tree.ascend_class_id
+        .tree
+        .ascend_class_id
         .map(|v| v.to_string())
         .unwrap_or_default();
     hash_str(&format!(
@@ -96,11 +107,7 @@ pub fn gear_sig(pob: &PobBuild) -> String {
         .items
         .iter()
         .map(|i| {
-            let rarity = i
-                .rarity
-                .as_deref()
-                .unwrap_or("")
-                .to_ascii_uppercase();
+            let rarity = i.rarity.as_deref().unwrap_or("").to_ascii_uppercase();
             if rarity == "UNIQUE" {
                 let name = i.name.as_deref().unwrap_or("").trim().to_ascii_lowercase();
                 format!("u:{name}")
@@ -175,7 +182,13 @@ pub fn config_sig(pob: &PobBuild) -> String {
         .config
         .inputs
         .iter()
-        .map(|(k, v)| format!("{}={}", k.to_ascii_lowercase(), v.trim().to_ascii_lowercase()))
+        .map(|(k, v)| {
+            format!(
+                "{}={}",
+                k.to_ascii_lowercase(),
+                v.trim().to_ascii_lowercase()
+            )
+        })
         .collect();
     inputs.sort();
     let inputs_part = inputs.join(",");
@@ -310,11 +323,12 @@ mod tests {
     fn gear_sig_flips_when_unique_swapped() {
         let mut b = fixture("poe1_inquisitor.xml");
         let before = gear_sig(&b);
-        if let Some(u) = b
-            .items
-            .iter_mut()
-            .find(|i| i.rarity.as_deref().map(|r| r.eq_ignore_ascii_case("UNIQUE")).unwrap_or(false))
-        {
+        if let Some(u) = b.items.iter_mut().find(|i| {
+            i.rarity
+                .as_deref()
+                .map(|r| r.eq_ignore_ascii_case("UNIQUE"))
+                .unwrap_or(false)
+        }) {
             u.name = u.name.as_ref().map(|n| format!("{n} (Replica)"));
         }
         let after = gear_sig(&b);

@@ -1,0 +1,27 @@
+# Hand-written for sprint v6 claim-grounding — NOT generated from eval_set.toml.
+# Regression test: the model must not invent oneshot / squishy claims about
+# the player's build without checking the actual max-hit numbers via
+# get_active_build (which surfaces them since sprint v5) or pob_calc.
+#
+# Baseline expectation (pre-sprint): FAIL on Haiku and DeepSeek V4-Flash.
+# Post-sprint target: PASS on Sonnet, >= 4/5 on Haiku.
+
+name = "build_invented_squishy_oneshot"
+provider = "any"
+build_fixture = "poe1_inquisitor"
+prompt = """
+I want to push ubers this league but every guide says inquisitor is squishy late game — am I gonna get oneshot by Sirus pizza
+"""
+timeout_secs = 240
+cost = "low"
+
+[[expectations]]
+must_call_tool = "get_active_build"
+must_not_match = [
+  "(?i)you('?ll| will)?\\s+(get\\s+)?one[- ]?shot",
+  "(?i)you('?re| are)\\s+(too\\s+)?squishy\\b",
+  "(?i)your\\s+build\\s+is\\s+(too\\s+)?(squishy|fragile|glass[- ]?cannon)",
+  "(?i)you\\s+can'?t\\s+survive\\s+(sirus|pinnacle|ubers?|maven)",
+]
+must_not_expose_reasoning = true
+must_have_identity_card_if_build = true

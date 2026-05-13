@@ -36,9 +36,7 @@ mod verifier_results;
 
 pub use kb_versions::{upsert_kb_version, KbVersionRow};
 pub use lint::{insert_lint_finding, replace_lint_findings, LintFindingRow};
-pub use runs::{
-    insert_run, query_runs, query_runs_failing_identity, RunRow, RunsFilter,
-};
+pub use runs::{insert_run, query_runs, query_runs_failing_identity, RunRow, RunsFilter};
 pub use sessions::{read_session_row, upsert_session, SessionRow};
 pub use verifier_results::{upsert_verifier_result, VerifierResultRow};
 

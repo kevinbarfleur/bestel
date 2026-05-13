@@ -110,7 +110,9 @@ pub fn parse_skill_md(raw: &str) -> Result<(SkillFrontmatter, String)> {
         }
     };
     // Skip the newline immediately after `+++`.
-    let after_open = after_open.strip_prefix("\r\n").or_else(|| after_open.strip_prefix('\n'))
+    let after_open = after_open
+        .strip_prefix("\r\n")
+        .or_else(|| after_open.strip_prefix('\n'))
         .unwrap_or(after_open);
     let close_idx = after_open
         .find(&format!("\n{FRONTMATTER_DELIM}"))
@@ -144,8 +146,10 @@ pub fn parse_skill_md(raw: &str) -> Result<(SkillFrontmatter, String)> {
 /// Read and assemble every bundled skill. Returns one [`Skill`] per
 /// `<name>/SKILL.md` entry, with sibling `templates/*.md` files attached.
 pub fn list_bundled_skills() -> Result<Vec<Skill>> {
-    let mut by_name: BTreeMap<String, (Option<(SkillFrontmatter, String)>, BTreeMap<String, String>)> =
-        BTreeMap::new();
+    let mut by_name: BTreeMap<
+        String,
+        (Option<(SkillFrontmatter, String)>, BTreeMap<String, String>),
+    > = BTreeMap::new();
     for (rel, content) in BUNDLED_SKILLS {
         let (skill_dir, file) = match rel.split_once('/') {
             Some((dir, rest)) => (dir, rest),
@@ -166,8 +170,8 @@ pub fn list_bundled_skills() -> Result<Vec<Skill>> {
     }
     let mut out = Vec::with_capacity(by_name.len());
     for (dir_name, (parsed, templates)) in by_name {
-        let (frontmatter, body) = parsed
-            .ok_or_else(|| anyhow!("skill folder `{dir_name}` is missing SKILL.md"))?;
+        let (frontmatter, body) =
+            parsed.ok_or_else(|| anyhow!("skill folder `{dir_name}` is missing SKILL.md"))?;
         out.push(Skill {
             frontmatter,
             body,
@@ -217,8 +221,8 @@ pub fn load_skill(name: &str) -> Result<Skill> {
     if let Ok(disk_root) = skills_dir() {
         let skill_md = disk_root.join(name).join("SKILL.md");
         if let Ok(raw) = fs::read_to_string(&skill_md) {
-            let (frontmatter, body) = parse_skill_md(&raw)
-                .with_context(|| format!("parse user skill {skill_md:?}"))?;
+            let (frontmatter, body) =
+                parse_skill_md(&raw).with_context(|| format!("parse user skill {skill_md:?}"))?;
             let templates = read_disk_templates(&disk_root.join(name).join("templates"));
             return Ok(Skill {
                 frontmatter,
@@ -276,7 +280,9 @@ fn is_safe_skill_name(name: &str) -> bool {
         && !name.contains('/')
         && !name.contains('\\')
         && !name.contains('\0')
-        && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
 fn skills_dir() -> Result<PathBuf> {

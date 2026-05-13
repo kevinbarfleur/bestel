@@ -480,6 +480,14 @@ pub enum DeltaEvent {
         claims_checked: Vec<VerifiedClaimDto>,
         corrections_count: usize,
     },
+    /// Sprint v6 Phase 2 — live response-lint findings (warn-only). Emitted
+    /// when at least one of the 12 lint rules fired on this turn's
+    /// `PersistedRun`. Only used for data collection in the dev panel;
+    /// Phase 3 will turn this into a gating signal.
+    LintFindings {
+        session_id: u64,
+        findings: Vec<bestel_core::test_runner::response_lint::LintFinding>,
+    },
     /// Build Sheets — agent-drafted (or re-drafted) section. Front-end
     /// patches the matching `BSDraftedCard` in place.
     SheetDraftUpdate {
@@ -665,6 +673,10 @@ impl DeltaEvent {
                 payload,
             },
             LlmDelta::ModeAssigned { mode } => DeltaEvent::ModeAssigned { session_id, mode },
+            LlmDelta::LintFindings { findings } => DeltaEvent::LintFindings {
+                session_id,
+                findings,
+            },
             LlmDelta::MessageEnd => DeltaEvent::MessageEnd { session_id },
             LlmDelta::Error(message) => DeltaEvent::Error {
                 session_id,

@@ -81,11 +81,7 @@ impl TradeClient {
 
     pub async fn leagues(&self) -> Result<Vec<String>> {
         let key = format!("trade:{:?}:leagues", self.game);
-        if let Some(v) = self
-            .cache
-            .get::<Vec<String>>(&key, TRADE_TTL_LEAGUES)
-            .await
-        {
+        if let Some(v) = self.cache.get::<Vec<String>>(&key, TRADE_TTL_LEAGUES).await {
             return Ok(v);
         }
         let url = format!("{}/leagues", self.data_prefix());
@@ -181,16 +177,19 @@ impl TradeClient {
                     .to_string();
                 let score = score_phrase(&needle_tokens, &text, &stat_type, prefer_pseudo);
                 if score > 0.0 {
-                    scored.push((score, StatRef { id, text, stat_type }));
+                    scored.push((
+                        score,
+                        StatRef {
+                            id,
+                            text,
+                            stat_type,
+                        },
+                    ));
                 }
             }
         }
         scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
-        Ok(scored
-            .into_iter()
-            .take(limit)
-            .map(|(_, s)| s)
-            .collect())
+        Ok(scored.into_iter().take(limit).map(|(_, s)| s).collect())
     }
 
     /// POST a trade search and return the share URL plus result metadata.
@@ -198,11 +197,7 @@ impl TradeClient {
     /// to validate it — callers (the LLM via `trade_build_query`) build
     /// it from `resolve` output and the optional filter helpers.
     pub async fn search(&self, league: &str, query: Value) -> Result<TradeSearchResp> {
-        let url = format!(
-            "{}/{}",
-            self.search_prefix(),
-            urlencoding::encode(league)
-        );
+        let url = format!("{}/{}", self.search_prefix(), urlencoding::encode(league));
         let v: Value = self
             .http
             .post_json(&url, &query, "trade-search")
@@ -244,10 +239,7 @@ impl TradeClient {
             if let Some(r) = rarity {
                 tf.insert("rarity".into(), json!({"option": r}));
             }
-            filters_block.insert(
-                "type_filters".into(),
-                json!({"filters": Value::Object(tf)}),
-            );
+            filters_block.insert("type_filters".into(), json!({"filters": Value::Object(tf)}));
         }
         if let Some(p) = price_max_chaos {
             filters_block.insert(
@@ -394,7 +386,11 @@ mod tests {
         let result = stats.get("result").unwrap().as_array().unwrap();
         let mut scored: Vec<(f32, StatRef)> = Vec::new();
         for group in result {
-            let group_id = group.get("id").and_then(|s| s.as_str()).unwrap().to_string();
+            let group_id = group
+                .get("id")
+                .and_then(|s| s.as_str())
+                .unwrap()
+                .to_string();
             for entry in group.get("entries").unwrap().as_array().unwrap() {
                 let id = entry.get("id").unwrap().as_str().unwrap().to_string();
                 let text = entry.get("text").unwrap().as_str().unwrap().to_string();
@@ -405,7 +401,14 @@ mod tests {
                     .to_string();
                 let score = score_phrase(&needle, &text, &stat_type, prefer_pseudo);
                 if score > 0.0 {
-                    scored.push((score, StatRef { id, text, stat_type }));
+                    scored.push((
+                        score,
+                        StatRef {
+                            id,
+                            text,
+                            stat_type,
+                        },
+                    ));
                 }
             }
         }

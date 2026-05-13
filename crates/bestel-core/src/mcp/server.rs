@@ -135,7 +135,10 @@ async fn handle(req: &JsonRpcRequest, ctx: &ToolCtx) -> Option<JsonRpcResponse> 
                 .map(|s| {
                     let name = s.get("name").cloned().unwrap_or(Value::Null);
                     let desc = s.get("description").cloned().unwrap_or(Value::Null);
-                    let schema = s.get("input_schema").cloned().unwrap_or(json!({"type": "object"}));
+                    let schema = s
+                        .get("input_schema")
+                        .cloned()
+                        .unwrap_or(json!({"type": "object"}));
                     json!({
                         "name": name,
                         "description": desc,

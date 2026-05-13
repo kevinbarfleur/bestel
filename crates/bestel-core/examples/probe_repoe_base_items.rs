@@ -110,7 +110,11 @@ fn main() -> anyhow::Result<()> {
         if k.contains("Stellar") || blob.contains("Stellar") {
             hits += 1;
             if hits <= 10 {
-                let cut = if blob.len() > 200 { &blob[..200] } else { &blob };
+                let cut = if blob.len() > 200 {
+                    &blob[..200]
+                } else {
+                    &blob
+                };
                 println!("  {k}\n    {cut}");
             }
         }

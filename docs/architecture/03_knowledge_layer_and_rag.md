@@ -213,6 +213,28 @@ The crate `bestel-rag` (workspace-internal) provides:
   unchanged files.
 - `ensure_fts_index()` builds the BM25 column.
 
+### Live re-ingest on edit
+
+`crates/bestel/src/prompts_watcher.rs` watches
+`~/.bestel/prompts/` recursively. When a `.md` file under
+`references/` settles for ≥1.5 s (debounced — coalesces the editor's
+500 ms auto-save bursts plus notify's multi-event writes), the
+watcher kicks off `KbEngine::ingest(corpus_root, ...)` on a
+background task. The pass is incremental: `ingest_corpus` Blake3-
+hashes every file, skips matches, and only re-chunks/re-embeds
+the file that actually changed. After the upsert, `ensure_fts_index`
+rebuilds the BM25 column and `mirror_kb_versions` refreshes the
+SQLite mirror. The watcher then emits `kb:reindexed` (Tauri event)
+with stats `{ files_seen, files_indexed, files_skipped_unchanged,
+chunks_emitted, elapsed_ms }`.
+
+Net effect: `kb_search` reflects edits made in Bestel's prompt
+editor — or externally (VS Code, etc.) — within ~2 s of the save
+landing on disk, no app restart required. If the embedder backend
+is down (OpenAI 429, Ollama not running), the reindex fails
+silently; the in-memory index keeps its previous state and the
+next save retries.
+
 ### Retrieval
 
 `KbEngine::search(query, top_k, filters, must_have_terms)` runs a

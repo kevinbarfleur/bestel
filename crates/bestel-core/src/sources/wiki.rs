@@ -105,9 +105,8 @@ impl WikiClient {
                             .and_then(|t| t.as_str())
                             .unwrap_or("")
                             .to_string();
-                        let snippet = strip_html(
-                            item.get("snippet").and_then(|t| t.as_str()).unwrap_or(""),
-                        );
+                        let snippet =
+                            strip_html(item.get("snippet").and_then(|t| t.as_str()).unwrap_or(""));
                         WikiHit {
                             url: self.page_url(&title),
                             title,
@@ -162,10 +161,7 @@ impl WikiClient {
             .map(|arr| {
                 arr.iter()
                     .map(|sec| WikiSection {
-                        level: sec
-                            .get("toclevel")
-                            .and_then(|l| l.as_u64())
-                            .unwrap_or(1) as u32,
+                        level: sec.get("toclevel").and_then(|l| l.as_u64()).unwrap_or(1) as u32,
                         heading: sec
                             .get("line")
                             .and_then(|l| l.as_str())
@@ -237,11 +233,7 @@ impl WikiClient {
         let rows: Vec<Value> = v
             .get("cargoquery")
             .and_then(|q| q.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|w| w.get("title").cloned())
-                    .collect()
-            })
+            .map(|arr| arr.iter().filter_map(|w| w.get("title").cloned()).collect())
             .unwrap_or_default();
         let _ = self.cache.put(&key, &rows).await;
         Ok(rows)

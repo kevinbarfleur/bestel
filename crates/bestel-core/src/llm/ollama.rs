@@ -232,9 +232,7 @@ impl OllamaClient {
                                 let _ = deltas.send(LlmDelta::TextDelta(text.to_string()));
                             }
                         }
-                        if let Some(calls) =
-                            message.get("tool_calls").and_then(|c| c.as_array())
-                        {
+                        if let Some(calls) = message.get("tool_calls").and_then(|c| c.as_array()) {
                             for c in calls {
                                 accumulated_tool_calls.push(c.clone());
                             }
@@ -282,7 +280,9 @@ impl OllamaClient {
                 // Ollama returns `arguments` as an object directly (not as a
                 // JSON-encoded string the way OpenAI Chat does). Handle both.
                 let arguments = match function.get("arguments") {
-                    Some(Value::Object(_)) => function.get("arguments").cloned().unwrap_or(json!({})),
+                    Some(Value::Object(_)) => {
+                        function.get("arguments").cloned().unwrap_or(json!({}))
+                    }
                     Some(Value::String(s)) => serde_json::from_str(s).unwrap_or(json!({})),
                     _ => json!({}),
                 };
@@ -352,8 +352,45 @@ impl OllamaClient {
             // produces the final answer (or another round of tool calls).
         }
 
+        // Sprint v6 Phase 6 — provider-agnostic post-stream pipeline.
+        // Ollama emits messages in OpenAI-native shape (`content: "string",
+        // tool_calls: [...]`), so we convert to Anthropic-native first; the
+        // shared helpers in `post_stream.rs` (count_fetch_tool_calls, live
+        // response-lint, ToolTranscript) all assume the Anthropic shape.
+        //
+        // The CoVe verifier itself is opt-in: when `ANTHROPIC_API_KEY` is
+        // set, instantiate a secondary `AnthropicClient` and route the
+        // sub-calls (extract / judge / revise) there. Otherwise the verifier
+        // is skipped and `full_assistant` ships unmodified.
+        let messages_anthropic = super::post_stream::messages_openai_to_anthropic(&messages);
+        let outcome = super::post_stream::run_shared_post_stream(
+            &messages_anthropic,
+            &full_assistant,
+            &deltas,
+            "ollama",
+        );
+        let verified_text = match super::anthropic::AnthropicClient::from_env() {
+            Ok(verifier_client) => {
+                verifier_client
+                    .run_verifier_pass(
+                        &history,
+                        &full_assistant,
+                        outcome.fetch_tool_calls,
+                        &outcome.transcript,
+                        &deltas,
+                    )
+                    .await
+            }
+            Err(_) => {
+                tracing::debug!(
+                    target: "bestel.verifier",
+                    "ollama: skipping verifier — ANTHROPIC_API_KEY not set"
+                );
+                full_assistant.clone()
+            }
+        };
         let _ = deltas.send(LlmDelta::MessageEnd);
-        Ok(full_assistant)
+        Ok(verified_text)
     }
 }
 

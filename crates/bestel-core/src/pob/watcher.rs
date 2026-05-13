@@ -218,7 +218,9 @@ fn walk_xml(dir: &std::path::Path, out: &mut Vec<PobBuildSummary>) {
         }
         match parse_summary(&path) {
             Ok(s) => out.push(s),
-            Err(e) => tracing::debug!(target: "pob_watcher", "summary skip {}: {}", path.display(), e),
+            Err(e) => {
+                tracing::debug!(target: "pob_watcher", "summary skip {}: {}", path.display(), e)
+            }
         }
     }
 }

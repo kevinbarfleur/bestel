@@ -28,7 +28,9 @@ use tokio::sync::mpsc;
 use crate::persistence::global_db;
 use crate::sheets::{
     self,
-    types::{BuildSheet, BuildSheetSection, DefiningItemEntry, IntentEntry, KnownGap, SchemaVersion},
+    types::{
+        BuildSheet, BuildSheetSection, DefiningItemEntry, IntentEntry, KnownGap, SchemaVersion,
+    },
 };
 
 use super::LlmDelta;
@@ -357,7 +359,10 @@ pub async fn dispatch_sheet_ask(
         .get("title")
         .and_then(|v| v.as_str())
         .ok_or_else(|| anyhow!("'title' is required"))?;
-    let subtitle = input.get("subtitle").and_then(|v| v.as_str()).map(String::from);
+    let subtitle = input
+        .get("subtitle")
+        .and_then(|v| v.as_str())
+        .map(String::from);
     let options_raw = input
         .get("options")
         .and_then(|v| v.as_array())
@@ -369,7 +374,10 @@ pub async fn dispatch_sheet_ask(
     if options.len() < 2 {
         return Err(anyhow!("'options' must contain at least 2 strings"));
     }
-    let multi = input.get("multi").and_then(|v| v.as_bool()).unwrap_or(false);
+    let multi = input
+        .get("multi")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
     let has_other = input
         .get("has_other")
         .and_then(|v| v.as_bool())
@@ -460,7 +468,8 @@ fn emit_sheet_loaded(
     stale: bool,
 ) -> Result<()> {
     let payload = row.parse_payload().context("parse stored sheet payload")?;
-    let payload_value = serde_json::to_value(&payload).context("serialize sheet payload to value")?;
+    let payload_value =
+        serde_json::to_value(&payload).context("serialize sheet payload to value")?;
     try_emit(
         deltas,
         LlmDelta::SheetLoaded {
@@ -509,7 +518,10 @@ pub async fn dispatch_sheet_finalize_request(
             let id = s.get("id").and_then(|v| v.as_str()).unwrap_or_default();
             let label = s.get("label").and_then(|v| v.as_str()).unwrap_or_default();
             let body = s.get("body").and_then(|v| v.as_str()).unwrap_or_default();
-            let confirmed = s.get("confirmed").and_then(|v| v.as_bool()).unwrap_or(false);
+            let confirmed = s
+                .get("confirmed")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
             BuildSheetSection {
                 id: id.to_string(),
                 label: label.to_string(),
@@ -526,8 +538,16 @@ pub async fn dispatch_sheet_finalize_request(
         .map(|arr| {
             arr.iter()
                 .map(|i| DefiningItemEntry {
-                    name: i.get("name").and_then(|v| v.as_str()).unwrap_or_default().to_string(),
-                    role: i.get("role").and_then(|v| v.as_str()).unwrap_or("enabler").to_string(),
+                    name: i
+                        .get("name")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default()
+                        .to_string(),
+                    role: i
+                        .get("role")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("enabler")
+                        .to_string(),
                     purpose: i.get("purpose").and_then(|v| v.as_str()).map(String::from),
                 })
                 .collect()
@@ -542,7 +562,9 @@ pub async fn dispatch_sheet_finalize_request(
                 .filter_map(|i| {
                     i.get("constraint")
                         .and_then(|v| v.as_str())
-                        .map(|c| IntentEntry { constraint: c.to_string() })
+                        .map(|c| IntentEntry {
+                            constraint: c.to_string(),
+                        })
                 })
                 .collect()
         })
@@ -554,10 +576,12 @@ pub async fn dispatch_sheet_finalize_request(
         .map(|arr| {
             arr.iter()
                 .filter_map(|g| {
-                    g.get("label").and_then(|v| v.as_str()).map(|label| KnownGap {
-                        label: label.to_string(),
-                        note: g.get("note").and_then(|v| v.as_str()).map(String::from),
-                    })
+                    g.get("label")
+                        .and_then(|v| v.as_str())
+                        .map(|label| KnownGap {
+                            label: label.to_string(),
+                            note: g.get("note").and_then(|v| v.as_str()).map(String::from),
+                        })
                 })
                 .collect()
         })
@@ -627,9 +651,7 @@ pub async fn dispatch_get_active_build_sheet(
         .get("fingerprint")
         .and_then(|v| v.as_str())
         .ok_or_else(|| anyhow!("'fingerprint' is required"))?;
-    let current_pob_hash = input
-        .get("current_pob_hash")
-        .and_then(|v| v.as_str());
+    let current_pob_hash = input.get("current_pob_hash").and_then(|v| v.as_str());
 
     let db = match global_db() {
         Some(db) => db,
@@ -668,9 +690,7 @@ pub async fn dispatch_get_active_build_sheet(
         }
     };
 
-    let stale = current_pob_hash
-        .map(|h| h != row.pob_hash)
-        .unwrap_or(false);
+    let stale = current_pob_hash.map(|h| h != row.pob_hash).unwrap_or(false);
     let payload = row.parse_payload().context("parse stored sheet payload")?;
 
     // Populate the sidebar card right away. Errors here are non-fatal —
@@ -708,10 +728,7 @@ mod tests {
         compute_fingerprint(
             "Inquisitor",
             "Ice Nova of Frostbolts",
-            &[
-                "Brass Dome".to_string(),
-                "Cospri's Will".to_string(),
-            ],
+            &["Brass Dome".to_string(), "Cospri's Will".to_string()],
         )
     }
 
@@ -728,7 +745,9 @@ mod tests {
         // (in_memory cannot be wired to global_db cleanly, so we exercise
         // the underlying store directly here. The tool handlers are thin
         // adapters around `sheets::store` — covered in integration smoke.)
-        let row = sheets::store::find_by_fingerprint(&db, &fp).expect("query").expect("hit");
+        let row = sheets::store::find_by_fingerprint(&db, &fp)
+            .expect("query")
+            .expect("hit");
         assert!(row.validated);
         assert_eq!(row.name, "Spell Crit · Cold");
     }
@@ -747,14 +766,20 @@ mod tests {
             "multi": false,
             "has_other": true,
         });
-        let result = dispatch_sheet_ask(&input, &Some(tx)).await.expect("dispatch ok");
+        let result = dispatch_sheet_ask(&input, &Some(tx))
+            .await
+            .expect("dispatch ok");
         let parsed: Value = serde_json::from_str(&result).expect("parse");
         assert_eq!(parsed["user_must_answer"], json!(true));
         assert_eq!(parsed["question_id"], json!("cospri-purpose"));
 
         let delta = rx.recv().await.expect("delta");
         match delta {
-            LlmDelta::SheetAskUser { question_id, options, .. } => {
+            LlmDelta::SheetAskUser {
+                question_id,
+                options,
+                ..
+            } => {
                 assert_eq!(question_id, "cospri-purpose");
                 assert_eq!(options.len(), 3);
             }
@@ -778,7 +803,12 @@ mod tests {
 
         let delta = rx.recv().await.expect("delta");
         match delta {
-            LlmDelta::SheetDraftUpdate { section_id, body, confirmed, .. } => {
+            LlmDelta::SheetDraftUpdate {
+                section_id,
+                body,
+                confirmed,
+                ..
+            } => {
                 assert_eq!(section_id, "damage");
                 assert!(body.starts_with("Scales"));
                 assert!(!confirmed);

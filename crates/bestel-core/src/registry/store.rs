@@ -27,8 +27,7 @@ pub fn insert_entry(
     summary: &RegistrySummary,
     now_ms: i64,
 ) -> Result<i64> {
-    let summary_json =
-        serde_json::to_string(summary).context("serialize registry summary")?;
+    let summary_json = serde_json::to_string(summary).context("serialize registry summary")?;
     db.with_conn_rusqlite(|c| {
         c.execute(
             "INSERT INTO build_registry (
@@ -70,8 +69,7 @@ pub fn update_entry_signatures(
     summary: &RegistrySummary,
     now_ms: i64,
 ) -> Result<()> {
-    let summary_json =
-        serde_json::to_string(summary).context("serialize registry summary")?;
+    let summary_json = serde_json::to_string(summary).context("serialize registry summary")?;
     db.with_conn_rusqlite(|c| {
         c.execute(
             "UPDATE build_registry
@@ -194,11 +192,7 @@ pub fn suggestion_check(db: &Db, pob_hash: &str, now_ms: i64) -> Result<bool> {
 fn row_to_entry(row: &rusqlite::Row) -> rusqlite::Result<RegistryEntry> {
     let summary_json: String = row.get(11)?;
     let summary: RegistrySummary = serde_json::from_str(&summary_json).map_err(|e| {
-        rusqlite::Error::FromSqlConversionFailure(
-            11,
-            rusqlite::types::Type::Text,
-            Box::new(e),
-        )
+        rusqlite::Error::FromSqlConversionFailure(11, rusqlite::types::Type::Text, Box::new(e))
     })?;
     Ok(RegistryEntry {
         id: row.get(0)?,

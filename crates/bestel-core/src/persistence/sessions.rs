@@ -15,8 +15,8 @@ pub struct SessionRow {
 }
 
 pub fn upsert_session(db: &Db, notes: &SessionNotes) -> Result<()> {
-    let diag = serde_json::to_string(&notes.current_diagnosis)
-        .context("serialize current_diagnosis")?;
+    let diag =
+        serde_json::to_string(&notes.current_diagnosis).context("serialize current_diagnosis")?;
     let last_updated = notes
         .last_updated
         .map(|t| t.to_rfc3339())
@@ -29,12 +29,7 @@ pub fn upsert_session(db: &Db, notes: &SessionNotes) -> Result<()> {
                  build_id = excluded.build_id, \
                  last_updated = excluded.last_updated, \
                  current_diagnosis_json = excluded.current_diagnosis_json",
-            params![
-                notes.session_id,
-                notes.build_id,
-                last_updated,
-                diag,
-            ],
+            params![notes.session_id, notes.build_id, last_updated, diag,],
         )?;
         Ok(())
     })

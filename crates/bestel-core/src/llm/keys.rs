@@ -196,7 +196,9 @@ mod tests {
         save_key_at(&path, "ANTHROPIC_API_KEY", "sk-ant-old-0000000000").unwrap();
         save_key_at(&path, "ANTHROPIC_API_KEY", "sk-ant-new-1111111111").unwrap();
         assert_eq!(
-            load_keys_at(&path).get("ANTHROPIC_API_KEY").map(String::as_str),
+            load_keys_at(&path)
+                .get("ANTHROPIC_API_KEY")
+                .map(String::as_str),
             Some("sk-ant-new-1111111111")
         );
         let _ = std::fs::remove_file(&path);

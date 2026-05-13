@@ -72,7 +72,9 @@ mod tests {
         )
         .unwrap();
         let count: i64 = db
-            .with_conn_rusqlite(|c| c.query_row("SELECT COUNT(*) FROM kb_versions", [], |r| r.get(0)))
+            .with_conn_rusqlite(|c| {
+                c.query_row("SELECT COUNT(*) FROM kb_versions", [], |r| r.get(0))
+            })
             .unwrap();
         assert_eq!(count, 1);
         let hash: String = db

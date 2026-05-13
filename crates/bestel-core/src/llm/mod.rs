@@ -12,6 +12,7 @@ pub mod keys;
 pub mod models;
 pub mod ollama;
 pub mod pob_engine;
+pub mod post_stream;
 pub mod recorder;
 pub mod session_notes;
 pub mod sheet_tools;
@@ -115,6 +116,16 @@ pub enum LlmDelta {
     /// `pass | revise | fail` plus structured findings; the dev panel
     /// surfaces the badge and the recorder persists it in `ChatStats`.
     Verifier(verifier::VerifierVerdict),
+    /// Sprint v6 Phase 2 — live response-lint findings, emitted once per
+    /// turn after `Usage` and before the verifier pass. **Warn-only**: the
+    /// findings are surfaced to the dev panel and persisted in `ChatStats`
+    /// for data collection, but the draft is NOT modified at this stage.
+    /// Phase 3 will activate strategy A/B/C per rule based on observed
+    /// fire rates. The delta is omitted entirely when the report is empty
+    /// so a clean run produces no extra payload.
+    LintFindings {
+        findings: Vec<crate::test_runner::response_lint::LintFinding>,
+    },
     /// Build Sheets feature — emitted when the agent calls
     /// `sheet_propose_section` to draft (or re-draft) a section. The UI
     /// patches the matching `BSDraftedCard` in place. Multiple updates may

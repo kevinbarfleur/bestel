@@ -183,7 +183,12 @@ impl RepoeClient {
             ));
         }
 
-        if let Some(existing) = self.map().read().ok().and_then(|m| m.get(&(game, category)).cloned()) {
+        if let Some(existing) = self
+            .map()
+            .read()
+            .ok()
+            .and_then(|m| m.get(&(game, category)).cloned())
+        {
             return Ok(existing);
         }
 
@@ -257,12 +262,7 @@ impl RepoeClient {
         })
     }
 
-    pub fn lookup_by_id(
-        &self,
-        game: Game,
-        category: Category,
-        id: &str,
-    ) -> Result<LookupResult> {
+    pub fn lookup_by_id(&self, game: Game, category: Category, id: &str) -> Result<LookupResult> {
         let snap = self.snapshot(game, category)?;
         let entry = snap.entries.get(id).cloned();
         let entries = match entry {
@@ -626,7 +626,10 @@ fn extract_base_tags(base_value: &Value, influence: Option<&str>) -> Vec<String>
                 .collect()
         })
         .unwrap_or_default();
-    if let Some(inf) = influence.map(|s| s.trim().to_lowercase()).filter(|s| !s.is_empty()) {
+    if let Some(inf) = influence
+        .map(|s| s.trim().to_lowercase())
+        .filter(|s| !s.is_empty())
+    {
         // Generic `<inf>_item` is referenced by some influence mods.
         tags.push(format!("{inf}_item"));
         // `<inf>_<class_tag>` for every existing tag — duplicates are
@@ -656,8 +659,7 @@ fn effective_spawn_weight(mod_value: &Value, base_tags: &[String]) -> i64 {
         Some(arr) => arr,
         None => return 0,
     };
-    let tag_set: std::collections::HashSet<&str> =
-        base_tags.iter().map(|s| s.as_str()).collect();
+    let tag_set: std::collections::HashSet<&str> = base_tags.iter().map(|s| s.as_str()).collect();
     for entry in weights {
         let tag = entry.get("tag").and_then(|v| v.as_str()).unwrap_or("");
         if tag_set.contains(tag) {
@@ -682,18 +684,14 @@ fn bundled_blob(game: Game, category: Category) -> Option<&'static [u8]> {
             Some(include_bytes!("snapshots/poe1/base_items.json.zst"))
         }
         (Game::Poe1, Category::Gems) => Some(include_bytes!("snapshots/poe1/gems.json.zst")),
-        (Game::Poe1, Category::Uniques) => {
-            Some(include_bytes!("snapshots/poe1/uniques.json.zst"))
-        }
+        (Game::Poe1, Category::Uniques) => Some(include_bytes!("snapshots/poe1/uniques.json.zst")),
         (Game::Poe1, Category::ClusterJewels) => {
             Some(include_bytes!("snapshots/poe1/cluster_jewels.json.zst"))
         }
         (Game::Poe1, Category::Essences) => {
             Some(include_bytes!("snapshots/poe1/essences.json.zst"))
         }
-        (Game::Poe1, Category::Fossils) => {
-            Some(include_bytes!("snapshots/poe1/fossils.json.zst"))
-        }
+        (Game::Poe1, Category::Fossils) => Some(include_bytes!("snapshots/poe1/fossils.json.zst")),
         (Game::Poe1, Category::StatTranslations) => {
             Some(include_bytes!("snapshots/poe1/stat_translations.json.zst"))
         }
@@ -702,9 +700,7 @@ fn bundled_blob(game: Game, category: Category) -> Option<&'static [u8]> {
             Some(include_bytes!("snapshots/poe2/base_items.json.zst"))
         }
         (Game::Poe2, Category::Gems) => Some(include_bytes!("snapshots/poe2/gems.json.zst")),
-        (Game::Poe2, Category::Uniques) => {
-            Some(include_bytes!("snapshots/poe2/uniques.json.zst"))
-        }
+        (Game::Poe2, Category::Uniques) => Some(include_bytes!("snapshots/poe2/uniques.json.zst")),
         (Game::Poe2, Category::StatTranslations) => {
             Some(include_bytes!("snapshots/poe2/stat_translations.json.zst"))
         }
@@ -791,11 +787,7 @@ mod tests {
                 id_lower.contains("headhunter") || name_lower.contains("headhunter")
             }),
             "expected to find Headhunter; got entries: {:?}",
-            result
-                .entries
-                .iter()
-                .map(|e| &e.id)
-                .collect::<Vec<_>>()
+            result.entries.iter().map(|e| &e.id).collect::<Vec<_>>()
         );
     }
 
@@ -919,9 +911,7 @@ mod tests {
             source: SnapshotSource::Refreshed,
         }));
 
-        let res = client
-            .mods_for_base(Game::Poe1, base_id, None, 50)
-            .unwrap();
+        let res = client.mods_for_base(Game::Poe1, base_id, None, 50).unwrap();
         let ids: Vec<&str> = res.mods.iter().map(|m| m.id.as_str()).collect();
         assert!(ids.contains(&"RollsOnSwords"), "got: {ids:?}");
         assert!(!ids.contains(&"BlockedByZeroWeight"), "0-weight blocked");

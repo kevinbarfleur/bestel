@@ -90,7 +90,10 @@ fn parse_whatlinkshere(html: &str) -> Vec<Entry> {
         return Vec::new();
     };
     let after = &html[list_start..];
-    let list_end = after.find("</ul>").map(|e| list_start + e).unwrap_or(html.len());
+    let list_end = after
+        .find("</ul>")
+        .map(|e| list_start + e)
+        .unwrap_or(html.len());
     let block = &html[list_start..list_end];
 
     let mut out = Vec::new();
