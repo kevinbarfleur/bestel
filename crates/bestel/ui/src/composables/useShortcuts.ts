@@ -32,7 +32,10 @@ export function useShortcuts(handlers: ShortcutHandlers) {
     } else if (k === 'p') {
       e.preventDefault();
       handlers.onModelPicker?.();
-    } else if (k === 'l' && !isEditableTarget(e)) {
+    } else if (k === 'n' && !isEditableTarget(e)) {
+      // Ctrl+N — start a new conversation. Gated by `!isEditableTarget`
+      // so typing the letter `n` in the prompt or any input never
+      // triggers a chat reset.
       e.preventDefault();
       handlers.onResetChat?.();
     } else if (k === 'd' && e.shiftKey) {
