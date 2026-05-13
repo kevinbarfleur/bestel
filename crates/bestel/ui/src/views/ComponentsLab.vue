@@ -62,11 +62,162 @@ const hideTooltip = () => {
 
 const dismissedToasts = ref(new Set<string>());
 const dismissToast = (id: string) => dismissedToasts.value.add(id);
+
+// ─── Design tokens overview ─────────────────────────────────────────
+// Reads values live from CSS variables defined in `src/styles/tokens.css`.
+// The single source of truth is the .css file — update there, this
+// page updates with it.
+
+interface Token { name: string; cssVar: string; hint?: string }
+
+const paperNeutrals: Token[] = [
+  { name: 'paper', cssVar: '--paper', hint: 'Main background' },
+  { name: 'paper-shade', cssVar: '--paper-shade', hint: 'Subtle off-tone' },
+  { name: 'paper-line', cssVar: '--paper-line', hint: 'Hairline dividers' },
+  { name: 'ink', cssVar: '--ink', hint: 'Primary text' },
+  { name: 'ink-soft', cssVar: '--ink-soft', hint: 'Secondary text' },
+  { name: 'ink-faint', cssVar: '--ink-faint', hint: 'Meta text' },
+  { name: 'ink-ghost', cssVar: '--ink-ghost', hint: 'Borders, very dim' },
+];
+
+const chromeAccent: Token[] = [
+  { name: 'amber', cssVar: '--amber', hint: 'Chrome accent (graphite light / cream dark)' },
+  { name: 'amber-soft', cssVar: '--amber-soft' },
+  { name: 'amber-glow', cssVar: '--amber-glow', hint: 'Glow overlay' },
+  { name: 'amber-bg', cssVar: '--amber-bg', hint: 'Subtle bg tint' },
+];
+
+const semanticTokens: Token[] = [
+  { name: 'good', cssVar: '--good', hint: 'API key set, daemon online' },
+  { name: 'bad', cssVar: '--bad', hint: 'Invalid, offline, missing' },
+  { name: 'note', cssVar: '--note', hint: 'Warning, stale' },
+];
+
+const elementalTokens: Token[] = [
+  { name: 'fire', cssVar: '--el-fire' },
+  { name: 'fire-deep', cssVar: '--el-fire-deep' },
+  { name: 'cold', cssVar: '--el-cold' },
+  { name: 'cold-deep', cssVar: '--el-cold-deep' },
+  { name: 'lit', cssVar: '--el-lit' },
+  { name: 'lit-deep', cssVar: '--el-lit-deep' },
+  { name: 'chaos', cssVar: '--el-chaos' },
+  { name: 'chaos-deep', cssVar: '--el-chaos-deep' },
+  { name: 'phys', cssVar: '--el-phys' },
+  { name: 'phys-deep', cssVar: '--el-phys-deep' },
+];
+
+const typeScale = [
+  { name: 'display', cssVar: '--fs-display', sample: 'Bestel awaits your question.' },
+  { name: 'h1', cssVar: '--fs-h1', sample: 'Section heading' },
+  { name: 'h2', cssVar: '--fs-h2', sample: 'Sub-section heading' },
+  { name: 'h3', cssVar: '--fs-h3', sample: 'Card title' },
+  { name: 'body', cssVar: '--fs-body', sample: 'Body copy paragraph.' },
+  { name: 'meta', cssVar: '--fs-meta', sample: 'Meta caption line' },
+  { name: 'caps', cssVar: '--fs-caps', sample: 'Caps label' },
+  { name: 'micro', cssVar: '--fs-micro', sample: 'Tiny annotation' },
+];
+
+const typeFamilies = [
+  { name: 'serif', cssVar: '--serif', sample: 'EB Garamond — narrative voice and body copy.' },
+  { name: 'hand', cssVar: '--hand', sample: 'Used for thread titles and meta.' },
+  { name: 'script', cssVar: '--script', sample: 'Kalam — handwritten annotations.' },
+  { name: 'script-display', cssVar: '--script-display', sample: 'Caveat — display headings.' },
+  { name: 'mono', cssVar: '--mono', sample: 'JetBrains Mono — code, paths, masked keys.' },
+];
+
+const motionTokens: Token[] = [
+  { name: 'transition-fast', cssVar: '--transition-fast' },
+  { name: 'transition-base', cssVar: '--transition-base' },
+  { name: 'transition-smooth', cssVar: '--transition-smooth' },
+  { name: 'transition-bounce', cssVar: '--transition-bounce' },
+];
 </script>
 
 <template>
   <div class="lab runic-scrollbar">
     <RunicHeader title="Composants Runiques" subtitle="Storybook — port 1:1 du design system" />
+
+    <section class="lab__section">
+      <h2 class="lab__heading">Design tokens</h2>
+      <p class="lab__hint">
+        Source of truth : <code>src/styles/tokens.css</code>. Every swatch and
+        sample below reads its value live from the same CSS variable the
+        components use — edit the token, this page updates with it.
+      </p>
+
+      <h3 class="lab__sub">Paper neutrals (light theme)</h3>
+      <div class="lab__swatch-grid">
+        <div v-for="t in paperNeutrals" :key="t.cssVar" class="lab__swatch">
+          <div class="lab__swatch-chip" :style="{ background: `var(${t.cssVar})` }" />
+          <div class="lab__swatch-meta">
+            <strong>{{ t.name }}</strong>
+            <code>{{ t.cssVar }}</code>
+            <span v-if="t.hint" class="lab__swatch-hint">{{ t.hint }}</span>
+          </div>
+        </div>
+      </div>
+
+      <h3 class="lab__sub">Chrome accent</h3>
+      <div class="lab__swatch-grid">
+        <div v-for="t in chromeAccent" :key="t.cssVar" class="lab__swatch">
+          <div class="lab__swatch-chip" :style="{ background: `var(${t.cssVar})` }" />
+          <div class="lab__swatch-meta">
+            <strong>{{ t.name }}</strong>
+            <code>{{ t.cssVar }}</code>
+            <span v-if="t.hint" class="lab__swatch-hint">{{ t.hint }}</span>
+          </div>
+        </div>
+      </div>
+
+      <h3 class="lab__sub">Functional / semantic</h3>
+      <div class="lab__swatch-grid">
+        <div v-for="t in semanticTokens" :key="t.cssVar" class="lab__swatch">
+          <div class="lab__swatch-chip" :style="{ background: `var(${t.cssVar})` }" />
+          <div class="lab__swatch-meta">
+            <strong>{{ t.name }}</strong>
+            <code>{{ t.cssVar }}</code>
+            <span v-if="t.hint" class="lab__swatch-hint">{{ t.hint }}</span>
+          </div>
+        </div>
+      </div>
+
+      <h3 class="lab__sub">Elemental palette</h3>
+      <div class="lab__swatch-grid">
+        <div v-for="t in elementalTokens" :key="t.cssVar" class="lab__swatch">
+          <div class="lab__swatch-chip" :style="{ background: `var(${t.cssVar})` }" />
+          <div class="lab__swatch-meta">
+            <strong>{{ t.name }}</strong>
+            <code>{{ t.cssVar }}</code>
+          </div>
+        </div>
+      </div>
+
+      <h3 class="lab__sub">Type scale</h3>
+      <ul class="lab__type">
+        <li v-for="t in typeScale" :key="t.cssVar" :style="{ fontSize: `var(${t.cssVar})` }">
+          <span class="lab__type-sample">{{ t.sample }}</span>
+          <span class="lab__type-meta"><code>{{ t.cssVar }}</code> · <strong>{{ t.name }}</strong></span>
+        </li>
+      </ul>
+
+      <h3 class="lab__sub">Type families</h3>
+      <ul class="lab__type">
+        <li v-for="t in typeFamilies" :key="t.cssVar" :style="{ fontFamily: `var(${t.cssVar})` }">
+          <span class="lab__type-sample">{{ t.sample }}</span>
+          <span class="lab__type-meta"><code>{{ t.cssVar }}</code> · <strong>{{ t.name }}</strong></span>
+        </li>
+      </ul>
+
+      <h3 class="lab__sub">Motion</h3>
+      <div class="lab__meta-grid">
+        <div v-for="t in motionTokens" :key="t.cssVar" class="lab__meta-cell">
+          <strong>{{ t.name }}</strong>
+          <code>{{ t.cssVar }}</code>
+        </div>
+      </div>
+    </section>
+
+    <RunicDivider variant="accent" />
 
     <section class="lab__section">
       <h2 class="lab__heading">Boutons</h2>
@@ -395,5 +546,112 @@ const dismissToast = (id: string) => dismissedToasts.value.add(id);
   flex-direction: column;
   gap: 0.625rem;
   align-items: flex-start;
+}
+
+/* ─── Design tokens section ──────────────────────────────────── */
+.lab__hint {
+  color: var(--ink-soft);
+  font-size: var(--fs-meta);
+  max-width: 70ch;
+  margin: 0 0 1rem;
+}
+.lab__hint code {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  background: var(--paper-shade);
+  padding: 1px 4px;
+  border-radius: 2px;
+}
+.lab__sub {
+  font-family: var(--hand);
+  font-size: var(--fs-h3);
+  font-weight: var(--fw-medium);
+  color: var(--ink-soft);
+  margin: 1.25rem 0 0.5rem;
+}
+.lab__swatch-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.625rem;
+}
+.lab__swatch {
+  display: flex;
+  gap: 0.625rem;
+  padding: 0.5rem;
+  background: var(--paper-shade);
+  border-radius: var(--radius-runic);
+  align-items: center;
+}
+.lab__swatch-chip {
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-runic);
+  border: 1px solid var(--paper-line);
+  flex: none;
+}
+.lab__swatch-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+}
+.lab__swatch-meta strong {
+  font-size: var(--fs-meta);
+  font-weight: var(--fw-semibold);
+  color: var(--ink);
+}
+.lab__swatch-meta code {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--ink-soft);
+}
+.lab__swatch-hint {
+  font-size: var(--fs-micro);
+  color: var(--ink-faint);
+}
+.lab__type {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+.lab__type li {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--paper-line);
+}
+.lab__type-sample { flex: 1; }
+.lab__type-meta {
+  font-family: var(--mono);
+  font-size: var(--fs-micro) !important;
+  color: var(--ink-faint);
+  flex: none;
+}
+.lab__type-meta strong { color: var(--ink-soft); }
+.lab__meta-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 0.625rem;
+}
+.lab__meta-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  padding: 0.5rem 0.75rem;
+  background: var(--paper-shade);
+  border-radius: var(--radius-runic);
+}
+.lab__meta-cell strong {
+  font-size: var(--fs-meta);
+  color: var(--ink);
+}
+.lab__meta-cell code {
+  font-family: var(--mono);
+  font-size: var(--fs-micro);
+  color: var(--ink-soft);
 }
 </style>
