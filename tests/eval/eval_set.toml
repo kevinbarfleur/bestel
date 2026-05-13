@@ -507,3 +507,111 @@ category = "refusal"
 prompt = "is diablo 4 better than path of exile right now"
 expected_signals = ["chronicler", "Path of Exile"]
 forbidden_signals = ["Diablo IV is better", "Diablo 4 wins", "Blizzard"]
+
+# ---------------------------------------------------------------------------
+# Category: pob-surface (Sprint v5)
+# ---------------------------------------------------------------------------
+#
+# These exercise the new PoB surface fidelity work — fields the parser
+# captured but the LLM was not seeing (pantheon / tattoos / masteries /
+# jewel placements / spectres / slot map), gem variant_id for transfigures,
+# the expanded pob_calc subset (resists, leech, regen, recovery, ailment
+# avoid), bandit / pantheon / enemy_level calcs config, the wrong-skill
+# auto-retry contract, multi-set / multi-spec acknowledgement, item-mod
+# structural parse, and engineered-rare engine flagging.
+#
+# Most need a loaded PoB. Build fixtures are placeholders — populate them
+# under tests/eval/scenarios/ following the existing pattern.
+
+[[entry]]
+id = "pob_surface_pantheon_quote"
+category = "build"
+prompt = "what's my major pantheon? i can't remember which one i picked"
+expected_signals = ["pantheon"]
+forbidden_signals = ["I don't know your pantheon", "no pantheon"]
+needs_build = true
+applies_to = ["poe1"]
+
+[[entry]]
+id = "pob_surface_tattoo_list"
+category = "build"
+prompt = "list every Karui tattoo on my tree, i want to make sure i haven't forgotten one"
+expected_signals = ["tattoo"]
+forbidden_signals = ["no tattoo", "I cannot see your tattoos"]
+needs_build = true
+applies_to = ["poe1"]
+
+[[entry]]
+id = "pob_surface_mastery_pick"
+category = "build"
+prompt = "which mastery did i take at the Spell Suppression notable cluster"
+expected_signals = ["mastery"]
+forbidden_signals = ["I don't have access to your mastery"]
+needs_build = true
+
+[[entry]]
+id = "pob_surface_variant_transfigure"
+category = "build"
+prompt = "which Penance Brand transfigure am i using, base or Dissipation or Conduction"
+expected_signals = ["Dissipation", "Conduction", "transfigure"]
+forbidden_signals = ["I cannot tell which transfigure"]
+needs_build = true
+applies_to = ["poe1"]
+
+[[entry]]
+id = "pob_surface_wrong_skill_recover"
+category = "build"
+prompt = "give me my full DPS for my main skill, with all charges up and pinnacle boss"
+expected_signals = ["DPS", "main skill"]
+forbidden_signals = ["wrong skill", "I cannot determine"]
+needs_build = true
+
+[[entry]]
+id = "pob_surface_resist_cap_flask"
+category = "build"
+prompt = "am i fire-res capped while my Topaz Flask is active? if not how much short"
+expected_signals = ["fire", "cap", "%"]
+forbidden_signals = ["I cannot check your fire resist"]
+needs_build = true
+
+[[entry]]
+id = "pob_surface_bandit_swap"
+category = "build"
+prompt = "what if i picked Alira instead of Oak, what's the DPS / resist delta"
+expected_signals = ["Alira", "Oak", "delta"]
+forbidden_signals = ["I cannot simulate bandit"]
+needs_build = true
+applies_to = ["poe1"]
+
+[[entry]]
+id = "pob_surface_regen_rf_sustain"
+category = "build"
+prompt = "is my regen enough to sustain RF or am i degening down? show me the math"
+expected_signals = ["regen", "Righteous Fire", "RF"]
+forbidden_signals = ["I cannot calculate your regen"]
+needs_build = true
+applies_to = ["poe1"]
+
+[[entry]]
+id = "pob_surface_multi_set_acknowledge"
+category = "build"
+prompt = "i have a mapping and a boss skillset in my pob, which one are you analyzing right now"
+expected_signals = ["set", "active"]
+forbidden_signals = ["only one set"]
+needs_build = true
+
+[[entry]]
+id = "pob_surface_item_mod_fractured"
+category = "build"
+prompt = "which mod on my boots is fractured? i forgot which roll i need to preserve"
+expected_signals = ["fractured"]
+forbidden_signals = ["I cannot see fractured", "no fractured mod"]
+needs_build = true
+
+[[entry]]
+id = "pob_surface_engine_rare_protect"
+category = "build"
+prompt = "i found a juicy crit multi rare ring on trade, can i sell my current ring and switch"
+expected_signals = ["engine", "trigger", "Awakener"]
+forbidden_signals = ["sure, sell it", "go ahead and swap"]
+needs_build = true
