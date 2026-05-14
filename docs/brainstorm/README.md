@@ -14,3 +14,4 @@ Parking lot for ideas, plans, and feature explorations that are not currently sc
 | File | Status | Summary |
 |---|---|---|
 | [passive-tree-viewer.md](passive-tree-viewer.md) | parked | In-app PoE1 passive tree mini-window with Pixi.js render, search, click-to-detail, allocated nodes highlight. Plan complete, not started. |
+| [community-knowledge-base.md](community-knowledge-base.md) | parked | Split `prompts/references/` into a community-edited repo (option A) or expose a local import/export packs system (option B). Hybrid: B first, A later when a community has formed. |
